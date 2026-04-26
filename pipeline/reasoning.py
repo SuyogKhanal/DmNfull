@@ -256,7 +256,7 @@ def summarise_episode(
         scope = cache.episode_scope(episode_id)
         cached = cache.load(scope, summary_key)
         if cached is not None:
-            return cached.get("text", reasoning_text[:800])
+            return cached.get("text", reasoning_text)
 
     client = _oai_client()
     try:
@@ -270,14 +270,14 @@ def summarise_episode(
                     f"- What went wrong (root cause)\n"
                     f"- Key configuration (start, goal, fire placement)\n"
                     f"- What the correct path should have been\n\n"
-                    f"ANALYSIS:\n{reasoning_text[:4000]}\n\n"
+                    f"ANALYSIS:\n{reasoning_text}\n\n"
                     f"Output ONLY the summary, nothing else."},
             ],
             max_tokens,
         )
     except Exception as e:
         traceback.print_exc()
-        text = reasoning_text[:800]
+        text = reasoning_text
 
     if cache is not None:
         cache.save(cache.episode_scope(episode_id), summary_key, {"text": text})

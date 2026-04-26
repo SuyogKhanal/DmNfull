@@ -29,6 +29,7 @@ from pipeline.response_cache import ResponseCache
 
 
 ALL_PROFILES = [
+    # existing
     "full_system",
     "no_vlm",
     "no_kag",
@@ -36,6 +37,19 @@ ALL_PROFILES = [
     "no_reasoning",
     "no_tkf",
     "no_aggregator",
+    # new
+    "vlm_only",
+    "vlm_plain_llm",
+    "vlm_reasoning",
+    "reasoning_only",
+    "reasoning_rag",
+    "reasoning_kag",
+    "vlm_reasoning_rag",
+    "vlm_reasoning_kag",
+    "vlm_reasoning_rag_kag",
+    "vlm_reasoning_rag_kag_plain",
+    "vlm_reasoning_tkf",
+    "vlm_reasoning_tkf_plain",
 ]
 
 

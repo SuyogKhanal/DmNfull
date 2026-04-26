@@ -86,6 +86,7 @@ def _build_phaseB_for_episode(
     use_rag        = bool(pipeline_flags.get("use_rag", True))
     use_reasoning  = bool(pipeline_flags.get("use_reasoning", True))
     use_tkf        = bool(pipeline_flags.get("use_tkf", True))
+    use_plain_llm   = bool(pipeline_flags.get("use_plain_llm", True))
 
     episode_id = episode["episode_id"]
 
@@ -187,7 +188,7 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
 
-    if use_reasoning:
+    if use_reasoning and use_plain_llm:
         summary = summarise_episode(
             combined_text,
             episode_id,
@@ -197,6 +198,9 @@ def _build_phaseB_for_episode(
             use_kag=use_kag,
             use_rag=use_rag,
         )
+
+    elif use_reasoning:
+        summary = combined_text
     else:
         summary = f"Reasoning disabled. Failure at episode {episode_id} with config {episode.get('dynamic_config', {})}."
 

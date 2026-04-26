@@ -30,7 +30,7 @@ def _clip_embed(text: str, image_path: Optional[str], model_id: str) -> Optional
         model, processor = _load_clip(model_id)
         device = next(model.parameters()).device
 
-        t_enc = processor(text=[text[:512]], return_tensors="pt", padding=True, truncation=True, max_length=77).to(device)
+        t_enc = processor(text=[text], return_tensors="pt", padding=True, truncation=True, max_length=77).to(device)
         with torch.no_grad():
             tv = model.get_text_features(**t_enc)
             tv = torch.nn.functional.normalize(tv, dim=-1)[0].cpu().float().numpy()
