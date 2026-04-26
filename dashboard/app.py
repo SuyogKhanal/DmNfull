@@ -155,6 +155,10 @@ def _list_saved_runs() -> List[str]:
             for d in sorted(p.iterdir()):
                 if d.is_dir() and (d / "full_output.json").exists():
                     out.append(str(d))
+                # Also scan one level deeper (profile subdirs)
+                for sub in sorted(d.iterdir()) if d.is_dir() else []:
+                    if sub.is_dir() and (sub / "full_output.json").exists():
+                        out.append(str(sub))
     return out
 
 

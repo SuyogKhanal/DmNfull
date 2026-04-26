@@ -1,0 +1,103 @@
+=== ROOT CAUSE ANALYSIS ===
+Below is a focused root-cause walk-through of this episode, followed by a concrete corrective demonstration for the human to provide. The goal is to show exactly what went wrong, why, and what to demonstrate to fix it in future training.
+
+1) TRAJECTORY RECONSTRUCTION (step-by-step)
+- Episode setup
+  - Start: [row, col] = [0, 1]
+  - Goal: [4, 2]
+  - Fires: (0,2), (3,1), (3,3)
+  - Maze context: Row 0 has a fire to the right (0,2). The left edge from start is a safe corridor. The right neighbor is a hazard; the left neighbor is safe.
+  - Observations at start: Up is boundary (blocked), Down is free, Left is free, Right is fire (hazard). Manhattan distance to goal = 5.
+
+- Step 1
+  - Position before action: [0, 1]
+  - Action taken: RIGHT (to [0, 2])
+  - Resulting cell: [0, 2] = FIRE (hazard)
+  - Immediate reward: -10.10 (episode terminates on fire)
+  - Position after action: [0, 2]
+  - Observations after action: Up boundary, Down free, Left free, Right free. Distance to goal remains high (distance = 4)
+  - Episode outcome: Failure (total steps = 1, total reward = -10.10)
+
+- Summary of what happened
+  - The agent chose to move RIGHT into an adjacent fire on the very first step, terminating the episode almost immediately.
+
+2) FIRST WRONG DECISION
+- The initial decision to move RIGHT from [0, 1] into [0, 2] is the first incorrect move.
+- Correct approach in this configuration (given the fire at [0,2] and a safe left-edge corridor) would be to avoid the hazard and follow a safe route along the left edge toward the goal, e.g. [0,1] -> [0,0] -> [1,0] -> [2,0] -> [3,0] -> [4,0] -> [4,1] -> [4,2].
+
+3) WHY THE POLICY FAILED (reference to dynamic config and the prior failure patterns)
+- Root cause (as echoed by RAG-style analyses tied to this episode): Hazard generalization failure or bias toward rapid progress toward the goal without properly accounting for adjacent hazards.
+- Concrete factors contributing to failure:
+  - Hazard proximity is high at the start: the immediate neighbor to the right is a fire. The agent still chose to step onto a hazard, indicating a misgeneralization where near-goal progress is favored even when a hazard is adjacent.
+  - Training data bias: demonstrations may have fewer or less explicit hazard-avoidant paths in this exact configuration, leading to an imitation of a “greedy” distance-reduction behavior rather than deliberate hazard avoidance.
+  - Lack of explicit hazard-avoidance heuristics in the policy’s learned behavior: the model mimics observed actions but does not robustly infer the safety of adjacent tiles when a hazard is present.
+- How this ties to the dynamic config:
+  - Fires are present at (0,2), (3,1), (3,3). The adjacent hazard to the start is a critical edge case that requires hazard-avoidant routing, not a sprint toward the goal.
+- In short: The policy prioritized immediate apparent progress (reducing distance to goal) over safety, failing to generalize hazard avoidance in a start-state where a safe corridor exists.
+
+4) WHAT THE POLICY GOT WRONG
+- The policy incorrectly treated proximity to the goal as the primary objective, even when the immediate neighbor is deadly.
+- It failed to prioritize hazard avoidance over short-term distance reduction in a configuration with a clearly hazardous adjacent tile.
+- It did not sufficiently generalize corridor-based navigation strategies that bypass hazards (left-edge corridor in this case).
+
+5) REGIONS / CONFIGURATIONS NEEDING DATA (where more corrective demonstrations are valuable)
+- Start states with an immediate adjacent fire to the right (or any adjacent hazard) and a safe corridor on another side (e.g., left, up/backward options).
+- Configurations with hazards on the only plausible short route near the start, forcing a longer corridor detour (need examples where hazards block the most direct path and the agent must detour safely).
+- Repeated instances of “hazard-rich near-start” scenarios to strengthen the model’s bias toward hazard avoidance first, even if the direct path to the goal looks shorter.
+- Variants with multiple fires near the start (e.g., left and right both hazardous, requiring a longer safe detour).
+
+CORRECTIVE DEMONSTRATION (what the human should record)
+- Primary corrective demonstration (hazard-avoiding corridor path):
+  - Path: [0,1] -> [0,0] -> [1,0] -> [2,0] -> [3,0] -> [4,0] -> [4,1] -> [4,2]
+  - Actions (step-by-step):
+    - Step 1: LEFT (from [0,1] to [0,0])
+    - Step 2: DOWN (to [1,0])
+    - Step 3: DOWN (to [2,0])
+    - Step 4: DOWN (to [3,0])
+    - Step 5: DOWN (to [4,0])
+    - Step 6: RIGHT (to [4,1])
+    - Step 7: RIGHT (to [4,2] goal)
+  - Expected outcome: Success with a long but safe route, avoiding all fires.
+
+- Optional supplementary corrective demonstrations (to reinforce hazard-avoidance behavior in similar states):
+  - Variation A: If the left corridor is blocked with a hazard, demonstrate a safe alternative corridor (e.g., move up or down along a different safe edge) to reach the goal while avoiding hazards.
+  - Variation B: Demonstrate explicit hazard-checking behavior: at a state, the demonstrator explicitly notes “Left is safe, Right is fire” and then chooses the safe corridor, emphasizing hazard awareness.
+
+- What to annotate during the corrective demonstrations (for the learner):
+  - Explicitly state hazard recognition at each step when a neighboring tile is a fire.
+  - Emphasize “safety before speed” in decisions where hazard exists adjacent to the current position.
+  - Show the agent following a safe corridor even if the direct route to the goal would be shorter.
+
+Additional notes for the human demonstrator
+- Include multiple episodes that cover:
+  - Start states with hazard directly to the right (as in this episode) and a safe left-edge corridor.
+  - Start states where hazards appear on multiple adjacent tiles, requiring more complex detours, to broaden the policy’s hazard-avoidance generalization.
+- Label the demonstrations with a simple hazard-avoidance justification (e.g., “Avoid fire; take safe corridor; prioritize safety over quick goal approach”) to reinforce the desired behavior during imitation learning.
+- Ensure the corrective demonstrations are included in the next rollback/augmentation step so the diffusion policy learns to prefer safe corridors in the presence of immediate hazards.
+
+In short: This episode demonstrates a hazard-avoidance failure where the agent greedily moved into an adjacent fire on the first step. The corrective demonstrations should emphasize hazard recognition and corridor-based navigation, starting with the left-edge safe route [0,1] -> [0,0] -> [1,0] -> [2,0] -> [3,0] -> [4,0] -> [4,1] -> [4,2], and should be extended to other start configurations with adjacent hazards to strengthen the policy’s hazard-handling generalization.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+Here are straightforward answers to your four questions, in simple language.
+
+1) Where in the maze does the AI get confused?
+- At the very start, right after you’re placed at the first decision point. There’s a fire immediately to the right, but the left edge is a safe path. The AI tends to push toward the goal anyway and ends up stepping into the fire because it’s not prioritizing safety when hazards are nearby.
+
+2) What should a good walkthrough look like in that area?
+- Show hazard awareness first: clearly point out that the tile on the right is dangerous and the left path is safe.
+- Demonstrate choosing the safe route along the edge and then continuing along a longer, safe detour toward the goal, staying away from the hazards.
+- Include simple notes like “safety first,” “avoid danger,” and “safe corridor ahead.”
+- Add a few variations so the same idea shows up in different shapes: sometimes hazards appear on another side, or there are multiple hazards near the start. Each variation should still emphasize finding and sticking to a safe detour rather than rushing toward the goal.
+
+3) What will the AI learn from seeing that walkthrough?
+- It will learn to notice hazards that are near the starting point and to put safety before speed.
+- It will learn to use safe corridors or detours along the edges to bypass hazards, instead of chasing the shortest path.
+- It will generalize this hazard-awareness pattern to other mazes that change from episode to episode.
+
+4) How many walkthroughs are needed and how should they vary?
+- Do a modest batch, roughly 6–12 demonstrations, and mix in variety.
+- Start with simple cases: hazards on one side with a clear safe corridor.
+- Then add tougher variations: hazards on multiple nearby tiles, or a blocked direct route requiring a longer detour.
+- Vary the maze layout and the positions of hazards so the pattern stays the same (hazard awareness + safe detour) but the exact setup changes.
+- It helps to annotate each walkthrough with the hazard check (e.g., “hazard on the right; taking the safe corridor”) so the lesson sticks.

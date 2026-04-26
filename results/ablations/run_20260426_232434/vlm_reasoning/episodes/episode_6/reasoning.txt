@@ -1,0 +1,114 @@
+=== ROOT CAUSE ANALYSIS ===
+ROOT CAUSE ANALYSIS
+
+1) TRAJECTORY RECONSTRUCTION (what happened in this episode)
+- Environment: 5x5 grid. Walls are borders; Fires at (0,2), (3,1), (3,3); Goal at (4,2); Start at (0,1).
+- Episode outcome: Failure in 1 step. The agent moved RIGHT from the start into a fire.
+- Ground-truth trajectory (as observed):
+  - Start: [0, 1]
+  - Step 1: ACTION RIGHT → [0, 2] (this cell is fire)
+  - Result: Immediate termination with reward -10.10
+  - Final position: [0, 2]
+- Vision summary at start:
+  - Adjacent cells: Up is boundary/wall, Down is free, Left is free, Right is fire (dangerous).
+  - The immediate hazard is to the Right (0,2). A safe next step is Down to (1,1) or Left to (0,0). Right into a fire is unsafe and should be avoided.
+
+2) FIRST WRONG DECISION
+- Action taken: RIGHT from [0,1] to [0,2], which is a fire.
+- Why this counts as the first wrong decision:
+  - The immediate hazard (0,2) is explicitly fire in the dynamic config.
+  - The tactical choice that minimizes risk and progresses toward the goal is to avoid stepping into the fire and to move Down (toward the goal at (4,2)).
+  - The step into fire indicates a failure to correctly perceive or weigh the hazard in the local patch, or a misalignment between the policy’s learned behavior and the required hazard-avoidant behavior in this state.
+
+3) WHY THE POLICY FAILED (reference the dynamic config and available data)
+- Dynamic config references:
+  - Start: [0,1], Goal: [4,2], Fires: (0,2), (3,1), (3,3)
+  - The agent faced an immediate fire to the right (0,2) with safe options Down or Left.
+- Likely failure modes given the current data and setup:
+  - Insufficient hazard-avoidance bias in demonstrations: If corrective or training examples rarely force a step into a fire (or rarely demonstrate safe alternatives when a hazard is adjacent), the diffusion policy may still occasionally propose a risky move that looks locally attractive but is globally unsafe.
+  - Local vs. global horizon mismatch: The vision-conditioned policy evaluates a local patch. It may mis-value the short-term “progress” signal (moving right toward the visible area) versus the long-term requirement to avoid hazards and descend along a safe corridor.
+  - Ambiguity in the learned conditioning: The VLM/conditioner may not consistently encode the fire as an absolute obstacle in this exact configuration, especially when randomization of start/goal/hazards across episodes creates distributional shifts.
+  - Training signal misalignment: If the corrective signals during DAgger-like updates are inadequate or infrequent, the model may not firmly learn to prefer the safe downward path in such edge-case states.
+
+4) WHAT THE POLICY GOT WRONG
+- Hazard avoidance failure in a near-term, high-risk state:
+  - It chose a direct step into an adjacent hazard (0,2) instead of the safe, goal-progressing option (down to 1,1).
+- The policy’s action distribution in this state favored an action that immediately terminates the episode’s safety constraints, indicating:
+  - A gap in hazard-avoidance priors.
+  - A possible over-emphasis on “progress” signals if training demonstrated progress toward the goal in somewhat similar patches without emphasizing the hazard.
+- Consequences:
+  - Episode ends immediately with a large negative reward and no opportunity to learn a corrective path from this state in this episode.
+
+5) REGIONS / CONFIGURATIONS NEEDING DATA (where to collect more demonstrations)
+- Adjacent-hazard states:
+  - Start positions where an immediate neighbor is fire (e.g., [0,1] with fire at [0,2] or other starts near fire clusters).
+- Narrow corridors with multiple distant hazards:
+  - Situations where there are several fire cells forming a corridor (e.g., row 3 with fires at (3,1) and (3,3)) to test whether the agent can descend through a safe corridor (like column 2 or 1) without detouring into hazards.
+- Forced downward progress vs. lateral exploration:
+  - Scenarios where the optimal path requires consistent downward progress along a column to avoid row-3 hazards.
+- Randomized start/goal/config combinations:
+  - Ensure many demonstrations cover the exact same hazard-adjacent decision points, with explicit correct behavior (avoid hazard, move down/around hazard) to bolster the hazard-avoidance bias.
+- Explicit negative demonstrations for hazard-encounter transitions:
+  - Include episodes where the agent must deliberately avoid an adjacent hazard in favor of a longer but safe path that still reaches the goal.
+
+CORRECTIVE DEMONSTRATION TO RECORD (what the human should demonstrate)
+Context: Restore safe hazard avoidance in this configuration by showing a complete safe path from the given start to goal, emphasizing downward progression in the presence of an adjacent fire to the right.
+
+Recommended single corrective demonstration (from the provided episode configuration)
+- Path (start at [0,1]):
+  - Step 1: DOWN to [1,1]
+  - Step 2: DOWN to [2,1]
+  - Step 3: RIGHT to [2,2]
+  - Step 4: DOWN to [3,2]
+  - Step 5: DOWN to [4,2] (Goal)
+
+Rationale for this corrective path
+- It explicitly avoids the adjacent fire at (0,2) in the first move.
+- It follows a safe downward corridor around row 3’s hazards (avoids stepping into (3,1)).
+- It takes a direct, efficient route to the goal with minimal detours, which is representative of a good generalizable strategy for this configuration.
+
+Note on the “frame-by-frame” corrective narrative in the prompt
+- The prompt includes a proposed corrective narrative for a frame where the agent moved RIGHT into a fire, and then suggests correcting by DOWN to (1,1) and then continuing with DOWN to (2,1) and so on. For clarity in training data, capture the following as the corrective demonstration:
+  - From [0,1], perform DOWN to [1,1] (not RIGHT).
+  - Continue with DOWN to [2,1], RIGHT to [2,2], DOWN to [3,2], DOWN to [4,2].
+- If you are documenting the correction in the diffusion-policy training data, record this entire sequence as a single corrective demonstration (a complete safe episode from the given start to goal in this configuration) to reinforce hazard avoidance and efficient progress.
+
+Additional notes for training improvement
+- Augment demonstrations with explicit hazard-exclusion signals:
+  - Ensure each corrective demonstration explicitly marks the fire-adjacent decision as unacceptable and documents the safe alternative (e.g., DOWN).
+- Increase coverage of hazard-adjacent start states:
+  - Collect more demonstrations where the immediate neighbor is fire to bias the policy toward safe downward or lateral moves rather than risky forward/right choices.
+- Consider reward shaping or learning signals that emphasize safe hazard avoidance before progress:
+  - If the policy still assigns non-trivial probability to hazardous actions, strengthen the negative penalty for stepping onto fire in training updates and ensure hazard-avoidance paths are reinforced with higher priority.
+
+In short
+- The failure was caused by a hazard-avoidance omission: the agent chose to move into an adjacent fire instead of taking the safe downward path toward the goal.
+- The corrective demonstration should teach the agent to avoid the adjacent fire and follow a safe, efficient downward path to the goal, as described above.
+- Collect more data in hazard-adjacent states and emphasize explicit hazard-avoidance behavior in corrective demonstrations to strengthen the policy's safety prior.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+Here are simple, practical answers you can use for guiding corrective demonstrations.
+
+1) Where in the maze does the AI get confused?
+- At the very start, when there is a dangerous cell right next to the agent. The safe options are to move away from that danger, but the agent sometimes moves toward the danger instead.
+- In tight parts of the maze where there are several hazards nearby (like a corridor with fires on or near the path), the agent can get the idea that progress toward the goal justifies stepping toward danger. The decision point around hazards is where the confusion comes up.
+
+2) What should a good walkthrough look like in that area?
+- It should clearly show hazard avoidance from the first moment: do not move toward a nearby fire, even if it seems tempting.
+- It should then demonstrate following a safe route that stays in areas with no immediate danger, making steady progress toward the goal.
+- The walkthrough should be complete from the start to the goal, showing how to handle a few tricky hazard layouts without stepping into danger.
+- If possible, include a short, plain explanation of why the hazard was avoided (so the reason for the safe choice is obvious).
+
+3) What will the AI learn from seeing that walkthrough?
+- It will learn to treat nearby danger as a strong reason to avoid certain moves, not just as a distant concern.
+- It will learn to favor safe corridors or paths that keep away from hazards, rather than pushing straight for quick but risky progress.
+- It will start to generalize this hazard-avoidance reasoning to other random mazes with similar situations, not just the exact numbers in this episode.
+
+4) How many walkthroughs are needed and how should they vary?
+- Do several high-quality demonstrations that cover different hazard setups (not just one layout).
+- A good target is roughly 6–12 complete demonstrations, each showing hazard avoidance in a different but plausible arrangement.
+- Vary the situations: different ways hazards appear near the start, different cluster patterns in the middle, and different distances to the goal. This helps the policy learn to react correctly in a variety of random mazes, not just one fixed case.
+- Focus on variety rather than length: include different ways the same safe path can be taken, as long as the core lesson—avoid danger first and stay on a safe route—is clear.
+
+If you keep these points in mind, you’ll collect corrective demonstrations that reinforce safe behavior and help the policy generalize to new, randomized mazes.

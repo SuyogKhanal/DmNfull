@@ -211,7 +211,7 @@ def _run_single_episode(
         {"role": "end_frame",          "step_idx": len(steps) - 1},
     ]
 
-    env.close() #closed
+    env.close() #closed                                                                                                                                                                                                                                                                                                                                                             
 
     return {
         "episode_id":      episode_id,

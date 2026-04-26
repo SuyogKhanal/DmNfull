@@ -1,0 +1,112 @@
+=== ROOT CAUSE ANALYSIS ===
+Below is a concise, step-by-step failure analysis tailored to tell a human demonstrator what to show in a corrective demonstration for this episode.
+
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup
+  - Grid: 5x5
+  - Start: [0, 1]
+  - Goal: [4, 2]
+  - Fires: (0,2), (3,1), (3,3)
+  - Walls present but not in the given path
+  - Tile meanings: 0=free, 1=wall, 2=fire, 3=goal
+- Episode dynamics
+  - The immediate hazard adjacent to the start is at (0,2) (to the right).
+  - The agent’s first attempted move (and the episode outcome) indicate stepping into the adjacent fire hazard, which terminates the episode with a penalty.
+- Step-by-step trajectory for this episode
+  - Step 0 (start): Position [0, 1]. Adjacent: Up is boundary/walls, Down is free, Left is free, Right is fire at [0, 2].
+  - Step 1 (agent action): Move RIGHT to [0, 2] (fire hazard).
+  - Result: Episode terminates immediately due to stepping on fire. Final pos [0, 2]. Reward -10.10. Success: False.
+- Vision summary (relevant flags)
+  - Immediate hazard to the right: Yes (fire at [0,2]).
+  - Down/Left options from start are both safe; Right is dangerous.
+  - Goal distance from start: Manhattan distance 5 initially; but the hazard blocks the forward progress.
+
+Interpretation: The agent failed on the very first decision by stepping into an adjacent fire tile, instead of taking a hazard-avoiding corridor.
+
+2) FIRST WRONG DECISION
+- The first wrong decision occurred at the initial step:
+  - Chose RIGHT from [0, 1] to [0, 2], which is a fire tile.
+  - Rationale failure: The decision prioritized reducing raw distance to the goal without accounting for the adjacent hazard, leading to immediate termination.
+
+3) WHY THE POLICY FAILED (reference dynamic config and KAG if provided)
+- Dynamic config context
+  - Fires include (0,2) immediately to the right of the start, plus two fires later at (3,1) and (3,3).
+  - The agent must avoid stepping onto any fire tile, especially when one fire sits directly adjacent to the start.
+- What the policy likely learned (or biased toward)
+  - A bias toward reducing the reported distance to the goal, even when a high-risk hazard is immediately adjacent.
+  - Insufficient generalization for local hazard avoidance when the hazard is directly adjacent, causing a “greedy progress” behavior.
+  - Vision cues exist (fire tile visible to the right), but the policy apparently does not sufficiently weight the hazard signal in the first step.
+- KAG reference (if provided)
+  - Not provided in the prompt. If a knowledge-augmented guidance module (KAG) existed, it would need to foreground hazard maps and enforce a constraint preferring safe corridors when any adjacent tile is fire. Since no KAG is described, the observed failure aligns with a standard hazard-avoidance weakness typical in early-stage imitation policies trained primarily on demonstrations that emphasize goal-reaching rather than hazard avoidance.
+
+4) WHAT THE POLICY GOT WRONG
+- Hazard avoidance: It treated the immediate hazard as optional rather than mandatory for the first move.
+- Local vs. global planning: It favored a local distance-to-goal heuristic at the expense of safe corridor planning near hazards.
+- Curriculum/data gap: The training data (randomized starts/goals with fires) did not sufficiently cover hazard-avoidant demonstrations from the exact same starting configuration, so the policy didn’t learn a robust hazard-avoidance rule for adjacent fires.
+- Perception-to-action mapping: The vision signal indicating “fire to the right” did not produce an equivalent safe-action bias in the policy’s action distribution for the first step.
+
+5) REGIONS / CONFIGURATIONS NEEDING DATA
+- Hazard-adjacent starts: Starts where a fire is immediately adjacent (especially to the right) should be overrepresented in demonstrations, including both single-step hazard and longer hazard-free corridors.
+- Safe corridor exemplars: Paths that avoid all adjacent fires and use long safe corridors (e.g., left-edge route) to reach the goal should be included in demonstrations.
+- Alternative safe layouts: Other starts/goals with adjacent hazards in different directions (not just to the right) to ensure the policy learns directional hazard avoidance (e.g., up or left-adjacent hazards).
+- Diverse corridor patterns: Demonstrations that show why a corridor along a border (leftmost or bottom corridors) is preferable when hazards block the direct route.
+- Negative examples: Demonstrations where stepping into a hazard is correct to illustrate dilemmas (e.g., a scenario where hazard avoidance would be temporarily suboptimal) to improve policy robustness, but in this specific case the goal is to avoid all hazards.
+
+CORRECTIVE DEMONSTRATION (to provide the policy with a hazard-avoiding, goal-reaching path)
+Goal: Show a hazard-avoiding corridor path from the given start [0,1] to the goal [4,2] that never steps onto a fire tile, prioritizing safety over immediate distance reduction.
+
+Full corrective demonstration sequence (action-only, then grid coordinates for clarity)
+- Path: left-edge corridor around fires
+- Demonstration path (sequence of coordinates with corresponding actions)
+  1) [0, 1] -> [0, 0]: Action 2 (LEFT)
+  2) [0, 0] -> [1, 0]: Action 1 (DOWN)
+  3) [1, 0] -> [2, 0]: Action 1 (DOWN)
+  4) [2, 0] -> [3, 0]: Action 1 (DOWN)
+  5) [3, 0] -> [4, 0]: Action 1 (DOWN)
+  6) [4, 0] -> [4, 1]: Action 3 (RIGHT)
+  7) [4, 1] -> [4, 2]: Action 3 (RIGHT) [Goal reached]
+
+Notes
+- This path avoids all fire tiles (0,2), (3,1), (3,3) entirely.
+- It uses a safe corridor along the left edge (column 0) and then crosses to the goal on the bottom row (row 4).
+- If you want to demonstrate a shorter safe path in a different configuration, you could provide another safe corridor variant (e.g., from [0,1] go DOWN to [1,1], then LEFT to [1,0], etc.), but in this specific configuration the left-edge corridor is the cleanest hazard-avoidant route.
+
+Optional alternative corrective demonstration
+- If you want to illustrate a mixed strategy (as sometimes used in teaching, to show both safety and progress), you can show:
+  - 1) [0, 1] -> [0, 0] (LEFT)
+  - 2) [0, 0] -> [1, 0] (DOWN)
+  - 3) [1, 0] -> [1, 1] (RIGHT)
+  - 4) [1, 1] -> [2, 1] (DOWN)  [Note: This would risk (3,1) later; ensure the agent learns to avoid that fire, so continue safe corridor]
+  - 5) Then proceed down the left corridor again or rejoin the bottom corridor to reach [4, 2] safely.
+- Important: In this specific maze layout, stepping onto (3,1) later would be dangerous, so the safe corridor route remains the clearest demonstration.
+
+Short takeaway for the human demonstrator
+- Start by showing hazard-avoidance behavior when an immediate fire sits adjacent to the start.
+- Demonstrate a clear, hazard-free corridor path to the goal, even if it requires more steps than the naive “reduce distance to goal” approach.
+- Emphasize the left-edge corridor path as the robust template for this dynamic config: [0,1] -> [0,0] -> [1,0] -> [2,0] -> [3,0] -> [4,0] -> [4,1] -> [4,2].
+- Consider collecting additional demonstrations for starts with adjacent hazards in different directions to strengthen hazard generalization in the diffusion policy.
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.776): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(1, 2), (3, 0), (4, 1)]. The run was using the right column as the main route, moderately close to fire (2 steps away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 2 (similarity=0.776): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(1, 1), (2, 4), (3, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x RIGHT, 4x DOWN, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.775): A demonstration starting at (0, 0) with goal at (0, 0) and fires at [(2, 2), (2, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x UP, 4x LEFT, 1x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To improve the agent’s performance and fully address the need, new demonstrations should be created where the agent begins right next to fire hazards, either on the left or right side. These demonstrations should clearly show the agent deliberately moving away from the nearby fire by choosing safe corridors, such as the left-edge, top-edge, or right-column paths, instead of moving straight toward the goal and risking collision. It’s important to include varied goal locations to show that the strategy is about local hazard avoidance first, not just greedy moves toward the goal. Each demonstration should have clear annotations explaining why the agent chooses an initial safe step away from fire before heading toward the goal. This approach will help the agent learn to prioritize immediate safety by selecting hazard-free routes close to the start, which reduces collisions and improves its ability to generalize in environments with randomly placed fires and goals.
+
+=== DEMONSTRATION PRESCRIPTION ===
+Here are four simple answers you can use.
+
+1) Where in the maze does the AI get confused?
+- At the very first choice, there’s a danger right next to the start on the right. The AI tries to move toward the goal anyway and steps onto the fire, ending the run. The confusion is that a nearby hazard isn’t given enough weight when deciding the first move.
+
+2) What should a good walkthrough look like in that area?
+- Show that the agent notices the nearby fire and avoids it. Then demonstrate taking a safe route that stays away from all fires, using a clear, safe path along the outer edge, and continuing toward the goal. The emphasis is safety first, then progress, not rushing through just to get closer to the goal.
+
+3) What will the AI learn from seeing that walkthrough?
+- It will learn to treat hazards that are right next to the start as priorities to avoid. It will pick safe corridors when there are immediate dangers, even if that makes the route longer. This hazard-avoidant behavior should generalize to other mazes with random layouts.
+
+4) How many walkthroughs are needed and how should they vary?
+- Do about 4–6 demonstrations for this exact starting setup to solidify the pattern. Then add 2–3 more demonstrations where the hazard is placed in other directions around the start (to teach hazard handling in different spots). Include a couple of demonstrations with longer safe routes and slight variations in the safe path. The goal is to have enough variety so the lesson generalizes to many randomized mazes.
