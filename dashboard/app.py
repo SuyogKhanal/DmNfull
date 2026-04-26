@@ -38,6 +38,32 @@ def _state_init() -> Dict:
     }
 
 
+def _list_saved_runs() -> List[str]:
+    """
+    Scan results/runs, results/ablations, results/baselines for any directory
+    (up to 2 levels deep) that contains a full_output.json file.
+    Ablation suite layout: results/ablations/<run_TIMESTAMP>/<profile>/full_output.json
+    Single run layout:     results/runs/<run_TIMESTAMP>/full_output.json
+    """
+    out = []
+    for base in [RUNS_DIR_DEFAULT, ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT]:
+        p = Path(base)
+        if not p.exists():
+            continue
+        for d in sorted(p.iterdir()):
+            if not d.is_dir():
+                continue
+            # Direct child has full_output.json (single run)
+            if (d / "full_output.json").exists():
+                out.append(str(d))
+            else:
+                # One level deeper: profile subdirs inside an ablation suite run
+                for sub in sorted(d.iterdir()):
+                    if sub.is_dir() and (sub / "full_output.json").exists():
+                        out.append(str(sub))
+    return out
+
+
 def on_load_run(run_dir: str, state: Dict):
     state = dict(state or {})
     state["run_dir"] = run_dir
@@ -109,6 +135,18 @@ def on_rerun(
     state = dict(state or {})
     if not state.get("run_dir"):
         return state, "Load a saved run first.", "", "", ""
+
+    # The rerun source must be the rollout dir (shared Phase A data).
+    # For profile dirs inside a suite run, walk up to find the sibling rollout/.
+    run_dir = Path(state["run_dir"])
+    rollout_dir = run_dir / "rollout"
+    if not rollout_dir.exists():
+        parent_rollout = run_dir.parent / "rollout"
+        if parent_rollout.exists() and (parent_rollout / "full_output.json").exists():
+            rollout_dir = parent_rollout
+        else:
+            rollout_dir = run_dir  # fallback: use as-is
+
     overrides = {"pipeline": {
         "use_vlm":        bool(use_vlm),
         "use_kag":        bool(use_kag),
@@ -117,14 +155,28 @@ def on_rerun(
         "use_tkf":        bool(use_tkf),
         "use_aggregator": bool(use_aggregator),
     }}
+
+    # Write rerun output inside the suite root (sibling of profile dirs)
+    suite_root = run_dir.parent if (run_dir.parent / "suite_manifest.json").exists() else run_dir.parent
+    from datetime import datetime
+    rerun_name = f"rerun_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    out_run_dir = str(suite_root / rerun_name)
+
+    master_cfg_path = str(REPO_ROOT / "configs" / "experiment_config.yaml")
+
     try:
-        out = rerun_pipeline_only(state["run_dir"], overrides)
+        rerun_pipeline_only(
+            saved_run_dir=str(rollout_dir),
+            overrides=overrides,
+            out_run_dir=out_run_dir,
+            master_config_path=master_cfg_path,
+        )
     except Exception as e:
         return state, f"Rerun failed: {e}", "", "", ""
-    rerun_dir = Path(state["run_dir"]).parent / out["metadata"]["run_id"]
-    state["rerun_dir"] = str(rerun_dir)
-    status = f"Rerun complete → {rerun_dir}"
-    return state, status, str(rerun_dir), "", ""
+
+    state["rerun_dir"] = out_run_dir
+    status = f"Rerun complete \u2192 {out_run_dir}"
+    return state, status, out_run_dir, "", ""
 
 
 def on_diff(episode_id: Optional[int], state: Dict, mode: str):
@@ -147,54 +199,43 @@ def on_refresh_graph():
     return fig
 
 
-def _list_saved_runs() -> List[str]:
-    out = []
-    for base in [RUNS_DIR_DEFAULT, ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT]:
-        p = Path(base)
-        if p.exists():
-            for d in sorted(p.iterdir()):
-                if d.is_dir() and (d / "full_output.json").exists():
-                    out.append(str(d))
-                # Also scan one level deeper (profile subdirs)
-                for sub in sorted(d.iterdir()) if d.is_dir() else []:
-                    if sub.is_dir() and (sub / "full_output.json").exists():
-                        out.append(str(sub))
-    return out
-
-
 def build_app():
     with gr.Blocks(title="MazeNav Research Dashboard") as app:
         gr.Markdown("# MazeNav Research Dashboard")
-        gr.Markdown("Load a saved run → pick a failure episode → toggle components → re-run Phase B + C → compare prescriptions.")
+        gr.Markdown("Load a saved run \u2192 pick a failure episode \u2192 toggle components \u2192 re-run Phase B + C \u2192 compare prescriptions.")
 
         state = gr.State(_state_init())
 
         with gr.Tab("Explorer"):
             with gr.Row():
                 with gr.Column(scale=2):
-                    run_picker = gr.Dropdown(choices=_list_saved_runs(), label="Saved run directory", allow_custom_value=True)
+                    run_picker = gr.Dropdown(
+                        choices=_list_saved_runs(),
+                        label="Saved run directory",
+                        allow_custom_value=True,
+                    )
                     run_refresh = gr.Button("Refresh run list")
                     load_btn = gr.Button("Load Saved Run", variant="primary")
                     load_status = gr.Textbox(label="Status", lines=3, interactive=False)
 
                     gr.Markdown("### Component toggles (for re-run)")
-                    use_vlm = gr.Checkbox(label="VLM",        value=True)
-                    use_kag = gr.Checkbox(label="KAG",        value=True)
-                    use_rag = gr.Checkbox(label="RAG",        value=True)
-                    use_reasoning = gr.Checkbox(label="Reasoning",  value=True)
-                    use_tkf = gr.Checkbox(label="TKF",        value=True)
-                    use_aggregator = gr.Checkbox(label="Aggregator",value=True)
-                    rerun_btn = gr.Button("Re-run Pipeline (Phases B + C)", variant="primary")
-                    rerun_status = gr.Textbox(label="Re-run status", lines=2, interactive=False)
-                    rerun_dir_tb = gr.Textbox(label="Re-run dir", interactive=False)
+                    use_vlm        = gr.Checkbox(label="VLM",        value=True)
+                    use_kag        = gr.Checkbox(label="KAG",        value=True)
+                    use_rag        = gr.Checkbox(label="RAG",        value=True)
+                    use_reasoning  = gr.Checkbox(label="Reasoning",  value=True)
+                    use_tkf        = gr.Checkbox(label="TKF",        value=True)
+                    use_aggregator = gr.Checkbox(label="Aggregator", value=True)
+                    rerun_btn      = gr.Button("Re-run Pipeline (Phases B + C)", variant="primary")
+                    rerun_status   = gr.Textbox(label="Re-run status", lines=2, interactive=False)
+                    rerun_dir_tb   = gr.Textbox(label="Re-run dir", interactive=False)
 
                 with gr.Column(scale=3):
                     episode_dd = gr.Dropdown(label="Failure episode", choices=[], interactive=True)
 
                     with gr.Row():
-                        start_img = gr.Image(label="Start frame", type="filepath", height=220)
+                        start_img    = gr.Image(label="Start frame",        type="filepath", height=220)
                         highloss_img = gr.Image(label="Highest-loss frame", type="filepath", height=220)
-                        end_img   = gr.Image(label="End frame", type="filepath", height=220)
+                        end_img      = gr.Image(label="End frame",          type="filepath", height=220)
 
                     meta_box = gr.Textbox(label="Episode metadata", lines=8, interactive=False)
 
@@ -215,14 +256,14 @@ def build_app():
         with gr.Tab("Prescription Diff"):
             with gr.Row():
                 diff_mode = gr.Radio(choices=["Episode", "Cross-episode (Phase C)"], value="Episode", label="Diff target")
-                diff_btn = gr.Button("Compute Diff", variant="primary")
+                diff_btn  = gr.Button("Compute Diff", variant="primary")
             with gr.Row():
                 orig_box = gr.Textbox(label="Original prescription", lines=16)
-                new_box  = gr.Textbox(label="Re-run prescription",    lines=16)
+                new_box  = gr.Textbox(label="Re-run prescription",   lines=16)
             diff_html = gr.HTML()
 
         with gr.Tab("Performance Graph"):
-            perf_btn = gr.Button("Refresh from results/ablations + results/baselines", variant="primary")
+            perf_btn  = gr.Button("Refresh from results/ablations + results/baselines", variant="primary")
             perf_plot = gr.Plot()
 
         def _refresh_runs():
