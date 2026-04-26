@@ -211,7 +211,7 @@ def _run_single_episode(
         {"role": "end_frame",          "step_idx": len(steps) - 1},
     ]
 
-    env.close()
+    env.close() #closed
 
     return {
         "episode_id":      episode_id,
@@ -283,7 +283,6 @@ def run_rollouts(config: Dict, run_dir: Path) -> Dict:
             use_vision=use_vision,
         )
         print(f"[Rollout]  → steps={ed['total_steps']} reward={ed['total_reward']:.2f} success={ed['success']}")
-
         episode_dir = episodes_dir / f"episode_{ep_idx}"
         if bool(track_cfg.get("save_frames", True)):
             ed["frame_paths"] = _save_key_frames(ed["steps"], ed["key_frames"], episode_dir)
