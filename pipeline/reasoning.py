@@ -56,6 +56,10 @@ def _format_dynamic_config(episode: Dict) -> str:
     )
 
 
+def _flag_suffix(use_vlm: bool, use_kag: bool, use_rag: bool) -> str:
+    return f"v{int(bool(use_vlm))}_k{int(bool(use_kag))}_r{int(bool(use_rag))}"
+
+
 def build_analysis_prompt(
     episode: Dict,
     vision_report: str,
@@ -147,46 +151,81 @@ def run_reasoning(
     rag_context: str,
     tkf_block: str,
     llm_cfg: Dict,
+    cache=None,
+    use_vlm: bool = True,
+    use_kag: bool = True,
+    use_rag: bool = True,
 ) -> Tuple[str, str, str]:
     """Run both reasoning calls. Returns (analysis_text, prescription_text, combined_text)."""
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
     effort = str(llm_cfg.get("reasoning_effort", "high"))
-    client = _oai_client()
+    suffix = _flag_suffix(use_vlm, use_kag, use_rag)
 
+    analysis_key     = f"reasoning_analysis_{suffix}"
+    prescription_key = f"reasoning_prescription_{suffix}"
+
+    scope = None
+    if cache is not None:
+        scope = cache.episode_scope(episode["episode_id"])
+
+    client = None
     analysis_prompt = build_analysis_prompt(episode, vision_report, kag_context, rag_context)
-    try:
-        analysis_text = _chat_reasoning(
-            client, model,
-            [
-                {"role": "system", "content":
-                    "You are a navigation failure analyst for DAgger imitation learning. "
-                    "Walk through the agent's trajectory step by step. Identify what went wrong "
-                    "and why. Think step by step."},
-                {"role": "user", "content": analysis_prompt},
-            ],
-            max_tokens, effort,
-        )
-    except Exception as e:
-        traceback.print_exc()
-        analysis_text = f"[ANALYSIS ERROR: {e}]"
+    analysis_text = ""
+
+    cached_analysis = None
+    if cache is not None:
+        cached_analysis = cache.load(scope, analysis_key)
+    if cached_analysis is not None:
+        analysis_text = cached_analysis.get("text", "")
+    else:
+        client = _oai_client()
+        try:
+            analysis_text = _chat_reasoning(
+                client, model,
+                [
+                    {"role": "system", "content":
+                        "You are a navigation failure analyst for DAgger imitation learning. "
+                        "Walk through the agent's trajectory step by step. Identify what went wrong "
+                        "and why. Think step by step."},
+                    {"role": "user", "content": analysis_prompt},
+                ],
+                max_tokens, effort,
+            )
+        except Exception as e:
+            traceback.print_exc()
+            analysis_text = f"[ANALYSIS ERROR: {e}]"
+        if cache is not None:
+            cache.save(scope, analysis_key, {"text": analysis_text})
 
     prescription_prompt = build_prescription_prompt(episode, analysis_text, tkf_block)
-    try:
-        prescription_text = _chat_plain(
-            client, model,
-            [
-                {"role": "system", "content":
-                    "You are a friendly demonstration coach. Write in plain, everyday English. "
-                    "No coordinates, no technical jargon, no action sequences. "
-                    "Describe what the human should show the AI in simple terms."},
-                {"role": "user", "content": prescription_prompt},
-            ],
-            max_tokens, effort,
-        )
-    except Exception as e:
-        traceback.print_exc()
-        prescription_text = f"[PRESCRIPTION ERROR: {e}]"
+    prescription_text = ""
+
+    cached_pres = None
+    if cache is not None:
+        cached_pres = cache.load(scope, prescription_key)
+    if cached_pres is not None:
+        prescription_text = cached_pres.get("text", "")
+    else:
+        if client is None:
+            client = _oai_client()
+        try:
+            prescription_text = _chat_reasoning(
+                client, model,
+                [
+                    {"role": "system", "content":
+                        "You are a friendly demonstration coach. Write in plain, everyday English. "
+                        "No coordinates, no technical jargon, no action sequences. "
+                        "Describe what the human should show the AI in simple terms."},
+                    {"role": "user", "content": prescription_prompt},
+                ],
+                max_tokens, effort,
+            )
+        except Exception as e:
+            traceback.print_exc()
+            prescription_text = f"[PRESCRIPTION ERROR: {e}]"
+        if cache is not None:
+            cache.save(scope, prescription_key, {"text": prescription_text})
 
     combined = (
         "=== ROOT CAUSE ANALYSIS ===\n"
@@ -198,13 +237,30 @@ def run_reasoning(
     return analysis_text, prescription_text, combined
 
 
-def summarise_episode(reasoning_text: str, episode_id: int, llm_cfg: Dict) -> str:
+def summarise_episode(
+    reasoning_text: str,
+    episode_id: int,
+    llm_cfg: Dict,
+    cache=None,
+    use_vlm: bool = True,
+    use_kag: bool = True,
+    use_rag: bool = True,
+) -> str:
     """Condense full reasoning into a 3-5 sentence summary for Phase C input."""
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    suffix = _flag_suffix(use_vlm, use_kag, use_rag)
+    summary_key = f"reasoning_summary_{suffix}"
+
+    if cache is not None:
+        scope = cache.episode_scope(episode_id)
+        cached = cache.load(scope, summary_key)
+        if cached is not None:
+            return cached.get("text", reasoning_text[:800])
+
     client = _oai_client()
     try:
-        return _chat_plain(
+        text = _chat_plain(
             client, model,
             [
                 {"role": "system", "content": "Extract a concise 3-5 sentence summary. No preamble."},
@@ -221,7 +277,11 @@ def summarise_episode(reasoning_text: str, episode_id: int, llm_cfg: Dict) -> st
         )
     except Exception as e:
         traceback.print_exc()
-        return reasoning_text[:800]
+        text = reasoning_text[:800]
+
+    if cache is not None:
+        cache.save(cache.episode_scope(episode_id), summary_key, {"text": text})
+    return text
 
 
 def save_reasoning(text: str, episode_dir: Path) -> Path:

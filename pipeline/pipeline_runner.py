@@ -18,8 +18,7 @@ from pipeline.rag_bank import RAGBank, save_rag_retrieved
 from pipeline.reasoning import run_reasoning, summarise_episode, save_reasoning
 from pipeline.knowledge_fetcher import run_knowledge_check, format_tkf_block, save_tkf_result
 from pipeline.aggregator import (
-    cross_episode_reasoning,
-    final_structured_prescription,
+    run_aggregator,
     save_final_prescription,
     save_episode_final_prescription,
 )
@@ -75,17 +74,26 @@ def _build_phaseB_for_episode(
     kag_context: str,
     rag_bank: Optional[RAGBank],
     run_id: str,
+    cache=None,
 ) -> Dict:
     pipeline_flags = config.get("pipeline", {})
     llm_cfg = config.get("llm", {})
     tkf_cfg = config.get("tkf", {})
     track_cfg = config.get("tracking", {})
 
+    use_vlm        = bool(pipeline_flags.get("use_vlm", True))
+    use_kag        = bool(pipeline_flags.get("use_kag", True))
+    use_rag        = bool(pipeline_flags.get("use_rag", True))
+    use_reasoning  = bool(pipeline_flags.get("use_reasoning", True))
+    use_tkf        = bool(pipeline_flags.get("use_tkf", True))
+
+    episode_id = episode["episode_id"]
+
     vlm_report = ""
     per_frame: List[Dict] = []
-    if pipeline_flags.get("use_vlm", True):
-        print(f"  [Phase B][ep {episode['episode_id']}] VLM...")
-        vlm_report, per_frame = analyse_failure(episode, llm_cfg)
+    if use_vlm:
+        print(f"  [Phase B][ep {episode_id}] VLM...")
+        vlm_report, per_frame = analyse_failure(episode, llm_cfg, cache=cache)
         if track_cfg.get("save_prescriptions", True):
             save_vlm_report(vlm_report, episode_dir)
     else:
@@ -93,7 +101,7 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_vlm_report("DISABLED", episode_dir)
 
-    if pipeline_flags.get("use_kag", True):
+    if use_kag:
         kag_ctx_for_ep = kag_context
         if track_cfg.get("save_prescriptions", True):
             save_kag_context(kag_ctx_for_ep or "DISABLED", episode_dir)
@@ -103,8 +111,8 @@ def _build_phaseB_for_episode(
             save_kag_context("DISABLED", episode_dir)
 
     rag_ctx = ""
-    if pipeline_flags.get("use_rag", True) and rag_bank is not None:
-        print(f"  [Phase B][ep {episode['episode_id']}] RAG retrieve...")
+    if use_rag and rag_bank is not None:
+        print(f"  [Phase B][ep {episode_id}] RAG retrieve...")
         end_frame = episode.get("frame_paths", {}).get("end_frame")
         rag_ctx = rag_bank.retrieve(vlm_report or "", end_frame)
         if track_cfg.get("save_prescriptions", True):
@@ -119,28 +127,38 @@ def _build_phaseB_for_episode(
     tkf_result: Optional[Dict] = None
     tkf_block = ""
 
-    if pipeline_flags.get("use_reasoning", True):
-        print(f"  [Phase B][ep {episode['episode_id']}] Reasoning (analysis)...")
+    if use_reasoning:
+        print(f"  [Phase B][ep {episode_id}] Reasoning (analysis)...")
         analysis_text, _prelim_rx, _prelim_combined = run_reasoning(
             episode=episode,
-            vision_report=vlm_report if pipeline_flags.get("use_vlm", True) else "",
+            vision_report=vlm_report if use_vlm else "",
             kag_context=kag_ctx_for_ep,
             rag_context=rag_ctx,
             tkf_block="",
             llm_cfg=llm_cfg,
+            cache=cache,
+            use_vlm=use_vlm,
+            use_kag=use_kag,
+            use_rag=use_rag,
         )
     else:
         analysis_text = "[REASONING DISABLED]"
 
-    if pipeline_flags.get("use_tkf", True):
-        print(f"  [Phase B][ep {episode['episode_id']}] TKF...")
+    if use_tkf:
+        print(f"  [Phase B][ep {episode_id}] TKF...")
         try:
-            tkf_result = run_knowledge_check(analysis_text, tkf_cfg, llm_cfg)
+            tkf_result = run_knowledge_check(
+                analysis_text,
+                tkf_cfg,
+                llm_cfg,
+                cache=cache,
+                episode_id=episode_id,
+            )
             tkf_block = format_tkf_block(tkf_result)
             if track_cfg.get("save_prescriptions", True):
                 save_tkf_result(tkf_result, episode_dir)
         except Exception as e:
-            print(f"  [Phase B][ep {episode['episode_id']}] TKF error: {e}")
+            print(f"  [Phase B][ep {episode_id}] TKF error: {e}")
             tkf_block = ""
             if track_cfg.get("save_prescriptions", True):
                 save_tkf_result({"verdict": "ERROR", "error": str(e)}, episode_dir)
@@ -148,15 +166,19 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_tkf_result({"verdict": "DISABLED"}, episode_dir)
 
-    if pipeline_flags.get("use_reasoning", True):
-        print(f"  [Phase B][ep {episode['episode_id']}] Reasoning (prescription)...")
+    if use_reasoning:
+        print(f"  [Phase B][ep {episode_id}] Reasoning (prescription)...")
         analysis_text, prescription_text, combined_text = run_reasoning(
             episode=episode,
-            vision_report=vlm_report if pipeline_flags.get("use_vlm", True) else "",
+            vision_report=vlm_report if use_vlm else "",
             kag_context=kag_ctx_for_ep,
             rag_context=rag_ctx,
             tkf_block=tkf_block,
             llm_cfg=llm_cfg,
+            cache=cache,
+            use_vlm=use_vlm,
+            use_kag=use_kag,
+            use_rag=use_rag,
         )
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
@@ -165,12 +187,20 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
 
-    if pipeline_flags.get("use_reasoning", True):
-        summary = summarise_episode(combined_text, episode["episode_id"], llm_cfg)
+    if use_reasoning:
+        summary = summarise_episode(
+            combined_text,
+            episode_id,
+            llm_cfg,
+            cache=cache,
+            use_vlm=use_vlm,
+            use_kag=use_kag,
+            use_rag=use_rag,
+        )
     else:
-        summary = f"Reasoning disabled. Failure at episode {episode['episode_id']} with config {episode.get('dynamic_config', {})}."
+        summary = f"Reasoning disabled. Failure at episode {episode_id} with config {episode.get('dynamic_config', {})}."
 
-    if rag_bank is not None and pipeline_flags.get("use_rag", True):
+    if rag_bank is not None and use_rag:
         end_frame = episode.get("frame_paths", {}).get("end_frame")
         rag_bank.store(
             run_id=run_id,
@@ -184,7 +214,7 @@ def _build_phaseB_for_episode(
         save_episode_final_prescription(prescription_text or "[NO PRESCRIPTION]", episode_dir)
 
     return {
-        "episode_id":       episode["episode_id"],
+        "episode_id":       episode_id,
         "seed":             episode["seed"],
         "total_steps":      episode["total_steps"],
         "total_reward":     episode["total_reward"],
@@ -202,7 +232,7 @@ def _build_phaseB_for_episode(
     }
 
 
-def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str] = None) -> Dict:
+def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str] = None, cache=None) -> Dict:
     """Full Phase A + Phase B + Phase C run. Returns the full_output dict and writes all files to run_dir."""
     if run_dir is None:
         run_dir = _make_run_dir(config, tag=tag)
@@ -243,15 +273,20 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     per_episode: List[Dict] = []
     for ed in failures:
         episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
-        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, run_id))
+        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, run_id, cache=cache))
 
     cross_text = ""
     structured: Dict = {}
     if config.get("pipeline", {}).get("use_aggregator", True) and failures:
         print(f"\n{'='*70}\n[PipelineRunner] PHASE C — aggregator\n{'='*70}")
         maze_ascii = failures[0].get("ascii_grid", "")
-        cross_text = cross_episode_reasoning(per_episode, failure_ids, maze_ascii, config.get("llm", {}))
-        _raw, structured = final_structured_prescription(cross_text, per_episode, failure_ids, config.get("llm", {}))
+        cross_text, _raw, structured = run_aggregator(
+            failure_summaries=per_episode,
+            failure_ids=failure_ids,
+            maze_ascii=maze_ascii,
+            llm_cfg=config.get("llm", {}),
+            cache=cache,
+        )
 
     full_output = {
         "metadata": {
@@ -312,7 +347,7 @@ def _load_episode_from_saved_run(run_dir: Path, episode_id: int) -> Optional[Dic
     return ed
 
 
-def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Optional[str] = None, master_config_path: Optional[str] = None) -> Dict:
+def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Optional[str] = None, master_config_path: Optional[str] = None, cache=None) -> Dict:
     """Re-run Phase B + Phase C over a saved run's stored episodes/frames, with new toggle overrides."""
     saved = Path(saved_run_dir)
     if not saved.exists():
@@ -371,14 +406,19 @@ def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Option
     per_episode = []
     for ed in failures:
         episode_dir = out_dir / "episodes" / f"episode_{ed['episode_id']}"
-        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, out_dir.name))
+        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, out_dir.name, cache=cache))
 
     cross_text = ""
     structured: Dict = {}
     if config.get("pipeline", {}).get("use_aggregator", True) and failures:
         maze_ascii = failures[0].get("ascii_grid", "")
-        cross_text = cross_episode_reasoning(per_episode, [f["episode_id"] for f in failures], maze_ascii, config.get("llm", {}))
-        _raw, structured = final_structured_prescription(cross_text, per_episode, [f["episode_id"] for f in failures], config.get("llm", {}))
+        cross_text, _raw, structured = run_aggregator(
+            failure_summaries=per_episode,
+            failure_ids=[f["episode_id"] for f in failures],
+            maze_ascii=maze_ascii,
+            llm_cfg=config.get("llm", {}),
+            cache=cache,
+        )
 
     full_output = {
         "metadata": {
@@ -386,6 +426,10 @@ def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Option
             "timestamp":       datetime.now().isoformat(),
             "rerun_of":        str(saved),
             "pipeline_flags":  config.get("pipeline", {}),
+            "n_episodes":      saved_full.get("metadata", {}).get("n_episodes", 0),
+            "n_successes":     saved_full.get("metadata", {}).get("n_successes", 0),
+            "n_failures":      saved_full.get("metadata", {}).get("n_failures", len(saved_failure_ids)),
+            "seed_base":       saved_full.get("metadata", {}).get("seed_base"),
         },
         "config":    config,
         "phase_a":   saved_full.get("phase_a", {}),

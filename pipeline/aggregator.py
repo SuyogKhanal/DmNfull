@@ -41,7 +41,13 @@ def cross_episode_reasoning(
     failure_ids: List[int],
     maze_ascii: str,
     llm_cfg: Dict,
+    cache=None,
 ) -> str:
+    if cache is not None:
+        cached = cache.load(cache.run_scope(), "aggregator_cross")
+        if cached is not None:
+            return cached.get("text", "")
+
     n = len(failure_summaries)
     client = _oai_client()
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
@@ -51,7 +57,7 @@ def cross_episode_reasoning(
     valid_ids_str = ", ".join(str(i) for i in sorted(failure_ids))
 
     try:
-        return _chat_reasoning(
+        text = _chat_reasoning(
             client, model,
             [
                 {"role": "system", "content":
@@ -77,7 +83,11 @@ def cross_episode_reasoning(
         )
     except Exception as e:
         traceback.print_exc()
-        return f"[CROSS-EPISODE ERROR: {e}]"
+        text = f"[CROSS-EPISODE ERROR: {e}]"
+
+    if cache is not None:
+        cache.save(cache.run_scope(), "aggregator_cross", {"text": text})
+    return text
 
 
 def final_structured_prescription(
@@ -85,7 +95,13 @@ def final_structured_prescription(
     failure_summaries: List[Dict],
     failure_ids: List[int],
     llm_cfg: Dict,
+    cache=None,
 ) -> Tuple[str, Dict]:
+    if cache is not None:
+        cached = cache.load(cache.run_scope(), "aggregator_structured")
+        if cached is not None:
+            return cached.get("raw", ""), cached.get("parsed", {})
+
     n = len(failure_summaries)
     client = _oai_client()
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
@@ -138,6 +154,8 @@ def final_structured_prescription(
         )
     except Exception as e:
         traceback.print_exc()
+        if cache is not None:
+            cache.save(cache.run_scope(), "aggregator_structured", {"raw": f"[STRUCTURED ERROR: {e}]", "parsed": {}})
         return f"[STRUCTURED ERROR: {e}]", {}
 
     cleaned = re.sub(r"^```(?:json)?\s*\n?", "", raw.strip())
@@ -154,7 +172,23 @@ def final_structured_prescription(
             ep_ids = cluster.get("episodes_in_cluster", [])
             cluster["episodes_in_cluster"] = [eid for eid in ep_ids if eid in failure_ids_set]
 
+    if cache is not None:
+        cache.save(cache.run_scope(), "aggregator_structured", {"raw": raw, "parsed": parsed})
+
     return raw, parsed
+
+
+def run_aggregator(
+    failure_summaries: List[Dict],
+    failure_ids: List[int],
+    maze_ascii: str,
+    llm_cfg: Dict,
+    cache=None,
+) -> Tuple[str, str, Dict]:
+    """Phase C wrapper. Returns (cross_text, raw_structured, parsed_structured)."""
+    cross_text = cross_episode_reasoning(failure_summaries, failure_ids, maze_ascii, llm_cfg, cache=cache)
+    raw, parsed = final_structured_prescription(cross_text, failure_summaries, failure_ids, llm_cfg, cache=cache)
+    return cross_text, raw, parsed
 
 
 def save_final_prescription(cross_text: str, structured: Dict, run_dir: Path, episode_prescriptions: List[Dict]) -> Path:

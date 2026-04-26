@@ -3,7 +3,7 @@ import json
 import os
 import traceback
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 def _b64(path: str) -> str:
@@ -50,8 +50,15 @@ def _format_goal_fire_description(dyn_cfg: Dict) -> str:
 def analyse_failure(
     episode: Dict,
     llm_cfg: Dict,
+    cache=None,
 ) -> Tuple[str, List[Dict]]:
     """Run chained VLM analysis over the 3 key frames. Returns (combined_report, per_frame_list)."""
+    if cache is not None:
+        scope = cache.episode_scope(episode["episode_id"])
+        cached = cache.load(scope, "vlm_output")
+        if cached is not None:
+            return cached.get("report", ""), cached.get("per_frame", [])
+
     model = str(llm_cfg.get("vlm_model", llm_cfg.get("model", "gpt-5-nano-2025-08-07")))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
     client = _oai_client()
@@ -112,7 +119,6 @@ def analyse_failure(
 
     per_frame: List[Dict] = []
     previous_summary = ""
-
     frame_paths = episode.get("frame_paths", {}) or {}
 
     try:
@@ -166,6 +172,11 @@ def analyse_failure(
         lines.append("")
 
     report = "\n".join(lines)
+
+    if cache is not None:
+        scope = cache.episode_scope(episode["episode_id"])
+        cache.save(scope, "vlm_output", {"report": report, "per_frame": per_frame})
+
     return report, per_frame
 
 

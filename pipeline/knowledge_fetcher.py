@@ -274,8 +274,32 @@ def _llm_adjust_prescription(needs: str, retrieval_summary: str, verdict: str, r
     ).strip()
 
 
-def _run_direct(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str) -> Dict:
-    needs = _llm_identify_needs(reasoning_text, llm_model)
+def _identify_needs_cached(reasoning_text: str, llm_model: str, cache, episode_id: Optional[int]) -> str:
+    if cache is not None and episode_id is not None:
+        scope = cache.episode_scope(episode_id)
+        cached = cache.load(scope, "tkf_needs")
+        if cached is not None:
+            return cached.get("text", "")
+    text = _llm_identify_needs(reasoning_text, llm_model)
+    if cache is not None and episode_id is not None:
+        cache.save(cache.episode_scope(episode_id), "tkf_needs", {"text": text})
+    return text
+
+
+def _adjusted_cached(needs: str, summary: str, verdict: str, reasoning_text: str, llm_model: str, cache, episode_id: Optional[int]) -> str:
+    if cache is not None and episode_id is not None:
+        scope = cache.episode_scope(episode_id)
+        cached = cache.load(scope, "tkf_adjusted")
+        if cached is not None:
+            return cached.get("text", "")
+    text = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
+    if cache is not None and episode_id is not None:
+        cache.save(cache.episode_scope(episode_id), "tkf_adjusted", {"text": text})
+    return text
+
+
+def _run_direct(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str, cache=None, episode_id: Optional[int] = None) -> Dict:
+    needs = _identify_needs_cached(reasoning_text, llm_model, cache, episode_id)
     results = _query_index(index, meta, needs, clip_model, top_k)
     verdict = _verdict(results, found_thresh, partial_thresh)
     if results:
@@ -286,7 +310,7 @@ def _run_direct(reasoning_text: str, index, meta, clip_model: str, found_thresh:
         summary = "\n".join(lines)
     else:
         summary = f"Verdict: {verdict}\nNo matching demonstrations found."
-    adjusted = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
+    adjusted = _adjusted_cached(needs, summary, verdict, reasoning_text, llm_model, cache, episode_id)
     return {
         "needs_description":     needs,
         "verdict":               verdict,
@@ -296,14 +320,44 @@ def _run_direct(reasoning_text: str, index, meta, clip_model: str, found_thresh:
     }
 
 
-def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str) -> Dict:
+def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str, cache=None, episode_id: Optional[int] = None) -> Dict:
     try:
         from crewai import Agent, Task, Crew, Process
         from crewai.tools import BaseTool
         from pydantic import BaseModel, Field
     except ImportError as e:
         print(f"[TKF] CrewAI not installed ({e}) — falling back to direct pipeline.")
-        return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model)
+        return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model, cache, episode_id)
+
+    cached_needs = None
+    cached_adjusted = None
+    if cache is not None and episode_id is not None:
+        scope = cache.episode_scope(episode_id)
+        cn = cache.load(scope, "tkf_needs")
+        ca = cache.load(scope, "tkf_adjusted")
+        if cn is not None:
+            cached_needs = cn.get("text", "")
+        if ca is not None:
+            cached_adjusted = ca.get("text", "")
+
+    if cached_needs is not None and cached_adjusted is not None:
+        results = _query_index(index, meta, cached_needs, clip_model, top_k)
+        verdict = _verdict(results, found_thresh, partial_thresh)
+        if results:
+            lines = [f"Verdict: {verdict}", ""]
+            for r in results:
+                m = r["metadata"]
+                lines.append(f"  Match {r['rank']} (similarity={r['score']:.3f}): {m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]")
+            summary = "\n".join(lines)
+        else:
+            summary = f"Verdict: {verdict}\nNo matching demonstrations found."
+        return {
+            "needs_description":     cached_needs,
+            "verdict":               verdict,
+            "top_matches":           results,
+            "retrieval_summary":     summary,
+            "adjusted_prescription": cached_adjusted,
+        }
 
     needs_holder: Dict = {}
     retrieval_holder: Dict = {}
@@ -319,6 +373,9 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
         description: str = "Reads failure reasoning text and returns a plain-English description of what demo is missing."
         args_schema: type = NeedsQueryInput
         def _run(self, reasoning_text: str) -> str:
+            if cached_needs is not None:
+                needs_holder["needs"] = cached_needs
+                return cached_needs
             result = _llm_identify_needs(reasoning_text, llm_model)
             needs_holder["needs"] = result
             return result
@@ -366,6 +423,12 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
         if not adjusted:
             adjusted = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
 
+        if cache is not None and episode_id is not None:
+            scope = cache.episode_scope(episode_id)
+            if cached_needs is None:
+                cache.save(scope, "tkf_needs", {"text": needs})
+            cache.save(scope, "tkf_adjusted", {"text": adjusted})
+
         return {
             "needs_description":     needs,
             "verdict":               verdict,
@@ -376,10 +439,10 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
     except Exception as e:
         traceback.print_exc()
         print(f"[TKF] CrewAI error ({e}) — falling back to direct pipeline.")
-        return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model)
+        return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model, cache, episode_id)
 
 
-def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict) -> Dict:
+def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict, cache=None, episode_id: Optional[int] = None) -> Dict:
     demo_dir   = Path(tkf_cfg.get("demo_dir", "demos"))
     index_dir  = Path(tkf_cfg.get("index_path", "results/demo_knowledge_base"))
     clip_model = str(tkf_cfg.get("clip_model", "openai/clip-vit-large-patch14"))
@@ -405,8 +468,8 @@ def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict) -> Di
             }
 
     if use_crewai:
-        return _run_crewai(reasoning_text, index, meta, clip_model, found_th, partial_th, top_k, llm_model)
-    return _run_direct(reasoning_text, index, meta, clip_model, found_th, partial_th, top_k, llm_model)
+        return _run_crewai(reasoning_text, index, meta, clip_model, found_th, partial_th, top_k, llm_model, cache, episode_id)
+    return _run_direct(reasoning_text, index, meta, clip_model, found_th, partial_th, top_k, llm_model, cache, episode_id)
 
 
 def format_tkf_block(tkf_result: Optional[Dict]) -> str:
