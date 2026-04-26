@@ -1,0 +1,213 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "dynamic_maze_navigation",
+    "description": "Structured knowledge graph describing the dynamic 5x5 maze navigation environment used in the diffusion-policy imitation learning research project. Consumed by the Reasoning LLM to ground failure analysis in verified environment facts (geometry, dynamics, rewards, failure taxonomy, policy constraints). All coordinates use (row, col) with top-left = (0,0) and bottom-right = (4,4).",
+    "coordinate_system": "(row, col), origin top-left, row increases downward, col increases rightward",
+    "grid_shape": [5, 5]
+  },
+
+  "schema": {
+    "node_types": [
+      {"type": "GridWorld",           "description": "The 5x5 discrete maze world itself."},
+      {"type": "Tile",                "description": "A single cell in the grid (FREE, WALL, FIRE, or GOAL)."},
+      {"type": "Agent",               "description": "The navigating entity controlled by the diffusion policy."},
+      {"type": "Goal",                "description": "The target cell the agent must reach for success."},
+      {"type": "FireHazard",          "description": "A dangerous cell that terminates the episode on contact."},
+      {"type": "Wall",                "description": "An impassable cell; stepping into one costs a penalty but the agent does not move."},
+      {"type": "Action",              "description": "One of four discrete moves available to the agent."},
+      {"type": "Corridor",            "description": "A named safe navigation route that avoids fire in the multimodal layout."},
+      {"type": "FailureMode",         "description": "A category of episode termination without success."},
+      {"type": "RewardSignal",        "description": "A scalar reward associated with an event."},
+      {"type": "ObservationComponent","description": "A sub-element of the agent's observation dict."},
+      {"type": "DynamicConfig",       "description": "A randomisation knob controlling per-episode start/goal/fire placement."},
+      {"type": "PolicyConstraint",    "description": "A structural constraint imposed by the MazeDiffusionPolicy architecture."}
+    ],
+    "relation_types": [
+      {"relation": "HAS_TILE",        "description": "GridWorld contains a Tile."},
+      {"relation": "CAN_ENTER",       "description": "Agent can legally move onto a Tile type."},
+      {"relation": "TERMINATES_ON",   "description": "Episode ends when the agent contacts this Tile."},
+      {"relation": "SUCCEEDS_ON",     "description": "Episode succeeds when the agent contacts this Tile."},
+      {"relation": "PENALISES",       "description": "An event emits a negative RewardSignal."},
+      {"relation": "NAVIGATES_VIA",   "description": "Agent uses a Corridor to reach the Goal."},
+      {"relation": "OBSERVES",        "description": "Agent observes an ObservationComponent each step."},
+      {"relation": "RANDOMISES",      "description": "DynamicConfig randomises a Tile or Agent placement per episode."},
+      {"relation": "CAUSES_FAILURE",  "description": "An event triggers a FailureMode."},
+      {"relation": "AVOIDS",          "description": "A Corridor avoids a FireHazard region."},
+      {"relation": "CONNECTS_TO",     "description": "A Corridor connects one grid region to another."},
+      {"relation": "ENFORCES",        "description": "A PolicyConstraint enforced by the architecture."}
+    ]
+  },
+
+  "nodes": [
+    {
+      "id": "gw_main",
+      "type": "GridWorld",
+      "label": "Dynamic 5x5 Maze",
+      "properties": {
+        "grid_size": 5,
+        "num_cells": 25,
+        "top_left": [0, 0],
+        "bottom_right": [4, 4],
+        "max_steps_per_episode": 200,
+        "layout_name": "multimodal"
+      }
+    },
+
+    {"id": "tile_free", "type": "Tile", "label": "FREE",
+     "properties": {"value": 0, "enterable": true, "reward_on_enter": -0.1, "description": "Normal passable cell. Entering costs the step penalty only."}},
+    {"id": "tile_wall", "type": "Tile", "label": "WALL",
+     "properties": {"value": 1, "enterable": false, "reward_on_hit": -0.5, "description": "Impassable cell. Attempting to move into a wall keeps the agent in place and applies the wall-hit penalty."}},
+    {"id": "tile_fire", "type": "Tile", "label": "FIRE",
+     "properties": {"value": 2, "enterable": true, "terminates_episode": true, "reward_on_enter": -10.0, "description": "Hazard cell. Entering terminates the episode immediately with large negative reward."}},
+    {"id": "tile_goal", "type": "Tile", "label": "GOAL",
+     "properties": {"value": 3, "enterable": true, "terminates_episode": true, "reward_on_enter": 10.0, "description": "Target cell. Entering terminates the episode with large positive reward (success)."}},
+
+    {"id": "agent_main", "type": "Agent", "label": "Navigating Agent",
+     "properties": {
+       "controller": "MazeDiffusionPolicy",
+       "action_selection": "argmax over one-hot action_dim=4 channels of the first predicted action in the denoised sequence",
+       "render_colour_rgb": [30, 100, 220]
+     }},
+
+    {"id": "goal_main", "type": "Goal", "label": "Episode Goal",
+     "properties": {"randomised_per_episode": true, "render_colour_rgb": [50, 200, 80]}},
+
+    {"id": "fire_hazard_main", "type": "FireHazard", "label": "Fire Hazards",
+     "properties": {
+       "default_count": 3,
+       "configurable": true,
+       "randomised_per_episode": true,
+       "render_colour_rgb": [220, 60, 20],
+       "danger": "Instant termination on contact. Agent must never step onto a FIRE tile."
+     }},
+
+    {"id": "wall_main", "type": "Wall", "label": "Maze Walls",
+     "properties": {"source": "configs/maze_layouts.py layout['grid'] values == 1"}},
+
+    {"id": "act_up",    "type": "Action", "label": "UP",    "properties": {"index": 0, "delta": [-1, 0]}},
+    {"id": "act_down",  "type": "Action", "label": "DOWN",  "properties": {"index": 1, "delta": [ 1, 0]}},
+    {"id": "act_left",  "type": "Action", "label": "LEFT",  "properties": {"index": 2, "delta": [ 0,-1]}},
+    {"id": "act_right", "type": "Action", "label": "RIGHT", "properties": {"index": 3, "delta": [ 0, 1]}},
+
+    {"id": "corridor_left_edge",  "type": "Corridor", "label": "Left-edge corridor",
+     "properties": {"path_description": "Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.", "ideal_for": "Start positions near the top-left quadrant when fire occupies the central rows."}},
+    {"id": "corridor_top_edge",   "type": "Corridor", "label": "Top-edge corridor",
+     "properties": {"path_description": "Stay in row 0 while traversing to the goal column, then descend along that column.", "ideal_for": "Start positions near the top rows when fire occupies the middle rows."}},
+    {"id": "corridor_right_col",  "type": "Corridor", "label": "Right-column corridor",
+     "properties": {"path_description": "Reach column 4 along the top, then descend column 4 to the goal row.", "ideal_for": "Start positions near the top-right when the central and bottom-left regions are blocked by fire."}},
+
+    {"id": "fm_fire_collision", "type": "FailureMode", "label": "fire_collision",
+     "properties": {"description": "Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration."}},
+    {"id": "fm_timeout",        "type": "FailureMode", "label": "timeout",
+     "properties": {"description": "Episode reached MAX_STEPS (200) without reaching the goal. Indicates looping, hesitation, or oscillation."}},
+    {"id": "fm_wall_thrashing", "type": "FailureMode", "label": "wall_thrashing",
+     "properties": {"description": "Agent repeatedly hit walls while failing to progress toward the goal. Usually co-occurs with timeout."}},
+
+    {"id": "rew_goal",    "type": "RewardSignal", "label": "GOAL_REWARD",   "properties": {"value":  10.0}},
+    {"id": "rew_fire",    "type": "RewardSignal", "label": "FIRE_PENALTY",  "properties": {"value": -10.0}},
+    {"id": "rew_wall",    "type": "RewardSignal", "label": "WALL_PENALTY",  "properties": {"value":  -0.5}},
+    {"id": "rew_step",    "type": "RewardSignal", "label": "STEP_PENALTY",  "properties": {"value":  -0.1}},
+    {"id": "rew_revisit", "type": "RewardSignal", "label": "REVISIT_PENALTY","properties":{"value":  -0.05}},
+
+    {"id": "obs_state", "type": "ObservationComponent", "label": "state_vector",
+     "properties": {
+       "shape": [14],
+       "dtype": "float32",
+       "layout": "[agent_row/4, agent_col/4, goal_row/4, goal_col/4, 3x3 local neighbourhood values / 3.0 (9 entries), steps_remaining / 200]",
+       "notes": "The goal position is always present in state[2:4], so the policy can condition on any goal placement."
+     }},
+    {"id": "obs_image", "type": "ObservationComponent", "label": "image",
+     "properties": {
+       "shape": [64, 64, 3],
+       "dtype": "uint8 (rendered); normalised to float32 [0,1] before encoder",
+       "description": "Bird's-eye RGB render. Blue=agent, Green=goal, Red=fire, Dark=wall, Light=free."
+     }},
+
+    {"id": "cfg_rand_start", "type": "DynamicConfig", "label": "randomize_start",
+     "properties": {"flag": "randomize_start", "default": true, "target": "agent_pos"}},
+    {"id": "cfg_rand_goal",  "type": "DynamicConfig", "label": "randomize_goal",
+     "properties": {"flag": "randomize_goal",  "default": true, "target": "goal_pos"}},
+    {"id": "cfg_rand_fire",  "type": "DynamicConfig", "label": "randomize_fire",
+     "properties": {"flag": "randomize_fire",  "default": true, "target": "fire_positions", "num_fire_tiles_default": 3}},
+    {"id": "cfg_min_sg_dist","type": "DynamicConfig", "label": "min_start_goal_manhattan",
+     "properties": {"value": 4, "description": "Enforced minimum Manhattan distance between start and goal to prevent trivially short episodes."}},
+
+    {"id": "pc_stochastic_ddpm", "type": "PolicyConstraint", "label": "Stochastic DDPM Inference",
+     "properties": {
+       "num_diffusion_steps": 200,
+       "description": "Inference draws a fresh Gaussian noise tensor and denoises over 200 steps. Identical observations can yield different action sequences run-to-run — this is intended probabilism, not a bug."
+     }},
+    {"id": "pc_cell_encoder", "type": "PolicyConstraint", "label": "CellAlignedEncoder",
+     "properties": {
+       "architecture": "1x1 Conv2d stack followed by AvgPool2d(kernel_size=cell_px, stride=cell_px)",
+       "feature_dim": 128,
+       "grid_size": 5,
+       "cell_px": 16,
+       "description": "Custom grid-cell-aware vision encoder with zero cross-cell bleed. Each grid cell's pixels are pooled independently into one feature before projection. Not a ResNet."
+     }},
+    {"id": "pc_horizons", "type": "PolicyConstraint", "label": "Observation/Prediction Horizons",
+     "properties": {"obs_horizon": 4, "pred_horizon": 3, "action_dim": 4,
+                    "description": "Policy observes the last 4 (state, image) pairs and predicts the next 3 one-hot actions; only the first action of the sequence is executed each step."}},
+    {"id": "pc_unet_shape", "type": "PolicyConstraint", "label": "UNet1D backbone",
+     "properties": {"dim": 64, "dim_mults": [1, 2, 4]}}
+  ],
+
+  "edges": [
+    {"source": "gw_main", "target": "tile_free", "relation": "HAS_TILE"},
+    {"source": "gw_main", "target": "tile_wall", "relation": "HAS_TILE"},
+    {"source": "gw_main", "target": "tile_fire", "relation": "HAS_TILE"},
+    {"source": "gw_main", "target": "tile_goal", "relation": "HAS_TILE"},
+
+    {"source": "agent_main", "target": "tile_free", "relation": "CAN_ENTER"},
+    {"source": "agent_main", "target": "tile_fire", "relation": "CAN_ENTER", "properties": {"warning": "Entering terminates the episode with -10 reward."}},
+    {"source": "agent_main", "target": "tile_goal", "relation": "CAN_ENTER"},
+    {"source": "agent_main", "target": "tile_wall", "relation": "CAN_ENTER", "properties": {"blocked": true, "effect": "Agent remains in place; wall penalty -0.5 applied."}},
+
+    {"source": "agent_main", "target": "tile_fire", "relation": "TERMINATES_ON", "properties": {"failure_mode": "fire_collision"}},
+    {"source": "agent_main", "target": "tile_goal", "relation": "SUCCEEDS_ON"},
+
+    {"source": "tile_goal", "target": "rew_goal",    "relation": "PENALISES", "properties": {"sign": "positive"}},
+    {"source": "tile_fire", "target": "rew_fire",    "relation": "PENALISES"},
+    {"source": "tile_wall", "target": "rew_wall",    "relation": "PENALISES"},
+    {"source": "agent_main","target": "rew_step",    "relation": "PENALISES", "properties": {"applied_every_step": true}},
+    {"source": "agent_main","target": "rew_revisit", "relation": "PENALISES", "properties": {"applied_when": "agent re-enters a previously visited free cell"}},
+
+    {"source": "agent_main", "target": "corridor_left_edge",  "relation": "NAVIGATES_VIA"},
+    {"source": "agent_main", "target": "corridor_top_edge",   "relation": "NAVIGATES_VIA"},
+    {"source": "agent_main", "target": "corridor_right_col",  "relation": "NAVIGATES_VIA"},
+
+    {"source": "corridor_left_edge", "target": "fire_hazard_main", "relation": "AVOIDS"},
+    {"source": "corridor_top_edge",  "target": "fire_hazard_main", "relation": "AVOIDS"},
+    {"source": "corridor_right_col", "target": "fire_hazard_main", "relation": "AVOIDS"},
+
+    {"source": "corridor_left_edge", "target": "goal_main", "relation": "CONNECTS_TO"},
+    {"source": "corridor_top_edge",  "target": "goal_main", "relation": "CONNECTS_TO"},
+    {"source": "corridor_right_col", "target": "goal_main", "relation": "CONNECTS_TO"},
+
+    {"source": "agent_main", "target": "obs_state", "relation": "OBSERVES"},
+    {"source": "agent_main", "target": "obs_image", "relation": "OBSERVES"},
+
+    {"source": "cfg_rand_start", "target": "agent_main",       "relation": "RANDOMISES"},
+    {"source": "cfg_rand_goal",  "target": "goal_main",        "relation": "RANDOMISES"},
+    {"source": "cfg_rand_fire",  "target": "fire_hazard_main", "relation": "RANDOMISES"},
+    {"source": "cfg_min_sg_dist","target": "gw_main",          "relation": "RANDOMISES", "properties": {"constraint": "min_manhattan(start, goal) >= 4"}},
+
+    {"source": "tile_fire", "target": "fm_fire_collision", "relation": "CAUSES_FAILURE"},
+    {"source": "gw_main",   "target": "fm_timeout",        "relation": "CAUSES_FAILURE", "properties": {"trigger": "step_count >= 200 and agent has not reached goal"}},
+    {"source": "tile_wall", "target": "fm_wall_thrashing", "relation": "CAUSES_FAILURE", "properties": {"trigger": "repeated wall-hit penalties without progress"}},
+
+    {"source": "agent_main", "target": "pc_stochastic_ddpm", "relation": "ENFORCES"},
+    {"source": "agent_main", "target": "pc_cell_encoder",    "relation": "ENFORCES"},
+    {"source": "agent_main", "target": "pc_horizons",        "relation": "ENFORCES"},
+    {"source": "agent_main", "target": "pc_unet_shape",      "relation": "ENFORCES"}
+  ],
+
+  "reasoning_implications": {
+    "fire_collision_per_episode": "If the agent stepped onto FIRE, the policy has not generalised fire-avoidance to this particular (start, goal, fire-placement) configuration. Prescribe a corrective demonstration that starts from a similar region and shows the safe corridor (left-edge, top-edge, or right-column) appropriate to this fire placement.",
+    "timeout_per_episode": "If the agent timed out, it is likely oscillating or hesitating. Prescribe demonstrations that commit to one corridor without backtracking.",
+    "wall_thrashing_per_episode": "If the agent hit many walls, it is not using the state vector's local-neighbourhood signal effectively. Prescribe demonstrations that include approach-and-turn behaviour near walls.",
+    "dynamic_randomisation_caveat": "Because start, goal, and fire are all randomised per episode, the policy must generalise across configurations. A demo prescription should describe the SITUATION (fire placement pattern relative to start/goal) rather than a fixed coordinate path."
+  }
+}

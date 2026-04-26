@@ -1,0 +1,3295 @@
+File 1: knowledge/kag_maze_knowledge.json
+Responsibility: The structured knowledge graph document describing the dynamic maze environment — nodes (Grid, Tiles, Agent, Goal, Fire, Actions, Corridors, Failure modes, Reward signals, Observation components, Dynamic config, Policy constraints) and edges (relations between them). This file is the authoritative source injected into the Reasoning LLM when use_kag: true.
+json{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "dynamic_maze_navigation",
+    "description": "Structured knowledge graph describing the dynamic 5x5 maze navigation environment used in the diffusion-policy imitation learning research project. Consumed by the Reasoning LLM to ground failure analysis in verified environment facts (geometry, dynamics, rewards, failure taxonomy, policy constraints). All coordinates use (row, col) with top-left = (0,0) and bottom-right = (4,4).",
+    "coordinate_system": "(row, col), origin top-left, row increases downward, col increases rightward",
+    "grid_shape": [5, 5]
+  },
+
+  "schema": {
+    "node_types": [
+      {"type": "GridWorld",           "description": "The 5x5 discrete maze world itself."},
+      {"type": "Tile",                "description": "A single cell in the grid (FREE, WALL, FIRE, or GOAL)."},
+      {"type": "Agent",               "description": "The navigating entity controlled by the diffusion policy."},
+      {"type": "Goal",                "description": "The target cell the agent must reach for success."},
+      {"type": "FireHazard",          "description": "A dangerous cell that terminates the episode on contact."},
+      {"type": "Wall",                "description": "An impassable cell; stepping into one costs a penalty but the agent does not move."},
+      {"type": "Action",              "description": "One of four discrete moves available to the agent."},
+      {"type": "Corridor",            "description": "A named safe navigation route that avoids fire in the multimodal layout."},
+      {"type": "FailureMode",         "description": "A category of episode termination without success."},
+      {"type": "RewardSignal",        "description": "A scalar reward associated with an event."},
+      {"type": "ObservationComponent","description": "A sub-element of the agent's observation dict."},
+      {"type": "DynamicConfig",       "description": "A randomisation knob controlling per-episode start/goal/fire placement."},
+      {"type": "PolicyConstraint",    "description": "A structural constraint imposed by the MazeDiffusionPolicy architecture."}
+    ],
+    "relation_types": [
+      {"relation": "HAS_TILE",        "description": "GridWorld contains a Tile."},
+      {"relation": "CAN_ENTER",       "description": "Agent can legally move onto a Tile type."},
+      {"relation": "TERMINATES_ON",   "description": "Episode ends when the agent contacts this Tile."},
+      {"relation": "SUCCEEDS_ON",     "description": "Episode succeeds when the agent contacts this Tile."},
+      {"relation": "PENALISES",       "description": "An event emits a negative RewardSignal."},
+      {"relation": "NAVIGATES_VIA",   "description": "Agent uses a Corridor to reach the Goal."},
+      {"relation": "OBSERVES",        "description": "Agent observes an ObservationComponent each step."},
+      {"relation": "RANDOMISES",      "description": "DynamicConfig randomises a Tile or Agent placement per episode."},
+      {"relation": "CAUSES_FAILURE",  "description": "An event triggers a FailureMode."},
+      {"relation": "AVOIDS",          "description": "A Corridor avoids a FireHazard region."},
+      {"relation": "CONNECTS_TO",     "description": "A Corridor connects one grid region to another."},
+      {"relation": "ENFORCES",        "description": "A PolicyConstraint enforced by the architecture."}
+    ]
+  },
+
+  "nodes": [
+    {
+      "id": "gw_main",
+      "type": "GridWorld",
+      "label": "Dynamic 5x5 Maze",
+      "properties": {
+        "grid_size": 5,
+        "num_cells": 25,
+        "top_left": [0, 0],
+        "bottom_right": [4, 4],
+        "max_steps_per_episode": 200,
+        "layout_name": "multimodal"
+      }
+    },
+
+    {"id": "tile_free", "type": "Tile", "label": "FREE",
+     "properties": {"value": 0, "enterable": true, "reward_on_enter": -0.1, "description": "Normal passable cell. Entering costs the step penalty only."}},
+    {"id": "tile_wall", "type": "Tile", "label": "WALL",
+     "properties": {"value": 1, "enterable": false, "reward_on_hit": -0.5, "description": "Impassable cell. Attempting to move into a wall keeps the agent in place and applies the wall-hit penalty."}},
+    {"id": "tile_fire", "type": "Tile", "label": "FIRE",
+     "properties": {"value": 2, "enterable": true, "terminates_episode": true, "reward_on_enter": -10.0, "description": "Hazard cell. Entering terminates the episode immediately with large negative reward."}},
+    {"id": "tile_goal", "type": "Tile", "label": "GOAL",
+     "properties": {"value": 3, "enterable": true, "terminates_episode": true, "reward_on_enter": 10.0, "description": "Target cell. Entering terminates the episode with large positive reward (success)."}},
+
+    {"id": "agent_main", "type": "Agent", "label": "Navigating Agent",
+     "properties": {
+       "controller": "MazeDiffusionPolicy",
+       "action_selection": "argmax over one-hot action_dim=4 channels of the first predicted action in the denoised sequence",
+       "render_colour_rgb": [30, 100, 220]
+     }},
+
+    {"id": "goal_main", "type": "Goal", "label": "Episode Goal",
+     "properties": {"randomised_per_episode": true, "render_colour_rgb": [50, 200, 80]}},
+
+    {"id": "fire_hazard_main", "type": "FireHazard", "label": "Fire Hazards",
+     "properties": {
+       "default_count": 3,
+       "configurable": true,
+       "randomised_per_episode": true,
+       "render_colour_rgb": [220, 60, 20],
+       "danger": "Instant termination on contact. Agent must never step onto a FIRE tile."
+     }},
+
+    {"id": "wall_main", "type": "Wall", "label": "Maze Walls",
+     "properties": {"source": "configs/maze_layouts.py layout['grid'] values == 1"}},
+
+    {"id": "act_up",    "type": "Action", "label": "UP",    "properties": {"index": 0, "delta": [-1, 0]}},
+    {"id": "act_down",  "type": "Action", "label": "DOWN",  "properties": {"index": 1, "delta": [ 1, 0]}},
+    {"id": "act_left",  "type": "Action", "label": "LEFT",  "properties": {"index": 2, "delta": [ 0,-1]}},
+    {"id": "act_right", "type": "Action", "label": "RIGHT", "properties": {"index": 3, "delta": [ 0, 1]}},
+
+    {"id": "corridor_left_edge",  "type": "Corridor", "label": "Left-edge corridor",
+     "properties": {"path_description": "Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.", "ideal_for": "Start positions near the top-left quadrant when fire occupies the central rows."}},
+    {"id": "corridor_top_edge",   "type": "Corridor", "label": "Top-edge corridor",
+     "properties": {"path_description": "Stay in row 0 while traversing to the goal column, then descend along that column.", "ideal_for": "Start positions near the top rows when fire occupies the middle rows."}},
+    {"id": "corridor_right_col",  "type": "Corridor", "label": "Right-column corridor",
+     "properties": {"path_description": "Reach column 4 along the top, then descend column 4 to the goal row.", "ideal_for": "Start positions near the top-right when the central and bottom-left regions are blocked by fire."}},
+
+    {"id": "fm_fire_collision", "type": "FailureMode", "label": "fire_collision",
+     "properties": {"description": "Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration."}},
+    {"id": "fm_timeout",        "type": "FailureMode", "label": "timeout",
+     "properties": {"description": "Episode reached MAX_STEPS (200) without reaching the goal. Indicates looping, hesitation, or oscillation."}},
+    {"id": "fm_wall_thrashing", "type": "FailureMode", "label": "wall_thrashing",
+     "properties": {"description": "Agent repeatedly hit walls while failing to progress toward the goal. Usually co-occurs with timeout."}},
+
+    {"id": "rew_goal",    "type": "RewardSignal", "label": "GOAL_REWARD",   "properties": {"value":  10.0}},
+    {"id": "rew_fire",    "type": "RewardSignal", "label": "FIRE_PENALTY",  "properties": {"value": -10.0}},
+    {"id": "rew_wall",    "type": "RewardSignal", "label": "WALL_PENALTY",  "properties": {"value":  -0.5}},
+    {"id": "rew_step",    "type": "RewardSignal", "label": "STEP_PENALTY",  "properties": {"value":  -0.1}},
+    {"id": "rew_revisit", "type": "RewardSignal", "label": "REVISIT_PENALTY","properties":{"value":  -0.05}},
+
+    {"id": "obs_state", "type": "ObservationComponent", "label": "state_vector",
+     "properties": {
+       "shape": [14],
+       "dtype": "float32",
+       "layout": "[agent_row/4, agent_col/4, goal_row/4, goal_col/4, 3x3 local neighbourhood values / 3.0 (9 entries), steps_remaining / 200]",
+       "notes": "The goal position is always present in state[2:4], so the policy can condition on any goal placement."
+     }},
+    {"id": "obs_image", "type": "ObservationComponent", "label": "image",
+     "properties": {
+       "shape": [64, 64, 3],
+       "dtype": "uint8 (rendered); normalised to float32 [0,1] before encoder",
+       "description": "Bird's-eye RGB render. Blue=agent, Green=goal, Red=fire, Dark=wall, Light=free."
+     }},
+
+    {"id": "cfg_rand_start", "type": "DynamicConfig", "label": "randomize_start",
+     "properties": {"flag": "randomize_start", "default": true, "target": "agent_pos"}},
+    {"id": "cfg_rand_goal",  "type": "DynamicConfig", "label": "randomize_goal",
+     "properties": {"flag": "randomize_goal",  "default": true, "target": "goal_pos"}},
+    {"id": "cfg_rand_fire",  "type": "DynamicConfig", "label": "randomize_fire",
+     "properties": {"flag": "randomize_fire",  "default": true, "target": "fire_positions", "num_fire_tiles_default": 3}},
+    {"id": "cfg_min_sg_dist","type": "DynamicConfig", "label": "min_start_goal_manhattan",
+     "properties": {"value": 4, "description": "Enforced minimum Manhattan distance between start and goal to prevent trivially short episodes."}},
+
+    {"id": "pc_stochastic_ddpm", "type": "PolicyConstraint", "label": "Stochastic DDPM Inference",
+     "properties": {
+       "num_diffusion_steps": 200,
+       "description": "Inference draws a fresh Gaussian noise tensor and denoises over 200 steps. Identical observations can yield different action sequences run-to-run — this is intended probabilism, not a bug."
+     }},
+    {"id": "pc_cell_encoder", "type": "PolicyConstraint", "label": "CellAlignedEncoder",
+     "properties": {
+       "architecture": "1x1 Conv2d stack followed by AvgPool2d(kernel_size=cell_px, stride=cell_px)",
+       "feature_dim": 128,
+       "grid_size": 5,
+       "cell_px": 16,
+       "description": "Custom grid-cell-aware vision encoder with zero cross-cell bleed. Each grid cell's pixels are pooled independently into one feature before projection. Not a ResNet."
+     }},
+    {"id": "pc_horizons", "type": "PolicyConstraint", "label": "Observation/Prediction Horizons",
+     "properties": {"obs_horizon": 4, "pred_horizon": 3, "action_dim": 4,
+                    "description": "Policy observes the last 4 (state, image) pairs and predicts the next 3 one-hot actions; only the first action of the sequence is executed each step."}},
+    {"id": "pc_unet_shape", "type": "PolicyConstraint", "label": "UNet1D backbone",
+     "properties": {"dim": 64, "dim_mults": [1, 2, 4]}}
+  ],
+
+  "edges": [
+    {"source": "gw_main", "target": "tile_free", "relation": "HAS_TILE"},
+    {"source": "gw_main", "target": "tile_wall", "relation": "HAS_TILE"},
+    {"source": "gw_main", "target": "tile_fire", "relation": "HAS_TILE"},
+    {"source": "gw_main", "target": "tile_goal", "relation": "HAS_TILE"},
+
+    {"source": "agent_main", "target": "tile_free", "relation": "CAN_ENTER"},
+    {"source": "agent_main", "target": "tile_fire", "relation": "CAN_ENTER", "properties": {"warning": "Entering terminates the episode with -10 reward."}},
+    {"source": "agent_main", "target": "tile_goal", "relation": "CAN_ENTER"},
+    {"source": "agent_main", "target": "tile_wall", "relation": "CAN_ENTER", "properties": {"blocked": true, "effect": "Agent remains in place; wall penalty -0.5 applied."}},
+
+    {"source": "agent_main", "target": "tile_fire", "relation": "TERMINATES_ON", "properties": {"failure_mode": "fire_collision"}},
+    {"source": "agent_main", "target": "tile_goal", "relation": "SUCCEEDS_ON"},
+
+    {"source": "tile_goal", "target": "rew_goal",    "relation": "PENALISES", "properties": {"sign": "positive"}},
+    {"source": "tile_fire", "target": "rew_fire",    "relation": "PENALISES"},
+    {"source": "tile_wall", "target": "rew_wall",    "relation": "PENALISES"},
+    {"source": "agent_main","target": "rew_step",    "relation": "PENALISES", "properties": {"applied_every_step": true}},
+    {"source": "agent_main","target": "rew_revisit", "relation": "PENALISES", "properties": {"applied_when": "agent re-enters a previously visited free cell"}},
+
+    {"source": "agent_main", "target": "corridor_left_edge",  "relation": "NAVIGATES_VIA"},
+    {"source": "agent_main", "target": "corridor_top_edge",   "relation": "NAVIGATES_VIA"},
+    {"source": "agent_main", "target": "corridor_right_col",  "relation": "NAVIGATES_VIA"},
+
+    {"source": "corridor_left_edge", "target": "fire_hazard_main", "relation": "AVOIDS"},
+    {"source": "corridor_top_edge",  "target": "fire_hazard_main", "relation": "AVOIDS"},
+    {"source": "corridor_right_col", "target": "fire_hazard_main", "relation": "AVOIDS"},
+
+    {"source": "corridor_left_edge", "target": "goal_main", "relation": "CONNECTS_TO"},
+    {"source": "corridor_top_edge",  "target": "goal_main", "relation": "CONNECTS_TO"},
+    {"source": "corridor_right_col", "target": "goal_main", "relation": "CONNECTS_TO"},
+
+    {"source": "agent_main", "target": "obs_state", "relation": "OBSERVES"},
+    {"source": "agent_main", "target": "obs_image", "relation": "OBSERVES"},
+
+    {"source": "cfg_rand_start", "target": "agent_main",       "relation": "RANDOMISES"},
+    {"source": "cfg_rand_goal",  "target": "goal_main",        "relation": "RANDOMISES"},
+    {"source": "cfg_rand_fire",  "target": "fire_hazard_main", "relation": "RANDOMISES"},
+    {"source": "cfg_min_sg_dist","target": "gw_main",          "relation": "RANDOMISES", "properties": {"constraint": "min_manhattan(start, goal) >= 4"}},
+
+    {"source": "tile_fire", "target": "fm_fire_collision", "relation": "CAUSES_FAILURE"},
+    {"source": "gw_main",   "target": "fm_timeout",        "relation": "CAUSES_FAILURE", "properties": {"trigger": "step_count >= 200 and agent has not reached goal"}},
+    {"source": "tile_wall", "target": "fm_wall_thrashing", "relation": "CAUSES_FAILURE", "properties": {"trigger": "repeated wall-hit penalties without progress"}},
+
+    {"source": "agent_main", "target": "pc_stochastic_ddpm", "relation": "ENFORCES"},
+    {"source": "agent_main", "target": "pc_cell_encoder",    "relation": "ENFORCES"},
+    {"source": "agent_main", "target": "pc_horizons",        "relation": "ENFORCES"},
+    {"source": "agent_main", "target": "pc_unet_shape",      "relation": "ENFORCES"}
+  ],
+
+  "reasoning_implications": {
+    "fire_collision_per_episode": "If the agent stepped onto FIRE, the policy has not generalised fire-avoidance to this particular (start, goal, fire-placement) configuration. Prescribe a corrective demonstration that starts from a similar region and shows the safe corridor (left-edge, top-edge, or right-column) appropriate to this fire placement.",
+    "timeout_per_episode": "If the agent timed out, it is likely oscillating or hesitating. Prescribe demonstrations that commit to one corridor without backtracking.",
+    "wall_thrashing_per_episode": "If the agent hit many walls, it is not using the state vector's local-neighbourhood signal effectively. Prescribe demonstrations that include approach-and-turn behaviour near walls.",
+    "dynamic_randomisation_caveat": "Because start, goal, and fire are all randomised per episode, the policy must generalise across configurations. A demo prescription should describe the SITUATION (fire placement pattern relative to start/goal) rather than a fixed coordinate path."
+  }
+}
+Next: configs/experiment_config.yaml
+
+File 2: configs/experiment_config.yaml
+Responsibility: The single master configuration file that drives the entire system. Every toggleable component, every path, every rollout setting lives here. Ablation profiles override the pipeline block on top of this file.
+yamlmaze:
+  name: multimodal
+  randomize_start: true
+  randomize_goal: true
+  randomize_fire: true
+  num_fire_tiles: 3
+
+rollout:
+  n_episodes: 10
+  seed: 42
+  checkpoint_path: checkpoints/best_model_ema.pth
+  fallback_checkpoint_path: checkpoints/best_model.pth
+  render: false
+
+pipeline:
+  use_vlm: true
+  use_kag: true
+  use_rag: true
+  use_reasoning: true
+  use_tkf: true
+  use_aggregator: true
+
+kag:
+  document_path: knowledge/kag_maze_knowledge.json
+
+rag:
+  bank_path: results/rag_bank
+  top_k: 3
+  sim_threshold: 0.3
+  clip_model: openai/clip-vit-large-patch14
+
+tkf:
+  demo_dir: demos
+  index_path: results/demo_knowledge_base
+  clip_model: openai/clip-vit-large-patch14
+  sim_threshold_found: 0.45
+  sim_threshold_partial: 0.30
+  top_k: 5
+  use_crewai: true
+
+llm:
+  model: gpt-5-nano-2025-08-07
+  vlm_model: gpt-5-nano-2025-08-07
+  reasoning_effort: high
+  max_output_tokens: 16384
+
+tracking:
+  save_frames: true
+  save_per_episode_json: true
+  save_prescriptions: true
+  save_config_snapshot: true
+  output_dir: results/runs
+Next: all 7 ablation profile YAMLs.
+
+File 3: All 7 ablation profile YAMLs under configs/ablation_profiles/
+Responsibility: Minimal partial YAMLs that override only the pipeline block of experiment_config.yaml. The pipeline_runner deep-merges these on top of the master config.
+configs/ablation_profiles/full_system.yaml
+yamlpipeline:
+  use_vlm: true
+  use_kag: true
+  use_rag: true
+  use_reasoning: true
+  use_tkf: true
+  use_aggregator: true
+configs/ablation_profiles/no_vlm.yaml
+yamlpipeline:
+  use_vlm: false
+configs/ablation_profiles/no_kag.yaml
+yamlpipeline:
+  use_kag: false
+configs/ablation_profiles/no_rag.yaml
+yamlpipeline:
+  use_rag: false
+configs/ablation_profiles/no_reasoning.yaml
+yamlpipeline:
+  use_reasoning: false
+configs/ablation_profiles/no_tkf.yaml
+yamlpipeline:
+  use_tkf: false
+configs/ablation_profiles/no_aggregator.yaml
+yamlpipeline:
+  use_aggregator: false
+configs/ablation_profiles/baseline_naive.yaml
+yamlpipeline:
+  use_vlm: false
+  use_kag: false
+  use_rag: false
+  use_reasoning: false
+  use_tkf: false
+  use_aggregator: false
+Next: pipeline/__init__.py
+
+File 4: pipeline/__init__.py
+Responsibility: Package marker. Kept intentionally minimal.
+
+Next: pipeline/rollout.py
+
+File 5: pipeline/rollout.py
+Responsibility: Phase A. Runs N rollouts using the trained MazeDiffusionPolicy, records full trajectory data per episode, identifies failure episodes, and — for each failure — captures three key frames (start, highest-loss, end) and saves them plus a per-episode JSON under results/runs/run_<ts>/episodes/episode_N/. Does not touch LLM code.
+Adaptation notes from own_environbment/scripts/llm_pipeline.py run_episode():
+
+Replace static-maze MazeNavEnv(maze_name=..., seed=seed) with the dynamic constructor (randomize_start/goal/fire, num_fire_tiles).
+Replace hardcoded OBS_HORIZON=2, DIM=128, DIM_MULTS=(1,2,4,8) with values read from checkpoints/best_model_meta.json (pattern taken from dynamic_maze_nav/scripts/run_policy.py).
+Normalise images to float32 / 255.0 before policy.get_action (required by CellAlignedEncoder's assertion img.dtype == torch.float32 and img.max() <= 1.0).
+Save per-episode JSON shape that downstream pipeline modules and the dashboard consume.
+
+pythonimport os
+import sys
+import json
+import time
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import torch
+from PIL import Image
+
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from envs.maze_env import MazeNavEnv, ACTION_NAMES
+from model.diffusion_policy import MazeDiffusionPolicy
+
+
+_DEFAULT_META = {
+    "obs_dim":        14,
+    "action_dim":     4,
+    "obs_horizon":    4,
+    "pred_horizon":   3,
+    "num_diff_steps": 200,
+    "dim":            64,
+    "dim_mults":      [1, 2, 4],
+    "grid_size":      5,
+    "cell_px":        16,
+    "img_size":       80,
+    "use_vision":     True,
+}
+
+
+def _load_meta(checkpoint_path: str) -> Dict:
+    ckpt_dir = os.path.dirname(checkpoint_path) or "checkpoints"
+    meta_path = os.path.join(ckpt_dir, "best_model_meta.json")
+    meta = dict(_DEFAULT_META)
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            meta.update(json.load(f))
+    return meta
+
+
+def _build_policy(meta: Dict, device: torch.device) -> MazeDiffusionPolicy:
+    policy = MazeDiffusionPolicy(
+        obs_dim=int(meta.get("obs_dim", 14)),
+        action_dim=int(meta.get("action_dim", 4)),
+        obs_horizon=int(meta.get("obs_horizon", 4)),
+        pred_horizon=int(meta.get("pred_horizon", 3)),
+        num_diffusion_steps=int(meta.get("num_diff_steps", 200)),
+        device=str(device),
+        use_vision=bool(meta.get("use_vision", True)),
+        dim=int(meta.get("dim", 64)),
+        dim_mults=tuple(meta.get("dim_mults", [1, 2, 4])),
+        grid_size=int(meta.get("grid_size", 5)),
+        cell_px=int(meta.get("cell_px", 16)),
+        img_size=int(meta.get("img_size", 80)),
+    )
+    return policy
+
+
+def _load_checkpoint(policy: MazeDiffusionPolicy, primary: str, fallback: str, device: torch.device) -> str:
+    path = primary if os.path.exists(primary) else fallback
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"No checkpoint found at {primary} or {fallback}")
+    ckpt = torch.load(path, map_location=device)
+    if isinstance(ckpt, dict) and "ema_policy" in ckpt:
+        policy.model.load_state_dict(ckpt["ema_policy"], strict=True)
+    elif isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        policy.model.load_state_dict(ckpt["model_state_dict"], strict=True)
+    elif isinstance(ckpt, dict) and "policy" in ckpt:
+        policy.model.load_state_dict(ckpt["policy"], strict=True)
+    else:
+        policy.model.load_state_dict(ckpt, strict=True)
+    policy.model.eval()
+    return path
+
+
+def _serialise_info(info: Dict) -> Dict:
+    out = {}
+    for k, v in info.items():
+        if isinstance(v, tuple):
+            out[k] = list(v)
+        elif isinstance(v, np.integer):
+            out[k] = int(v)
+        elif isinstance(v, np.floating):
+            out[k] = float(v)
+        elif isinstance(v, np.ndarray):
+            out[k] = v.tolist()
+        elif isinstance(v, dict):
+            out[k] = _serialise_info(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _pick_high_loss_step(rewards: List[float]) -> int:
+    if len(rewards) <= 2:
+        return max(0, len(rewards) // 2)
+    s0, se = 0, len(rewards) - 1
+    sl = int(np.argmin(rewards))
+    if sl == s0 or sl == se:
+        for c in np.argsort(rewards):
+            ci = int(c)
+            if ci != s0 and ci != se:
+                sl = ci
+                break
+    return sl
+
+
+def _save_key_frames(steps: List[Dict], key_frames: List[Dict], episode_dir: Path) -> Dict[str, str]:
+    frame_paths = {}
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    frames_dir = episode_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    role_to_file = {
+        "start_frame":        "start.png",
+        "highest_loss_frame": "high_loss.png",
+        "end_frame":          "end.png",
+    }
+    for kf in key_frames:
+        role = kf["role"]
+        idx = kf["step_idx"]
+        rgb = steps[idx]["rgb"]
+        if rgb is None:
+            continue
+        filename = role_to_file.get(role, f"{role}.png")
+        p = frames_dir / filename
+        Image.fromarray(np.asarray(rgb)).save(str(p))
+        frame_paths[role] = str(p)
+    return frame_paths
+
+
+def _run_single_episode(
+    policy: MazeDiffusionPolicy,
+    maze_cfg: Dict,
+    seed: int,
+    episode_id: int,
+    obs_horizon: int,
+    use_vision: bool,
+) -> Dict:
+    env = MazeNavEnv(
+        maze_name=maze_cfg["name"],
+        render_mode="rgb_array",
+        randomize_start=bool(maze_cfg.get("randomize_start", True)),
+        randomize_goal=bool(maze_cfg.get("randomize_goal", True)),
+        randomize_fire=bool(maze_cfg.get("randomize_fire", True)),
+        num_fire_tiles=int(maze_cfg.get("num_fire_tiles", 3)),
+        seed=seed,
+    )
+    obs, info = env.reset()
+    ascii_grid = env.get_grid_image_description()
+    dyn_cfg = env.get_dynamic_config()
+
+    steps: List[Dict] = []
+    rgb0 = env.render()
+    steps.append({
+        "step_idx":   0,
+        "obs":        obs["state"].tolist(),
+        "reward":     0.0,
+        "action":     None,
+        "action_name":"RESET",
+        "info":       _serialise_info(info),
+        "rgb":        rgb0,
+    })
+
+    state_deque = deque([obs["state"]] * obs_horizon, maxlen=obs_horizon)
+    image_deque = deque([obs["image"]] * obs_horizon, maxlen=obs_horizon)
+
+    terminated = False
+    truncated = False
+    si = 0
+    while not (terminated or truncated):
+        img_stack = np.stack(list(image_deque), axis=0).astype(np.float32) / 255.0
+        img_stack = np.transpose(img_stack, (0, 3, 1, 2))
+        obs_dict = {
+            "state": np.stack(list(state_deque), axis=0).astype(np.float32),
+            "image": img_stack,
+        }
+        action = policy.get_action(obs_dict) if use_vision else policy.get_action({"state": obs_dict["state"]})
+
+        obs, reward, terminated, truncated, info = env.step(int(action))
+        state_deque.append(obs["state"])
+        image_deque.append(obs["image"])
+        si += 1
+        steps.append({
+            "step_idx":   si,
+            "obs":        obs["state"].tolist(),
+            "reward":     float(reward),
+            "action":     int(action),
+            "action_name":ACTION_NAMES.get(int(action), "?"),
+            "info":       _serialise_info(info),
+            "rgb":        env.render(),
+        })
+
+    success = bool(steps[-1]["info"].get("success", False))
+    total_reward = sum(s["reward"] for s in steps)
+
+    rewards = [s["reward"] for s in steps]
+    sl = _pick_high_loss_step(rewards)
+    key_frames = [
+        {"role": "start_frame",        "step_idx": 0},
+        {"role": "highest_loss_frame", "step_idx": sl},
+        {"role": "end_frame",          "step_idx": len(steps) - 1},
+    ]
+
+    env.close()
+
+    return {
+        "episode_id":      episode_id,
+        "maze_name":       maze_cfg["name"],
+        "seed":            seed,
+        "total_steps":     si,
+        "total_reward":    total_reward,
+        "success":         success,
+        "ascii_grid":      ascii_grid,
+        "dynamic_config":  dyn_cfg,
+        "steps":           steps,
+        "key_frames":      key_frames,
+    }
+
+
+def _strip_rgb_for_json(episode: Dict) -> Dict:
+    safe_steps = []
+    for s in episode["steps"]:
+        safe_steps.append({k: v for k, v in s.items() if k != "rgb"})
+    return {
+        "episode_id":     episode["episode_id"],
+        "maze_name":      episode["maze_name"],
+        "seed":           episode["seed"],
+        "total_steps":    episode["total_steps"],
+        "total_reward":   episode["total_reward"],
+        "success":        episode["success"],
+        "ascii_grid":     episode["ascii_grid"],
+        "dynamic_config": episode["dynamic_config"],
+        "steps":          safe_steps,
+        "key_frames":     episode["key_frames"],
+        "frame_paths":    episode.get("frame_paths", {}),
+    }
+
+
+def run_rollouts(config: Dict, run_dir: Path) -> Dict:
+    """Phase A entry point. Runs all episodes and saves per-episode artefacts into run_dir."""
+    maze_cfg   = config["maze"]
+    rollout_cfg= config["rollout"]
+    track_cfg  = config.get("tracking", {})
+
+    n_episodes = int(rollout_cfg.get("n_episodes", 10))
+    base_seed  = int(rollout_cfg.get("seed", 42))
+    ckpt_primary  = str(rollout_cfg.get("checkpoint_path", "checkpoints/best_model_ema.pth"))
+    ckpt_fallback = str(rollout_cfg.get("fallback_checkpoint_path", "checkpoints/best_model.pth"))
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    meta = _load_meta(ckpt_primary)
+    policy = _build_policy(meta, device)
+    loaded_path = _load_checkpoint(policy, ckpt_primary, ckpt_fallback, device)
+    print(f"[Rollout] Checkpoint loaded: {loaded_path}")
+    print(f"[Rollout] Meta: obs_horizon={meta.get('obs_horizon')} pred_horizon={meta.get('pred_horizon')} use_vision={meta.get('use_vision')}")
+
+    obs_horizon = int(meta.get("obs_horizon", 4))
+    use_vision  = bool(meta.get("use_vision", True))
+
+    episodes_dir = run_dir / "episodes"
+    episodes_dir.mkdir(parents=True, exist_ok=True)
+
+    all_episodes: List[Dict] = []
+    for ep_idx in range(n_episodes):
+        seed = base_seed + ep_idx
+        print(f"\n[Rollout] Episode {ep_idx+1}/{n_episodes}  seed={seed}")
+        ed = _run_single_episode(
+            policy=policy,
+            maze_cfg=maze_cfg,
+            seed=seed,
+            episode_id=ep_idx,
+            obs_horizon=obs_horizon,
+            use_vision=use_vision,
+        )
+        print(f"[Rollout]  → steps={ed['total_steps']} reward={ed['total_reward']:.2f} success={ed['success']}")
+
+        episode_dir = episodes_dir / f"episode_{ep_idx}"
+        if bool(track_cfg.get("save_frames", True)):
+            ed["frame_paths"] = _save_key_frames(ed["steps"], ed["key_frames"], episode_dir)
+        else:
+            ed["frame_paths"] = {}
+
+        if bool(track_cfg.get("save_per_episode_json", True)):
+            episode_dir.mkdir(parents=True, exist_ok=True)
+            with open(episode_dir / "episode_data.json", "w") as f:
+                json.dump(_strip_rgb_for_json(ed), f, indent=2, default=str)
+
+        all_episodes.append(ed)
+
+    successes = [e for e in all_episodes if e["success"]]
+    failures  = [e for e in all_episodes if not e["success"]]
+    print(f"\n[Rollout] Summary: {len(successes)}/{len(all_episodes)} succeeded, {len(failures)} failed")
+
+    return {
+        "meta":         meta,
+        "n_episodes":   n_episodes,
+        "seed_base":    base_seed,
+        "all_episodes": all_episodes,
+        "success_episode_ids": [e["episode_id"] for e in successes],
+        "failure_episode_ids": [e["episode_id"] for e in failures],
+    }
+Next: pipeline/vlm_analyser.py
+
+File 6: pipeline/vlm_analyser.py
+Responsibility: Phase B Stage 1. Takes a failure episode dict (with saved frame paths and per-step state descriptions from info) and produces a ~450-word vision report via chained rolling-frame prompts. Adapted from own_environbment/scripts/llm_pipeline.py step_vlm() and the chat_vlm() helper; generalised to use dynamic goal/fire positions (dynamic_config) rather than hardcoded (0,0) → (4,4) and fire at (2,1),(2,2).
+pythonimport base64
+import json
+import os
+import traceback
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+
+
+def _b64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+def _oai_client():
+    from openai import OpenAI
+    return OpenAI()
+
+
+def _chat_vlm(client, model: str, image_b64: str, text_prompt: str, system_prompt: str, max_tokens: int) -> str:
+    content = [
+        {"type": "input_text", "text": text_prompt},
+        {"type": "input_image", "image_url": f"data:image/png;base64,{image_b64}"},
+    ]
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": content})
+
+    r = client.responses.create(
+        model=model,
+        input=messages,
+        max_output_tokens=max_tokens,
+        reasoning={"effort": "low"},
+    )
+    return r.output_text or ""
+
+
+def _format_goal_fire_description(dyn_cfg: Dict) -> str:
+    start = dyn_cfg.get("start_pos", [0, 0])
+    goal  = dyn_cfg.get("goal_pos",  [4, 4])
+    fires = dyn_cfg.get("fire_positions", [])
+    fires_str = ", ".join([f"({r},{c})" for r, c in fires]) if fires else "(none)"
+    return (
+        f"Episode start position: (row={start[0]}, col={start[1]}). "
+        f"Goal position: (row={goal[0]}, col={goal[1]}). "
+        f"Fire hazards at: {fires_str}."
+    )
+
+
+def analyse_failure(
+    episode: Dict,
+    llm_cfg: Dict,
+) -> Tuple[str, List[Dict]]:
+    """Run chained VLM analysis over the 3 key frames. Returns (combined_report, per_frame_list)."""
+    model = str(llm_cfg.get("vlm_model", llm_cfg.get("model", "gpt-5-nano-2025-08-07")))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    client = _oai_client()
+
+    dyn_cfg = episode.get("dynamic_config", {})
+    ascii_grid = episode.get("ascii_grid", "")
+    goal_fire_desc = _format_goal_fire_description(dyn_cfg)
+
+    system_prompt = (
+        "You are a demonstration coach for maze navigation imitation learning. "
+        "An agent is learning to navigate a 5x5 grid maze via a vision-conditioned diffusion policy "
+        "trained on human demonstrations. Every episode, the start position, goal position, and "
+        "fire hazard positions are RANDOMISED. The maze contains FIRE hazards (red cells) that "
+        "terminate the episode on contact. When the policy fails, a human operator must record a "
+        "corrective demonstration. Your job is to observe what the agent did wrong and describe what "
+        "the CORRECT demonstration should look like. Focus on: movement direction, proximity to fire "
+        "hazards, distance to goal, and optimal path choice. Be spatially precise — use grid "
+        "coordinates (row, col). Roughly 150 words per frame."
+    )
+
+    first_frame_template = (
+        "Observe this {role} from a maze navigation episode.\n\n"
+        "MAZE LAYOUT (·=free, █=wall, F=fire, G=goal, A=agent):\n{ascii_grid}\n\n"
+        "EPISODE CONFIGURATION:\n{goal_fire_desc}\n\n"
+        "CURRENT STATE DESCRIPTION:\n{state_desc}\n\n"
+        "ADJACENT CELLS: {neighbourhood}\n\n"
+        "You are coaching a human operator who will record a corrective demonstration.\n"
+        "Describe:\n"
+        "1. Where is the agent on the grid? What is at each adjacent cell (up/down/left/right)?\n"
+        "   State the exact (row, col) position.\n"
+        "2. Where is the GOAL relative to the agent? What is the Manhattan distance?\n"
+        "   How many cells right/left and how many cells down/up?\n"
+        "3. Where are the FIRE hazards relative to the agent?\n"
+        "   Is the agent in danger of stepping into fire on any adjacent move?\n"
+        "4. What direction should a human demonstrator move FIRST from this position?\n"
+        "   Justify by referencing which adjacent cells are safe vs dangerous.\n\n"
+        "Reference the state description data. Be spatially specific — use coordinates."
+    )
+
+    rolling_frame_template = (
+        "Observe this {role} from the maze episode (step {step_idx}).\n\n"
+        "PREVIOUS FRAME ANALYSIS:\n{previous_summary}\n\n"
+        "EPISODE CONFIGURATION:\n{goal_fire_desc}\n\n"
+        "CURRENT STATE DESCRIPTION:\n{state_desc}\n\n"
+        "ADJACENT CELLS: {neighbourhood}\n\n"
+        "Compare to the previous frame and assess what the agent is doing wrong:\n"
+        "1. How has the agent's position changed since the last frame? State old and new\n"
+        "   (row, col). Did it move closer to the goal or further away? By how many cells?\n"
+        "2. Did the agent move toward FIRE? Is it now adjacent to one of the fire cells?\n"
+        "   If it stepped INTO fire, state which fire cell and from which direction.\n"
+        "3. Was the agent's movement efficient? Did it revisit a cell it already visited?\n"
+        "   Did it move in a direction that doesn't reduce Manhattan distance to goal?\n"
+        "4. What should the human demonstrator do differently from THIS position?\n"
+        "   Give the exact action (UP/DOWN/LEFT/RIGHT) and explain why it avoids fire\n"
+        "   and progresses toward the goal.\n\n"
+        "Reference specific coordinates. Roughly 150 words."
+    )
+
+    per_frame: List[Dict] = []
+    previous_summary = ""
+
+    frame_paths = episode.get("frame_paths", {}) or {}
+
+    try:
+        for i, kf in enumerate(episode["key_frames"]):
+            role = kf["role"]
+            idx  = kf["step_idx"]
+            step = episode["steps"][idx]
+            state_desc   = step.get("info", {}).get("llm_state_description", "")
+            neighbourhood= step.get("info", {}).get("neighbourhood", {})
+            fpath = frame_paths.get(role)
+            if not fpath or not os.path.exists(fpath):
+                per_frame.append({"role": role, "step_idx": idx, "summary": "[SKIPPED: frame path missing]"})
+                continue
+
+            img_b64 = _b64(fpath)
+            if i == 0:
+                prompt = first_frame_template.format(
+                    role=role.replace("_", " "),
+                    ascii_grid=ascii_grid,
+                    goal_fire_desc=goal_fire_desc,
+                    state_desc=state_desc,
+                    neighbourhood=json.dumps(neighbourhood, indent=2),
+                )
+            else:
+                prompt = rolling_frame_template.format(
+                    role=role.replace("_", " "),
+                    step_idx=idx,
+                    previous_summary=previous_summary,
+                    goal_fire_desc=goal_fire_desc,
+                    state_desc=state_desc,
+                    neighbourhood=json.dumps(neighbourhood, indent=2),
+                )
+
+            summary = _chat_vlm(client, model, img_b64, prompt, system_prompt, max_tokens)
+            per_frame.append({"role": role, "step_idx": idx, "summary": summary})
+            previous_summary = summary
+    except Exception as e:
+        traceback.print_exc()
+        per_frame.append({"role": "error", "step_idx": -1, "summary": f"[VLM ERROR: {e}]"})
+
+    header = (
+        f"VISION REPORT  Maze={episode['maze_name']}  "
+        f"Steps={episode['total_steps']}  "
+        f"Reward={episode['total_reward']:.2f}  "
+        f"Success={episode['success']}"
+    )
+    lines = [header]
+    for f_ in per_frame:
+        lines.append(f"--- {f_['role']} (step {f_['step_idx']}) ---")
+        lines.append(f_["summary"])
+        lines.append("")
+
+    report = "\n".join(lines)
+    return report, per_frame
+
+
+def save_vlm_report(text: str, episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    out = episode_dir / "vlm_report.txt"
+    out.write_text(text, encoding="utf-8")
+    return out
+Next: pipeline/kag_loader.py
+
+File 7: pipeline/kag_loader.py
+Responsibility: Phase B Stage 2a. Loads knowledge/kag_maze_knowledge.json and renders it into a compact, LLM-friendly context string that will be injected into the Reasoning LLM prompt. No LLM call here — pure loading + formatting.
+pythonimport json
+from pathlib import Path
+from typing import Dict, Optional
+
+
+def load_kag_document(path: str) -> Dict:
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"KAG document not found at {p}")
+    with open(p, "r") as f:
+        return json.load(f)
+
+
+def _node_lookup(kag: Dict) -> Dict[str, Dict]:
+    return {n["id"]: n for n in kag.get("nodes", [])}
+
+
+def format_kag_context(kag: Dict) -> str:
+    """Render the KAG graph as a human-readable, LLM-friendly context string."""
+    meta = kag.get("meta", {})
+    schema = kag.get("schema", {})
+    nodes = kag.get("nodes", [])
+    edges = kag.get("edges", [])
+    reasoning_implications = kag.get("reasoning_implications", {})
+    nl = _node_lookup(kag)
+
+    lines = []
+    lines.append("=== KAG — ENVIRONMENT KNOWLEDGE GRAPH ===")
+    lines.append(f"Domain: {meta.get('domain', 'dynamic_maze_navigation')}")
+    lines.append(f"Coordinate system: {meta.get('coordinate_system', '(row, col), origin top-left')}")
+    lines.append(f"Grid shape: {meta.get('grid_shape', [5, 5])}")
+    lines.append(f"Description: {meta.get('description', '')}")
+    lines.append("")
+
+    by_type: Dict[str, list] = {}
+    for n in nodes:
+        by_type.setdefault(n["type"], []).append(n)
+
+    type_order = [t["type"] for t in schema.get("node_types", [])]
+    for t in type_order:
+        if t not in by_type:
+            continue
+        lines.append(f"[{t}]")
+        for n in by_type[t]:
+            props = n.get("properties", {})
+            prop_str = ", ".join(f"{k}={v}" for k, v in props.items())
+            lines.append(f"  - {n['label']} (id={n['id']}): {prop_str}")
+        lines.append("")
+
+    lines.append("[RELATIONS]")
+    for e in edges:
+        src = nl.get(e["source"], {}).get("label", e["source"])
+        tgt = nl.get(e["target"], {}).get("label", e["target"])
+        rel = e.get("relation", "RELATED_TO")
+        props = e.get("properties", {})
+        extra = f"  {props}" if props else ""
+        lines.append(f"  {src} --[{rel}]--> {tgt}{extra}")
+    lines.append("")
+
+    if reasoning_implications:
+        lines.append("[REASONING IMPLICATIONS]")
+        for k, v in reasoning_implications.items():
+            lines.append(f"  * {k}: {v}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def load_and_format(path: str) -> str:
+    return format_kag_context(load_kag_document(path))
+
+
+def save_kag_context(text: str, episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    out = episode_dir / "kag_context.txt"
+    out.write_text(text, encoding="utf-8")
+    return out
+Next: pipeline/rag_bank.py
+
+File 8: pipeline/rag_bank.py
+Responsibility: Phase B Stage 2b. A cross-run persistent FAISS-backed RAG bank. Per the task prompt's explicit instruction, this replaces own_environbment's .npy-based approach with a FAISS IndexFlatIP (same pattern as own_environbment/scripts/training_knowledge_fetcher.py). The index + metadata live in results/rag_bank/, are loaded on startup if they exist, and are appended to (never recreated) on each run. CLIP embeddings use openai/clip-vit-large-patch14 to concatenate text+image features (768 text + 768 image = 1536-dim).
+pythonimport json
+import os
+import traceback
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+
+
+_clip_model = None
+_clip_processor = None
+
+
+def _load_clip(model_id: str):
+    global _clip_model, _clip_processor
+    if _clip_model is None:
+        import torch
+        from transformers import CLIPModel, CLIPProcessor
+        _clip_processor = CLIPProcessor.from_pretrained(model_id)
+        _clip_model = CLIPModel.from_pretrained(model_id)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _clip_model = _clip_model.to(device).eval()
+    return _clip_model, _clip_processor
+
+
+def _clip_embed(text: str, image_path: Optional[str], model_id: str) -> Optional[np.ndarray]:
+    try:
+        import torch
+        from PIL import Image as PILImage
+        model, processor = _load_clip(model_id)
+        device = next(model.parameters()).device
+
+        t_enc = processor(text=[text[:512]], return_tensors="pt", padding=True, truncation=True, max_length=77).to(device)
+        with torch.no_grad():
+            tv = model.get_text_features(**t_enc)
+            tv = torch.nn.functional.normalize(tv, dim=-1)[0].cpu().float().numpy()
+
+        if image_path and os.path.exists(image_path):
+            img = PILImage.open(image_path).convert("RGB")
+            i_enc = processor(images=img, return_tensors="pt").to(device)
+            with torch.no_grad():
+                iv = model.get_image_features(**i_enc)
+                iv = torch.nn.functional.normalize(iv, dim=-1)[0].cpu().float().numpy()
+            combined = np.concatenate([tv, iv]).astype("float32")
+        else:
+            combined = np.concatenate([tv, tv]).astype("float32")
+
+        norm = np.linalg.norm(combined)
+        return (combined / (norm + 1e-9)).astype("float32")
+    except Exception:
+        traceback.print_exc()
+        return None
+
+
+class RAGBank:
+
+    def __init__(self, bank_path: str, top_k: int = 3, sim_threshold: float = 0.3, clip_model: str = "openai/clip-vit-large-patch14"):
+        self.bank_dir = Path(bank_path)
+        self.bank_dir.mkdir(parents=True, exist_ok=True)
+        self.top_k = top_k
+        self.sim_threshold = sim_threshold
+        self.clip_model = clip_model
+        self.index_path = self.bank_dir / "rag_faiss.index"
+        self.meta_path  = self.bank_dir / "rag_metadata.json"
+        self._index = None
+        self._meta: List[Dict] = []
+        self._dim: Optional[int] = None
+        self._load()
+
+    def _faiss(self):
+        import faiss
+        return faiss
+
+    def _load(self):
+        try:
+            faiss = self._faiss()
+        except ImportError:
+            print("[RAG] faiss-cpu not installed; bank will be in-memory only.")
+            return
+
+        if self.index_path.exists() and self.meta_path.exists():
+            self._index = faiss.read_index(str(self.index_path))
+            with open(self.meta_path, "r") as f:
+                self._meta = json.load(f)
+            self._dim = self._index.d
+            print(f"[RAG] Loaded existing bank: {self._index.ntotal} entries, dim={self._dim}")
+        else:
+            self._index = None
+            self._meta = []
+            self._dim = None
+            print("[RAG] No existing bank found — will initialise on first store.")
+
+    def _ensure_index(self, dim: int):
+        faiss = self._faiss()
+        if self._index is None:
+            self._index = faiss.IndexFlatIP(dim)
+            self._dim = dim
+        elif self._index.d != dim:
+            print(f"[RAG] Dim mismatch (bank={self._index.d}, new={dim}) — padding/truncating new vector.")
+
+    def _align_vec(self, vec: np.ndarray) -> np.ndarray:
+        if self._dim is None:
+            return vec
+        if vec.shape[0] == self._dim:
+            return vec
+        if vec.shape[0] < self._dim:
+            pad = np.zeros(self._dim - vec.shape[0], dtype=np.float32)
+            return np.concatenate([vec, pad]).astype("float32")
+        return vec[:self._dim].astype("float32")
+
+    def retrieve(self, vision_report: str, end_frame_path: Optional[str]) -> str:
+        if self._index is None or self._index.ntotal == 0 or not self._meta:
+            return ""
+        qv = _clip_embed(vision_report, end_frame_path, self.clip_model)
+        if qv is None:
+            return ""
+        qv = self._align_vec(qv).reshape(1, -1)
+        k = min(self.top_k, self._index.ntotal)
+        scores, idxs = self._index.search(qv, k)
+        retrieved = []
+        for rank, (score, idx) in enumerate(zip(scores[0], idxs[0]), 1):
+            if idx < 0:
+                continue
+            if float(score) < self.sim_threshold:
+                continue
+            m = self._meta[int(idx)]
+            retrieved.append({"rank": rank, "similarity": float(score), **m})
+        if not retrieved:
+            return ""
+        lines = ["=== RAG — SIMILAR PAST FAILURES ==="]
+        for r in retrieved:
+            lines.append(f"--- rank={r['rank']} sim={r['similarity']:.3f} run={r.get('run_id','?')} ep={r.get('episode_id','?')} ---")
+            lines.append(f"  Dynamic config: start={r.get('start_pos','?')} goal={r.get('goal_pos','?')} fires={r.get('fire_positions','?')}")
+            lines.append(f"  Summary:        {r.get('summary','?')}")
+            lines.append(f"  Root cause:     {r.get('root_cause','?')}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def store(self, run_id: str, episode: Dict, vision_report: str, prescription: Dict, end_frame_path: Optional[str]):
+        qv = _clip_embed(vision_report, end_frame_path, self.clip_model)
+        if qv is None:
+            print("[RAG] Skip store — embedding failed.")
+            return
+        self._ensure_index(qv.shape[0])
+        qv = self._align_vec(qv).reshape(1, -1)
+        self._index.add(qv)
+
+        dyn = episode.get("dynamic_config", {})
+        entry = {
+            "run_id":         run_id,
+            "episode_id":     episode.get("episode_id"),
+            "maze_name":      episode.get("maze_name"),
+            "seed":           episode.get("seed"),
+            "total_steps":    episode.get("total_steps"),
+            "total_reward":   episode.get("total_reward"),
+            "success":        episode.get("success"),
+            "start_pos":      dyn.get("start_pos"),
+            "goal_pos":       dyn.get("goal_pos"),
+            "fire_positions": dyn.get("fire_positions"),
+            "summary":        prescription.get("summary", ""),
+            "root_cause":     prescription.get("root_cause", "pending"),
+        }
+        self._meta.append(entry)
+        self._persist()
+
+    def _persist(self):
+        try:
+            faiss = self._faiss()
+            if self._index is not None:
+                faiss.write_index(self._index, str(self.index_path))
+            with open(self.meta_path, "w") as f:
+                json.dump(self._meta, f, indent=2, default=str)
+        except Exception:
+            traceback.print_exc()
+
+
+def save_rag_retrieved(text: str, episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    out = episode_dir / "rag_retrieved.txt"
+    out.write_text(text, encoding="utf-8")
+    return out
+Next: pipeline/reasoning.py
+
+File 9: pipeline/reasoning.py
+Responsibility: Phase B Stage 2c. Runs two sequential reasoning LLM calls: (1) root-cause analysis over the trajectory, (2) plain-English demonstration prescription. Both accept optional injected context strings from KAG, RAG, and TKF (so those components can be toggled off). Adapted from own_environbment/scripts/llm_pipeline.py step_reasoning() and chat_reasoning(). Adapted to use the dynamic per-episode start/goal/fire from dynamic_config rather than hardcoded static positions.
+pythonimport traceback
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+def _oai_client():
+    from openai import OpenAI
+    return OpenAI()
+
+
+def _chat_reasoning(client, model: str, messages: List[Dict], max_tokens: int, effort: str = "high") -> str:
+    r = client.responses.create(
+        model=model,
+        input=messages,
+        max_output_tokens=max_tokens,
+        reasoning={"effort": effort},
+    )
+    return r.output_text or ""
+
+
+def _chat_plain(client, model: str, messages: List[Dict], max_tokens: int) -> str:
+    r = client.responses.create(
+        model=model,
+        input=messages,
+        max_output_tokens=max_tokens,
+        reasoning={"effort": "low"},
+    )
+    return r.output_text or ""
+
+
+def _format_trajectory(episode: Dict, max_entries: int = 60) -> str:
+    entries = []
+    for s in episode["steps"]:
+        if s.get("action") is None:
+            continue
+        pos = s.get("info", {}).get("agent_pos", "?")
+        entries.append(f"  step {s['step_idx']}: at {pos} -> {s.get('action_name','?')} -> reward={s.get('reward',0.0):+.2f}")
+    return "\n".join(entries[:max_entries])
+
+
+def _format_key_states(episode: Dict) -> str:
+    lines = []
+    for kf in episode["key_frames"]:
+        idx = kf["step_idx"]
+        desc = episode["steps"][idx].get("info", {}).get("llm_state_description", "")
+        lines.append(f"[{kf['role']}, step {idx}] {desc}")
+    return "\n\n".join(lines)
+
+
+def _format_dynamic_config(episode: Dict) -> str:
+    dyn = episode.get("dynamic_config", {})
+    return (
+        f"Start: {dyn.get('start_pos','?')} | "
+        f"Goal: {dyn.get('goal_pos','?')} | "
+        f"Fires: {dyn.get('fire_positions','?')}"
+    )
+
+
+def build_analysis_prompt(
+    episode: Dict,
+    vision_report: str,
+    kag_context: str,
+    rag_context: str,
+) -> str:
+    traj_str = _format_trajectory(episode)
+    key_states = _format_key_states(episode)
+    dyn_str = _format_dynamic_config(episode)
+
+    sections = []
+    sections.append(
+        "You are a navigation engineer analysing a failed maze episode.\n\n"
+        "TASK: A vision-conditioned diffusion policy is learning to navigate a 5x5 grid maze "
+        "from a RANDOMISED start to a RANDOMISED goal while avoiding RANDOMISED fire hazards. "
+        "Training is done via human demonstrations. When the policy fails, a human must record "
+        "a CORRECTIVE demonstration to improve it. Your analysis will be used to tell the human "
+        "what to demonstrate.\n\n"
+        "Grid cells: 0=free, 1=wall, 2=fire (terminates episode), 3=goal (success).\n"
+        "Actions: 0=UP (row-1), 1=DOWN (row+1), 2=LEFT (col-1), 3=RIGHT (col+1)."
+    )
+
+    if kag_context:
+        sections.append(f"ENVIRONMENT KNOWLEDGE GRAPH (KAG):\n{kag_context}")
+
+    sections.append(
+        f"MAZE LAYOUT (this episode):\n{episode.get('ascii_grid','')}\n\n"
+        f"EPISODE DYNAMIC CONFIG:\n  {dyn_str}\n\n"
+        f"EPISODE OUTCOME:\n"
+        f"  Success      : {episode.get('success', False)}\n"
+        f"  Total steps  : {episode.get('total_steps', 0)}\n"
+        f"  Total reward : {episode.get('total_reward', 0.0):.2f}\n"
+        f"  Final pos    : {episode['steps'][-1].get('info',{}).get('agent_pos','?')}\n"
+    )
+
+    sections.append(f"STEP-BY-STEP TRAJECTORY:\n{traj_str}")
+    sections.append(f"KEY STATE DESCRIPTIONS:\n{key_states}")
+
+    if vision_report:
+        sections.append(f"VISION ANALYSIS FROM VLM:\n{vision_report}")
+
+    if rag_context:
+        sections.append(rag_context)
+
+    sections.append(
+        "ROOT CAUSE ANALYSIS — show your working:\n"
+        "1. TRAJECTORY RECONSTRUCTION\n"
+        "2. FIRST WRONG DECISION\n"
+        "3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)\n"
+        "4. WHAT THE POLICY GOT WRONG\n"
+        "5. REGIONS / CONFIGURATIONS NEEDING DATA"
+    )
+
+    return "\n\n".join(sections)
+
+
+def build_prescription_prompt(
+    episode: Dict,
+    analysis_text: str,
+    tkf_block: str,
+) -> str:
+    dyn_str = _format_dynamic_config(episode)
+    return (
+        "You are a demonstration coach for a DAgger-style imitation learning system.\n\n"
+        "A diffusion policy failed at a maze navigation task. A human expert now needs to record "
+        "CORRECTIVE DEMONSTRATIONS to improve the policy.\n\n"
+        "IMPORTANT RULES FOR YOUR RESPONSE:\n"
+        "  - Write in plain, friendly English that anyone can understand.\n"
+        "  - Do NOT use technical terms like 'Manhattan distance', 'DAgger', 'diffusion policy', "
+        "'imitation learning', or action codes.\n"
+        "  - Do NOT give step-by-step action sequences or grid coordinates.\n"
+        "  - Instead, describe the TYPE OF SITUATION and WHERE IN THE MAZE a demonstration is needed.\n"
+        "  - Remember: the maze is RANDOMISED every episode, so prescriptions should generalise.\n\n"
+        f"ROOT CAUSE ANALYSIS:\n{analysis_text}\n\n"
+        f"{tkf_block}\n"
+        f"EPISODE CONTEXT:\n  {dyn_str}\n\n"
+        "In plain English, answer these 4 questions:\n"
+        "1. WHERE in the maze does the AI get confused?\n"
+        "2. WHAT should a good walkthrough look like in that area?\n"
+        "3. WHAT will the AI learn from seeing that walkthrough?\n"
+        "4. HOW MANY walkthroughs are needed and how should they vary?"
+    )
+
+
+def run_reasoning(
+    episode: Dict,
+    vision_report: str,
+    kag_context: str,
+    rag_context: str,
+    tkf_block: str,
+    llm_cfg: Dict,
+) -> Tuple[str, str, str]:
+    """Run both reasoning calls. Returns (analysis_text, prescription_text, combined_text)."""
+    model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    effort = str(llm_cfg.get("reasoning_effort", "high"))
+    client = _oai_client()
+
+    analysis_prompt = build_analysis_prompt(episode, vision_report, kag_context, rag_context)
+    try:
+        analysis_text = _chat_reasoning(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a navigation failure analyst for DAgger imitation learning. "
+                    "Walk through the agent's trajectory step by step. Identify what went wrong "
+                    "and why. Think step by step."},
+                {"role": "user", "content": analysis_prompt},
+            ],
+            max_tokens, effort,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        analysis_text = f"[ANALYSIS ERROR: {e}]"
+
+    prescription_prompt = build_prescription_prompt(episode, analysis_text, tkf_block)
+    try:
+        prescription_text = _chat_reasoning(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a friendly demonstration coach. Write in plain, everyday English. "
+                    "No coordinates, no technical jargon, no action sequences. "
+                    "Describe what the human should show the AI in simple terms."},
+                {"role": "user", "content": prescription_prompt},
+            ],
+            max_tokens, effort,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        prescription_text = f"[PRESCRIPTION ERROR: {e}]"
+
+    combined = (
+        "=== ROOT CAUSE ANALYSIS ===\n"
+        f"{analysis_text}\n\n"
+        f"{tkf_block}\n"
+        "=== DEMONSTRATION PRESCRIPTION ===\n"
+        f"{prescription_text}\n"
+    )
+    return analysis_text, prescription_text, combined
+
+
+def summarise_episode(reasoning_text: str, episode_id: int, llm_cfg: Dict) -> str:
+    """Condense full reasoning into a 3-5 sentence summary for Phase C input."""
+    model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    client = _oai_client()
+    try:
+        return _chat_plain(
+            client, model,
+            [
+                {"role": "system", "content": "Extract a concise 3-5 sentence summary. No preamble."},
+                {"role": "user", "content":
+                    f"Below is a detailed analysis of a failed maze navigation episode (id={episode_id}).\n"
+                    f"Extract a concise summary (3-5 sentences) covering:\n"
+                    f"- What went wrong (root cause)\n"
+                    f"- Key configuration (start, goal, fire placement)\n"
+                    f"- What the correct path should have been\n\n"
+                    f"ANALYSIS:\n{reasoning_text[:4000]}\n\n"
+                    f"Output ONLY the summary, nothing else."},
+            ],
+            max_tokens,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return reasoning_text[:800]
+
+
+def save_reasoning(text: str, episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    out = episode_dir / "reasoning.txt"
+    out.write_text(text, encoding="utf-8")
+    return out
+Next: pipeline/knowledge_fetcher.py
+
+File 10: pipeline/knowledge_fetcher.py
+Responsibility: Phase B Stage 2d. The Training Knowledge Fetcher — a 3-agent CrewAI + FAISS system that queries an index of the user's demos/*.json files using CLIP embeddings and returns a FOUND | PARTIAL | NOT_FOUND verdict with an adjusted prescription. Adapted directly from own_environbment/scripts/training_knowledge_fetcher.py, with three changes:
+
+Configurable paths and thresholds (read from config dict, not module globals).
+FIRE_CELLS, START_CELL, GOAL_CELL are no longer hardcoded — trajectory descriptions use each demo's own start_pos, goal_pos, fire_positions fields (which the dynamic collect_expert_demos.py already saves per the dynamic_maze_nav README).
+A thin format_tkf_block() helper for consistent injection into reasoning.py.
+
+pythonimport json
+import os
+import sys
+import textwrap
+import traceback
+from pathlib import Path
+from typing import Dict, List, Optional
+
+
+ACTION_NAMES = {0: "UP", 1: "DOWN", 2: "LEFT", 3: "RIGHT"}
+
+
+_clip_model = None
+_clip_processor = None
+
+
+def _load_clip(model_id: str):
+    global _clip_model, _clip_processor
+    if _clip_model is None:
+        import torch
+        from transformers import CLIPModel, CLIPProcessor
+        _clip_processor = CLIPProcessor.from_pretrained(model_id)
+        _clip_model = CLIPModel.from_pretrained(model_id)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _clip_model = _clip_model.to(device).eval()
+    return _clip_model, _clip_processor
+
+
+def _embed_text(text: str, model_id: str):
+    import torch
+    import numpy as np
+    model, processor = _load_clip(model_id)
+    device = next(model.parameters()).device
+    words = text.split()
+    chunk_size = 55
+    chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, max(len(words), 1), chunk_size)]
+    vecs = []
+    for chunk in chunks:
+        enc = processor(text=[chunk], return_tensors="pt", padding=True, truncation=True, max_length=77).to(device)
+        with torch.no_grad():
+            tv = model.get_text_features(**enc)
+            tv = torch.nn.functional.normalize(tv, dim=-1)[0].cpu().float().numpy()
+        vecs.append(tv)
+    vec = np.mean(np.stack(vecs), axis=0).astype("float32")
+    norm = np.linalg.norm(vec)
+    return (vec / (norm + 1e-9)).astype("float32")
+
+
+def _classify_corridor(trajectory: List) -> str:
+    positions = [tuple(p) for p in trajectory]
+    n = max(len(positions), 1)
+    left_edge  = sum(1 for r, c in positions if c == 0) / n
+    top_edge   = sum(1 for r, c in positions if r == 0) / n
+    right_edge = sum(1 for r, c in positions if c == 4) / n
+    bottom_edge= sum(1 for r, c in positions if r == 4) / n
+    candidates = {"left_edge": left_edge, "top_edge": top_edge, "right_edge": right_edge, "bottom_edge": bottom_edge}
+    best_name, best_val = max(candidates.items(), key=lambda kv: kv[1])
+    return best_name if best_val > 0.4 else "central_mixed"
+
+
+def _describe_trajectory(trajectory: List, actions: List, start_pos: List, goal_pos: List, fire_positions: List) -> str:
+    positions = [tuple(p) for p in trajectory]
+    n = len(positions)
+    start = tuple(start_pos) if start_pos else (positions[0] if positions else (0, 0))
+    end   = positions[-1] if positions else start
+    goal  = tuple(goal_pos) if goal_pos else end
+    success = (end == goal)
+
+    fire_set = {tuple(p) for p in (fire_positions or [])}
+    if fire_set and positions:
+        min_fire_dist = min(
+            min(abs(r-fr)+abs(c-fc) for fr, fc in fire_set)
+            for r, c in positions
+        )
+    else:
+        min_fire_dist = 999
+
+    if min_fire_dist <= 1:
+        fire_proximity = "very close to fire (1 step away)"
+    elif min_fire_dist <= 2:
+        fire_proximity = "moderately close to fire (2 steps away)"
+    else:
+        fire_proximity = "safely away from fire hazards"
+
+    corridor = _classify_corridor(positions)
+    corridor_desc = {
+        "left_edge":    "hugging the left edge of the maze",
+        "top_edge":     "staying near the top row before descending",
+        "right_edge":   "using the right column as the main route",
+        "bottom_edge":  "running along the bottom row",
+        "central_mixed":"navigating through the central area",
+    }.get(corridor, "using a mixed path")
+
+    action_counts = {}
+    for a in actions:
+        name = ACTION_NAMES.get(int(a), "?")
+        action_counts[name] = action_counts.get(name, 0) + 1
+    action_summary = ", ".join(f"{v}x {k}" for k, v in sorted(action_counts.items(), key=lambda x: -x[1])) if action_counts else "no actions"
+
+    outcome = "reached the goal successfully" if success else f"ended at position {end} (did not reach goal)"
+
+    return (
+        f"A demonstration starting at {start} with goal at {goal} and fires at {sorted(fire_set) if fire_set else 'none'}. "
+        f"The run was {corridor_desc}, {fire_proximity}. "
+        f"The demo took {max(n-1, 0)} steps with actions: {action_summary}. "
+        f"The agent {outcome}. "
+        f"Path type: {corridor}."
+    )
+
+
+def _parse_demo_json(filepath: Path, demo_id: int) -> Dict:
+    with open(filepath, "r") as f:
+        data = json.load(f)
+    trajectory     = data.get("trajectory", [])
+    actions        = data.get("actions", [])
+    start_pos      = data.get("start_pos", trajectory[0] if trajectory else [0, 0])
+    goal_pos       = data.get("goal_pos", trajectory[-1] if trajectory else [4, 4])
+    fire_positions = data.get("fire_positions", [])
+    maze_name      = data.get("maze_name", "unknown")
+    timestamp      = data.get("timestamp", 0)
+    description    = _describe_trajectory(trajectory, actions, start_pos, goal_pos, fire_positions)
+    success        = bool(data.get("success", tuple(trajectory[-1]) == tuple(goal_pos) if trajectory else False))
+    return {
+        "id":             demo_id,
+        "filename":       filepath.name,
+        "maze_name":      maze_name,
+        "timestamp":      timestamp,
+        "n_steps":        max(len(trajectory) - 1, 0),
+        "start":          list(start_pos),
+        "goal":           list(goal_pos),
+        "fire_positions": [list(p) for p in fire_positions],
+        "success":        success,
+        "corridor":       _classify_corridor(trajectory),
+        "outcome":        "success" if success else "failure",
+        "description":    description,
+    }
+
+
+def _ingest_demos(demos_dir: Path) -> List[Dict]:
+    json_files = sorted(demos_dir.glob("*.json"))
+    if not json_files:
+        raise FileNotFoundError(f"No demo JSON files in {demos_dir}")
+    metadata = []
+    for i, fp in enumerate(json_files, 1):
+        try:
+            metadata.append(_parse_demo_json(fp, i))
+        except Exception as e:
+            print(f"[TKF] Skipping {fp.name}: {e}")
+    if not metadata:
+        raise RuntimeError(f"Could not parse any demo files in {demos_dir}")
+    return metadata
+
+
+def _build_index(metadata: List[Dict], index_dir: Path, clip_model: str):
+    import faiss
+    import numpy as np
+    texts = [
+        f"{d['description']} | corridor: {d['corridor']} | outcome: {d['outcome']} | n_steps: {d['n_steps']}"
+        for d in metadata
+    ]
+    vecs = [_embed_text(t, clip_model) for t in texts]
+    matrix = np.stack(vecs)
+    dim = matrix.shape[1]
+    index = faiss.IndexFlatIP(dim)
+    index.add(matrix)
+    index_dir.mkdir(parents=True, exist_ok=True)
+    faiss.write_index(index, str(index_dir / "demo_faiss.index"))
+    with open(index_dir / "demo_metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+    return index, metadata
+
+
+def _load_index(index_dir: Path):
+    import faiss
+    idx_file = index_dir / "demo_faiss.index"
+    meta_file = index_dir / "demo_metadata.json"
+    if not idx_file.exists() or not meta_file.exists():
+        return None, []
+    index = faiss.read_index(str(idx_file))
+    with open(meta_file, "r") as f:
+        meta = json.load(f)
+    return index, meta
+
+
+def _query_index(index, meta: List[Dict], query_text: str, clip_model: str, top_k: int) -> List[Dict]:
+    import numpy as np
+    qv = _embed_text(query_text, clip_model).reshape(1, -1)
+    scores, idxs = index.search(qv, min(top_k, index.ntotal))
+    results = []
+    for rank, (score, idx) in enumerate(zip(scores[0], idxs[0]), 1):
+        if idx < 0:
+            continue
+        results.append({"rank": rank, "score": float(score), "metadata": meta[int(idx)]})
+    return results
+
+
+def _verdict(results: List[Dict], found_thresh: float, partial_thresh: float) -> str:
+    if not results:
+        return "NOT_FOUND"
+    top = results[0]["score"]
+    if top >= found_thresh:
+        return "FOUND"
+    if top >= partial_thresh:
+        return "PARTIAL"
+    return "NOT_FOUND"
+
+
+def _oai_plain(messages: List[Dict], model: str, max_tokens: int = 16384) -> str:
+    from openai import OpenAI
+    client = OpenAI()
+    r = client.responses.create(
+        model=model,
+        input=messages,
+        max_output_tokens=max_tokens,
+        reasoning={"effort": "low"},
+    )
+    return r.output_text or ""
+
+
+def _llm_identify_needs(reasoning_text: str, model: str) -> str:
+    prompt = textwrap.dedent(f"""
+        You are reviewing the failure analysis of a maze navigation agent.
+        The agent learned from human demonstrations (imitation learning) and failed.
+        Below is the COMPLETE failure reasoning text from the pipeline.
+
+        Your job is to extract, in plain everyday English (no jargon, no coordinates),
+        what kind of human demonstration is MISSING from the training data.
+
+        Write 3-5 sentences covering:
+        - What behaviour is the agent NOT showing that it should?
+        - What kind of situation or path does it need to see demonstrated?
+        - Why would seeing that demonstration help it avoid failing next time?
+
+        COMPLETE FAILURE REASONING:
+        {reasoning_text}
+
+        OUTPUT ONLY the plain-English needs description. Nothing else.
+    """)
+    return _oai_plain(
+        [
+            {"role": "system", "content": "You extract missing demonstration needs in plain English. No technical jargon."},
+            {"role": "user",   "content": prompt},
+        ],
+        model,
+    ).strip()
+
+
+def _llm_adjust_prescription(needs: str, retrieval_summary: str, verdict: str, reasoning: str, model: str) -> str:
+    prompt = textwrap.dedent(f"""
+        You are finalising guidance for a human who will record corrective demonstrations.
+
+        NEEDS DESCRIPTION (what the policy is missing):
+        {needs}
+
+        TRAINING-DATA RETRIEVAL VERDICT: {verdict}
+        RETRIEVAL SUMMARY:
+        {retrieval_summary}
+
+        ORIGINAL REASONING:
+        {reasoning}
+
+        Write 4-6 sentences of plain-English guidance.
+        - If verdict is FOUND: explain why the policy likely still failed despite having this kind of demo, and recommend more variety.
+        - If verdict is PARTIAL: describe what the existing demos cover and what new variation to add.
+        - If verdict is NOT_FOUND: confirm this demonstration is missing and describe what the human should record.
+        No coordinates, no action codes, no technical jargon.
+    """)
+    return _oai_plain(
+        [
+            {"role": "system", "content": "You write practical demonstration guidance in plain English."},
+            {"role": "user",   "content": prompt},
+        ],
+        model,
+    ).strip()
+
+
+def _run_direct(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str) -> Dict:
+    needs = _llm_identify_needs(reasoning_text, llm_model)
+    results = _query_index(index, meta, needs, clip_model, top_k)
+    verdict = _verdict(results, found_thresh, partial_thresh)
+    if results:
+        lines = [f"Verdict: {verdict}", ""]
+        for r in results:
+            m = r["metadata"]
+            lines.append(f"  Match {r['rank']} (similarity={r['score']:.3f}): {m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]")
+        summary = "\n".join(lines)
+    else:
+        summary = f"Verdict: {verdict}\nNo matching demonstrations found."
+    adjusted = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
+    return {
+        "needs_description":     needs,
+        "verdict":               verdict,
+        "top_matches":           results,
+        "retrieval_summary":     summary,
+        "adjusted_prescription": adjusted,
+    }
+
+
+def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str) -> Dict:
+    try:
+        from crewai import Agent, Task, Crew, Process
+        from crewai.tools import BaseTool
+        from pydantic import BaseModel, Field
+    except ImportError as e:
+        print(f"[TKF] CrewAI not installed ({e}) — falling back to direct pipeline.")
+        return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model)
+
+    needs_holder: Dict = {}
+    retrieval_holder: Dict = {}
+
+    class NeedsQueryInput(BaseModel):
+        reasoning_text: str = Field(description="Full failure reasoning text from the pipeline")
+
+    class FAISSQueryInput(BaseModel):
+        needs_description: str = Field(description="Plain-English description of what demo is needed")
+
+    class NeedsIdentifierTool(BaseTool):
+        name: str = "identify_demonstration_needs"
+        description: str = "Reads failure reasoning text and returns a plain-English description of what demo is missing."
+        args_schema: type = NeedsQueryInput
+        def _run(self, reasoning_text: str) -> str:
+            result = _llm_identify_needs(reasoning_text, llm_model)
+            needs_holder["needs"] = result
+            return result
+
+    class FAISSRetrieverTool(BaseTool):
+        name: str = "query_training_demo_database"
+        description: str = "Queries a FAISS demo database. Returns a FOUND/PARTIAL/NOT_FOUND verdict plus top matches."
+        args_schema: type = FAISSQueryInput
+        def _run(self, needs_description: str) -> str:
+            results = _query_index(index, meta, needs_description, clip_model, top_k)
+            v = _verdict(results, found_thresh, partial_thresh)
+            retrieval_holder["results"] = results
+            retrieval_holder["verdict"] = v
+            if not results:
+                summary = f"Verdict: {v}\nNo matching demonstrations found."
+            else:
+                lines = [f"Verdict: {v}", ""]
+                for r in results:
+                    m = r["metadata"]
+                    lines.append(f"  Match {r['rank']} (similarity={r['score']:.3f}): {m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]")
+                summary = "\n".join(lines)
+            retrieval_holder["summary"] = summary
+            return summary
+
+    try:
+        needs_tool = NeedsIdentifierTool()
+        faiss_tool = FAISSRetrieverTool()
+
+        agent1 = Agent(role="Needs Identifier", goal="Identify what demo is missing.", backstory="An imitation-learning QA analyst.", tools=[needs_tool], verbose=False, allow_delegation=False)
+        agent2 = Agent(role="Training DB Retriever", goal="Check if the demo already exists.", backstory="A FAISS-backed retrieval specialist.", tools=[faiss_tool], verbose=False, allow_delegation=False)
+        agent3 = Agent(role="Prescription Adjuster", goal="Produce final guidance from verdict + needs.", backstory="A demonstration coach.", verbose=False, allow_delegation=False)
+
+        task1 = Task(description=f"Read this reasoning text and identify the missing demo:\n\n{reasoning_text}\n\nUse the identify_demonstration_needs tool.", agent=agent1, expected_output="A plain-English needs description.")
+        task2 = Task(description="Given the needs description from the previous task, query the training database with the query_training_demo_database tool. Return the verdict and the top matches.", agent=agent2, context=[task1], expected_output="A verdict (FOUND/PARTIAL/NOT_FOUND) and top matches.")
+        task3 = Task(description="Using the needs description and the retrieval result, write 4-6 sentences of plain-English guidance tailored to the verdict. No coordinates or jargon.", agent=agent3, context=[task1, task2], expected_output="Final plain-English prescription.")
+
+        crew = Crew(agents=[agent1, agent2, agent3], tasks=[task1, task2, task3], process=Process.sequential, verbose=False)
+        crew_result = crew.kickoff()
+
+        needs   = needs_holder.get("needs") or _llm_identify_needs(reasoning_text, llm_model)
+        verdict = retrieval_holder.get("verdict", "NOT_FOUND")
+        summary = retrieval_holder.get("summary", f"Verdict: {verdict}")
+        matches = retrieval_holder.get("results", [])
+        adjusted = str(crew_result).strip() if crew_result else ""
+        if not adjusted:
+            adjusted = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
+
+        return {
+            "needs_description":     needs,
+            "verdict":               verdict,
+            "top_matches":           matches,
+            "retrieval_summary":     summary,
+            "adjusted_prescription": adjusted,
+        }
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[TKF] CrewAI error ({e}) — falling back to direct pipeline.")
+        return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model)
+
+
+def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict) -> Dict:
+    demo_dir   = Path(tkf_cfg.get("demo_dir", "demos"))
+    index_dir  = Path(tkf_cfg.get("index_path", "results/demo_knowledge_base"))
+    clip_model = str(tkf_cfg.get("clip_model", "openai/clip-vit-large-patch14"))
+    found_th   = float(tkf_cfg.get("sim_threshold_found", 0.45))
+    partial_th = float(tkf_cfg.get("sim_threshold_partial", 0.30))
+    top_k      = int(tkf_cfg.get("top_k", 5))
+    use_crewai = bool(tkf_cfg.get("use_crewai", True))
+    llm_model  = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+
+    index, meta = _load_index(index_dir)
+    if index is None:
+        try:
+            metadata = _ingest_demos(demo_dir)
+            index, meta = _build_index(metadata, index_dir, clip_model)
+        except Exception as e:
+            traceback.print_exc()
+            return {
+                "needs_description":     "",
+                "verdict":               "NOT_FOUND",
+                "top_matches":           [],
+                "retrieval_summary":     f"TKF skipped — could not build demo index: {e}",
+                "adjusted_prescription": "",
+            }
+
+    if use_crewai:
+        return _run_crewai(reasoning_text, index, meta, clip_model, found_th, partial_th, top_k, llm_model)
+    return _run_direct(reasoning_text, index, meta, clip_model, found_th, partial_th, top_k, llm_model)
+
+
+def format_tkf_block(tkf_result: Optional[Dict]) -> str:
+    if not tkf_result:
+        return ""
+    return (
+        "=== TRAINING KNOWLEDGE CHECK ===\n"
+        f"Verdict: {tkf_result.get('verdict','NOT_FOUND')}\n"
+        f"What was found in existing training demos:\n{tkf_result.get('retrieval_summary','(empty)')}\n"
+        f"Adjusted guidance: {tkf_result.get('adjusted_prescription','(empty)')}\n"
+    )
+
+
+def save_tkf_result(tkf_result: Dict, episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    out = episode_dir / "tkf_result.json"
+    with open(out, "w") as f:
+        json.dump(tkf_result, f, indent=2, default=str)
+    return out
+Next: pipeline/aggregator.py
+
+File 11: pipeline/aggregator.py
+Responsibility: Phase C. Takes all per-episode summaries (plus the failure id list) and produces: (1) cross-episode reasoning text, (2) a final structured JSON prescription with failure clusters and demonstration prescriptions. Adapted from own_environbment/scripts/llm_pipeline.py step_cross_episode() and step_final_structured(), generalised to not reference static fire coordinates.
+pythonimport json
+import re
+import traceback
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+def _oai_client():
+    from openai import OpenAI
+    return OpenAI()
+
+
+def _chat_reasoning(client, model: str, messages: List[Dict], max_tokens: int, effort: str = "high") -> str:
+    r = client.responses.create(model=model, input=messages, max_output_tokens=max_tokens, reasoning={"effort": effort})
+    return r.output_text or ""
+
+
+def _chat_plain(client, model: str, messages: List[Dict], max_tokens: int) -> str:
+    r = client.responses.create(model=model, input=messages, max_output_tokens=max_tokens, reasoning={"effort": "low"})
+    return r.output_text or ""
+
+
+def _build_summary_block(failure_summaries: List[Dict], failure_ids: List[int]) -> str:
+    out = []
+    for es in failure_summaries:
+        eid = es.get("episode_id")
+        if eid not in failure_ids:
+            continue
+        dyn = es.get("dynamic_config", {})
+        out.append(
+            f"\n--- Episode {eid} (seed={es.get('seed','?')}, steps={es.get('total_steps','?')}, "
+            f"reward={es.get('total_reward', 0.0):.2f}) ---\n"
+            f"  dynamic_config: start={dyn.get('start_pos','?')} goal={dyn.get('goal_pos','?')} fires={dyn.get('fire_positions','?')}\n"
+            f"{es.get('summary', '')}\n"
+        )
+    return "".join(out)
+
+
+def cross_episode_reasoning(
+    failure_summaries: List[Dict],
+    failure_ids: List[int],
+    maze_ascii: str,
+    llm_cfg: Dict,
+) -> str:
+    n = len(failure_summaries)
+    client = _oai_client()
+    model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    effort = str(llm_cfg.get("reasoning_effort", "high"))
+    summary_block = _build_summary_block(failure_summaries, failure_ids)
+    valid_ids_str = ", ".join(str(i) for i in sorted(failure_ids))
+
+    try:
+        return _chat_reasoning(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a cross-episode failure analyst for imitation learning in a "
+                    "RANDOMISED 5x5 maze (start, goal, and fire placements all vary per episode). "
+                    "Identify patterns across failures and prescribe demonstrations. "
+                    "IMPORTANT: Only use the episode IDs listed in CONFIRMED FAILURE EPISODES. "
+                    "Do NOT invent or include any other episode IDs."},
+                {"role": "user", "content":
+                    f"Below are summaries from {n} FAILED episodes in a 5x5 dynamic maze.\n\n"
+                    f"REPRESENTATIVE MAZE ASCII (one episode):\n{maze_ascii}\n\n"
+                    f"CONFIRMED FAILURE EPISODE IDs (ONLY these are failures): [{valid_ids_str}]\n"
+                    f"Do NOT include any episode ID outside this list in failure_clusters.\n\n"
+                    f"PER-FAILURE SUMMARIES:\n{summary_block}\n\n"
+                    f"Answer:\n"
+                    f"1. FAILURE CLUSTERING: Group failures by failure mode. Each cluster's "
+                    f"episodes_in_cluster must only contain IDs from the list above.\n"
+                    f"2. WHERE DOES THE POLICY STRUGGLE? Refer to regions / configurations, not fixed cells.\n"
+                    f"3. WHAT DEMONSTRATIONS ARE NEEDED? Describe in plain English relative to the random config.\n"
+                    f"4. HOW MANY AND HOW DIVERSE? 3-10 total demonstrations total."},
+            ],
+            max_tokens, effort,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return f"[CROSS-EPISODE ERROR: {e}]"
+
+
+def final_structured_prescription(
+    cross_reasoning: str,
+    failure_summaries: List[Dict],
+    failure_ids: List[int],
+    llm_cfg: Dict,
+) -> Tuple[str, Dict]:
+    n = len(failure_summaries)
+    client = _oai_client()
+    model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    valid_ids_str = ", ".join(str(i) for i in sorted(failure_ids))
+    failure_ids_set = set(failure_ids)
+
+    try:
+        raw = _chat_plain(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a JSON formatting assistant. Output ONLY valid JSON. "
+                    "IMPORTANT: episodes_in_cluster must ONLY contain IDs from the confirmed failure list. "
+                    "Guidance text must be written in plain, friendly English — no coordinates, no action codes, no technical jargon."},
+                {"role": "user", "content":
+                    f"A diffusion policy failed across {n} episodes in a RANDOMISED 5x5 maze. "
+                    f"Cross-episode analysis:\n\n{cross_reasoning}\n\n"
+                    f"CONFIRMED FAILURE EPISODE IDs: [{valid_ids_str}]\n"
+                    f"Each cluster's episodes_in_cluster must ONLY contain IDs from that list.\n\n"
+                    "Output ONLY this JSON (no fences, no preamble):\n"
+                    "{\n"
+                    f'  "n_failure_episodes_analysed": {n},\n'
+                    '  "failure_modes_found": <int>,\n'
+                    '  "failure_clusters": [\n'
+                    '    {\n'
+                    '      "cluster_label": "<short human-readable label>",\n'
+                    f'      "episodes_in_cluster": [<only IDs from: {valid_ids_str}>],\n'
+                    '      "root_cause": "<fire_collision | looping | wrong_direction | timeout | wall_thrashing>",\n'
+                    '      "where_it_fails": "<plain English description of where in the maze>",\n'
+                    '      "what_it_does_wrong": "<plain English>"\n'
+                    '    }\n'
+                    '  ],\n'
+                    '  "demonstration_prescriptions": [\n'
+                    '    {\n'
+                    '      "demo_id": 1,\n'
+                    '      "guidance": "<plain English, describe the SITUATION to show>",\n'
+                    '      "target_region": "<plain English description of the maze area>",\n'
+                    '      "what_it_teaches": "<plain English>",\n'
+                    '      "n_repetitions": <1-3>\n'
+                    '    }\n'
+                    '  ],\n'
+                    '  "total_demonstrations_needed": <int 3-10>,\n'
+                    '  "overall_summary": "<2-3 plain English sentences>",\n'
+                    '  "confidence": <float 0.0-1.0>\n'
+                    "}"
+                },
+            ],
+            max_tokens,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return f"[STRUCTURED ERROR: {e}]", {}
+
+    cleaned = re.sub(r"^```(?:json)?\s*\n?", "", raw.strip())
+    cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        parsed = {"raw_output": raw}
+
+    clusters = parsed.get("failure_clusters", []) if isinstance(parsed, dict) else []
+    if isinstance(clusters, list):
+        for cluster in clusters:
+            ep_ids = cluster.get("episodes_in_cluster", [])
+            cluster["episodes_in_cluster"] = [eid for eid in ep_ids if eid in failure_ids_set]
+
+    return raw, parsed
+
+
+def save_final_prescription(cross_text: str, structured: Dict, run_dir: Path, episode_prescriptions: List[Dict]) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    prescription_path = run_dir / "ablation_summary.json"
+    payload = {
+        "cross_episode_reasoning":  cross_text,
+        "parsed_prescription":      structured,
+        "per_episode_prescriptions":episode_prescriptions,
+    }
+    with open(prescription_path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+    return prescription_path
+
+
+def save_episode_final_prescription(text: str, episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    out = episode_dir / "final_prescription.txt"
+    out.write_text(text, encoding="utf-8")
+    return out
+Next: pipeline/pipeline_runner.py
+
+File 12: pipeline/pipeline_runner.py
+Responsibility: The central orchestrator. Reads the YAML config (with optional ablation profile deep-merged on top), runs Phase A (rollout), then Phase B (per failure: VLM → KAG → RAG → Reasoning → TKF) with each stage respecting its toggle, then Phase C (aggregator), and writes everything into results/runs/run_<ts>/ with the exact structure specified in the task prompt. Also exposes rerun_pipeline_only(run_dir, overrides) so the Gradio dashboard can re-run Phases B+C against a saved run's existing frames.
+pythonimport copy
+import json
+import os
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from pipeline.rollout import run_rollouts
+from pipeline.vlm_analyser import analyse_failure, save_vlm_report
+from pipeline.kag_loader import load_and_format, save_kag_context
+from pipeline.rag_bank import RAGBank, save_rag_retrieved
+from pipeline.reasoning import run_reasoning, summarise_episode, save_reasoning
+from pipeline.knowledge_fetcher import run_knowledge_check, format_tkf_block, save_tkf_result
+from pipeline.aggregator import (
+    cross_episode_reasoning,
+    final_structured_prescription,
+    save_final_prescription,
+    save_episode_final_prescription,
+)
+
+
+def _deep_merge(base: Dict, override: Dict) -> Dict:
+    out = copy.deepcopy(base)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _load_yaml(path: str) -> Dict:
+    import yaml
+    with open(path, "r") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _dump_yaml(data: Dict, path: Path):
+    import yaml
+    with open(path, "w") as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+
+
+def load_config(master_path: str, ablation_path: Optional[str] = None) -> Dict:
+    base = _load_yaml(master_path)
+    if ablation_path:
+        override = _load_yaml(ablation_path)
+        return _deep_merge(base, override)
+    return base
+
+
+def _make_run_dir(config: Dict, tag: Optional[str] = None) -> Path:
+    base_out = Path(config.get("tracking", {}).get("output_dir", "results/runs"))
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = f"run_{ts}" if not tag else f"run_{ts}_{tag}"
+    p = base_out / name
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _snapshot_config(config: Dict, run_dir: Path):
+    _dump_yaml(config, run_dir / "config_used.yaml")
+
+
+def _build_phaseB_for_episode(
+    episode: Dict,
+    episode_dir: Path,
+    config: Dict,
+    kag_context: str,
+    rag_bank: Optional[RAGBank],
+    run_id: str,
+) -> Dict:
+    pipeline_flags = config.get("pipeline", {})
+    llm_cfg = config.get("llm", {})
+    tkf_cfg = config.get("tkf", {})
+    track_cfg = config.get("tracking", {})
+
+    vlm_report = ""
+    per_frame: List[Dict] = []
+    if pipeline_flags.get("use_vlm", True):
+        print(f"  [Phase B][ep {episode['episode_id']}] VLM...")
+        vlm_report, per_frame = analyse_failure(episode, llm_cfg)
+        if track_cfg.get("save_prescriptions", True):
+            save_vlm_report(vlm_report, episode_dir)
+    else:
+        vlm_report = "[VLM DISABLED]"
+        if track_cfg.get("save_prescriptions", True):
+            save_vlm_report("DISABLED", episode_dir)
+
+    if pipeline_flags.get("use_kag", True):
+        kag_ctx_for_ep = kag_context
+        if track_cfg.get("save_prescriptions", True):
+            save_kag_context(kag_ctx_for_ep or "DISABLED", episode_dir)
+    else:
+        kag_ctx_for_ep = ""
+        if track_cfg.get("save_prescriptions", True):
+            save_kag_context("DISABLED", episode_dir)
+
+    rag_ctx = ""
+    if pipeline_flags.get("use_rag", True) and rag_bank is not None:
+        print(f"  [Phase B][ep {episode['episode_id']}] RAG retrieve...")
+        end_frame = episode.get("frame_paths", {}).get("end_frame")
+        rag_ctx = rag_bank.retrieve(vlm_report or "", end_frame)
+        if track_cfg.get("save_prescriptions", True):
+            save_rag_retrieved(rag_ctx or "(no matches above threshold)", episode_dir)
+    else:
+        if track_cfg.get("save_prescriptions", True):
+            save_rag_retrieved("DISABLED", episode_dir)
+
+    analysis_text = ""
+    prescription_text = ""
+    combined_text = ""
+    tkf_result: Optional[Dict] = None
+    tkf_block = ""
+
+    if pipeline_flags.get("use_reasoning", True):
+        print(f"  [Phase B][ep {episode['episode_id']}] Reasoning (analysis)...")
+        analysis_text, _prelim_rx, _prelim_combined = run_reasoning(
+            episode=episode,
+            vision_report=vlm_report if pipeline_flags.get("use_vlm", True) else "",
+            kag_context=kag_ctx_for_ep,
+            rag_context=rag_ctx,
+            tkf_block="",
+            llm_cfg=llm_cfg,
+        )
+    else:
+        analysis_text = "[REASONING DISABLED]"
+
+    if pipeline_flags.get("use_tkf", True):
+        print(f"  [Phase B][ep {episode['episode_id']}] TKF...")
+        try:
+            tkf_result = run_knowledge_check(analysis_text, tkf_cfg, llm_cfg)
+            tkf_block = format_tkf_block(tkf_result)
+            if track_cfg.get("save_prescriptions", True):
+                save_tkf_result(tkf_result, episode_dir)
+        except Exception as e:
+            print(f"  [Phase B][ep {episode['episode_id']}] TKF error: {e}")
+            tkf_block = ""
+            if track_cfg.get("save_prescriptions", True):
+                save_tkf_result({"verdict": "ERROR", "error": str(e)}, episode_dir)
+    else:
+        if track_cfg.get("save_prescriptions", True):
+            save_tkf_result({"verdict": "DISABLED"}, episode_dir)
+
+    if pipeline_flags.get("use_reasoning", True):
+        print(f"  [Phase B][ep {episode['episode_id']}] Reasoning (prescription)...")
+        analysis_text, prescription_text, combined_text = run_reasoning(
+            episode=episode,
+            vision_report=vlm_report if pipeline_flags.get("use_vlm", True) else "",
+            kag_context=kag_ctx_for_ep,
+            rag_context=rag_ctx,
+            tkf_block=tkf_block,
+            llm_cfg=llm_cfg,
+        )
+        if track_cfg.get("save_prescriptions", True):
+            save_reasoning(combined_text, episode_dir)
+    else:
+        combined_text = "[REASONING DISABLED]\n" + tkf_block
+        if track_cfg.get("save_prescriptions", True):
+            save_reasoning(combined_text, episode_dir)
+
+    if pipeline_flags.get("use_reasoning", True):
+        summary = summarise_episode(combined_text, episode["episode_id"], llm_cfg)
+    else:
+        summary = f"Reasoning disabled. Failure at episode {episode['episode_id']} with config {episode.get('dynamic_config', {})}."
+
+    if rag_bank is not None and pipeline_flags.get("use_rag", True):
+        end_frame = episode.get("frame_paths", {}).get("end_frame")
+        rag_bank.store(
+            run_id=run_id,
+            episode=episode,
+            vision_report=vlm_report or "",
+            prescription={"summary": summary, "root_cause": "pending"},
+            end_frame_path=end_frame,
+        )
+
+    if track_cfg.get("save_prescriptions", True):
+        save_episode_final_prescription(prescription_text or "[NO PRESCRIPTION]", episode_dir)
+
+    return {
+        "episode_id":       episode["episode_id"],
+        "seed":             episode["seed"],
+        "total_steps":      episode["total_steps"],
+        "total_reward":     episode["total_reward"],
+        "success":          episode["success"],
+        "dynamic_config":   episode.get("dynamic_config", {}),
+        "summary":          summary,
+        "vlm_report":       vlm_report,
+        "kag_context":      kag_ctx_for_ep,
+        "rag_context":      rag_ctx,
+        "analysis_text":    analysis_text,
+        "prescription":     prescription_text,
+        "reasoning_combined":combined_text,
+        "tkf_result":       tkf_result,
+        "frame_paths":      episode.get("frame_paths", {}),
+    }
+
+
+def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str] = None) -> Dict:
+    """Full Phase A + Phase B + Phase C run. Returns the full_output dict and writes all files to run_dir."""
+    if run_dir is None:
+        run_dir = _make_run_dir(config, tag=tag)
+    run_id = run_dir.name
+    if config.get("tracking", {}).get("save_config_snapshot", True):
+        _snapshot_config(config, run_dir)
+
+    print(f"\n{'='*70}\n[PipelineRunner] PHASE A — rollouts\n{'='*70}")
+    rollout_result = run_rollouts(config, run_dir)
+
+    kag_cfg = config.get("kag", {})
+    kag_context = ""
+    if config.get("pipeline", {}).get("use_kag", True):
+        try:
+            kag_context = load_and_format(kag_cfg.get("document_path", "knowledge/kag_maze_knowledge.json"))
+        except Exception as e:
+            print(f"[PipelineRunner] KAG load failed: {e}")
+            kag_context = ""
+
+    rag_bank: Optional[RAGBank] = None
+    if config.get("pipeline", {}).get("use_rag", True):
+        try:
+            rag_cfg = config.get("rag", {})
+            rag_bank = RAGBank(
+                bank_path=rag_cfg.get("bank_path", "results/rag_bank"),
+                top_k=int(rag_cfg.get("top_k", 3)),
+                sim_threshold=float(rag_cfg.get("sim_threshold", 0.3)),
+                clip_model=rag_cfg.get("clip_model", "openai/clip-vit-large-patch14"),
+            )
+        except Exception as e:
+            print(f"[PipelineRunner] RAG init failed: {e}")
+            rag_bank = None
+
+    failures = [e for e in rollout_result["all_episodes"] if not e["success"]]
+    failure_ids = [e["episode_id"] for e in failures]
+    print(f"\n{'='*70}\n[PipelineRunner] PHASE B — {len(failures)} failures\n{'='*70}")
+
+    per_episode: List[Dict] = []
+    for ed in failures:
+        episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
+        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, run_id))
+
+    cross_text = ""
+    structured: Dict = {}
+    if config.get("pipeline", {}).get("use_aggregator", True) and failures:
+        print(f"\n{'='*70}\n[PipelineRunner] PHASE C — aggregator\n{'='*70}")
+        maze_ascii = failures[0].get("ascii_grid", "")
+        cross_text = cross_episode_reasoning(per_episode, failure_ids, maze_ascii, config.get("llm", {}))
+        _raw, structured = final_structured_prescription(cross_text, per_episode, failure_ids, config.get("llm", {}))
+
+    full_output = {
+        "metadata": {
+            "run_id":        run_id,
+            "timestamp":     datetime.now().isoformat(),
+            "n_episodes":    rollout_result["n_episodes"],
+            "seed_base":     rollout_result["seed_base"],
+            "n_successes":   len(rollout_result["success_episode_ids"]),
+            "n_failures":    len(failure_ids),
+            "pipeline_flags":config.get("pipeline", {}),
+        },
+        "config":        config,
+        "phase_a": {
+            "all_rollouts": [
+                {
+                    "episode_id":   e["episode_id"],
+                    "maze_name":    e["maze_name"],
+                    "seed":         e["seed"],
+                    "total_steps":  e["total_steps"],
+                    "total_reward": e["total_reward"],
+                    "success":      e["success"],
+                    "ascii_grid":   e["ascii_grid"],
+                    "dynamic_config":e["dynamic_config"],
+                    "key_frames":   e["key_frames"],
+                    "frame_paths":  e.get("frame_paths", {}),
+                }
+                for e in rollout_result["all_episodes"]
+            ],
+            "success_episode_ids": rollout_result["success_episode_ids"],
+            "failure_episode_ids": failure_ids,
+        },
+        "phase_b": {
+            "per_episode": per_episode,
+        },
+        "phase_c": {
+            "cross_episode_reasoning": cross_text,
+            "parsed_prescription":     structured,
+        },
+    }
+
+    with open(run_dir / "full_output.json", "w") as f:
+        json.dump(full_output, f, indent=2, default=str)
+
+    save_final_prescription(cross_text, structured, run_dir, per_episode)
+
+    print(f"\n[PipelineRunner] Done. Results → {run_dir}")
+    return full_output
+
+
+def _load_episode_from_saved_run(run_dir: Path, episode_id: int) -> Optional[Dict]:
+    ed_path = run_dir / "episodes" / f"episode_{episode_id}" / "episode_data.json"
+    if not ed_path.exists():
+        return None
+    with open(ed_path, "r") as f:
+        ed = json.load(f)
+    for s in ed.get("steps", []):
+        s.setdefault("rgb", None)
+    return ed
+
+
+def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Optional[str] = None, master_config_path: Optional[str] = None) -> Dict:
+    """Re-run Phase B + Phase C over a saved run's stored episodes/frames, with new toggle overrides."""
+    saved = Path(saved_run_dir)
+    if not saved.exists():
+        raise FileNotFoundError(saved)
+
+    base_cfg_path = saved / "config_used.yaml"
+    if not base_cfg_path.exists():
+        if master_config_path is None:
+            raise FileNotFoundError(f"config_used.yaml missing in {saved} and no master config provided")
+        base_cfg = _load_yaml(master_config_path)
+    else:
+        base_cfg = _load_yaml(str(base_cfg_path))
+
+    config = _deep_merge(base_cfg, overrides or {})
+
+    if out_run_dir is None:
+        out_run_dir = str(_make_run_dir(config, tag="rerun"))
+    out_dir = Path(out_run_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _snapshot_config(config, out_dir)
+
+    full_out_src = saved / "full_output.json"
+    if not full_out_src.exists():
+        raise FileNotFoundError(full_out_src)
+    with open(full_out_src, "r") as f:
+        saved_full = json.load(f)
+
+    saved_failure_ids = saved_full.get("phase_a", {}).get("failure_episode_ids", [])
+
+    failures = []
+    for eid in saved_failure_ids:
+        ed = _load_episode_from_saved_run(saved, eid)
+        if ed is not None:
+            failures.append(ed)
+
+    kag_context = ""
+    if config.get("pipeline", {}).get("use_kag", True):
+        try:
+            kag_context = load_and_format(config.get("kag", {}).get("document_path", "knowledge/kag_maze_knowledge.json"))
+        except Exception as e:
+            print(f"[Rerun] KAG load failed: {e}")
+
+    rag_bank = None
+    if config.get("pipeline", {}).get("use_rag", True):
+        try:
+            rag_cfg = config.get("rag", {})
+            rag_bank = RAGBank(
+                bank_path=rag_cfg.get("bank_path", "results/rag_bank"),
+                top_k=int(rag_cfg.get("top_k", 3)),
+                sim_threshold=float(rag_cfg.get("sim_threshold", 0.3)),
+                clip_model=rag_cfg.get("clip_model", "openai/clip-vit-large-patch14"),
+            )
+        except Exception as e:
+            print(f"[Rerun] RAG init failed: {e}")
+
+    per_episode = []
+    for ed in failures:
+        episode_dir = out_dir / "episodes" / f"episode_{ed['episode_id']}"
+        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, out_dir.name))
+
+    cross_text = ""
+    structured: Dict = {}
+    if config.get("pipeline", {}).get("use_aggregator", True) and failures:
+        maze_ascii = failures[0].get("ascii_grid", "")
+        cross_text = cross_episode_reasoning(per_episode, [f["episode_id"] for f in failures], maze_ascii, config.get("llm", {}))
+        _raw, structured = final_structured_prescription(cross_text, per_episode, [f["episode_id"] for f in failures], config.get("llm", {}))
+
+    full_output = {
+        "metadata": {
+            "run_id":          out_dir.name,
+            "timestamp":       datetime.now().isoformat(),
+            "rerun_of":        str(saved),
+            "pipeline_flags":  config.get("pipeline", {}),
+        },
+        "config":    config,
+        "phase_a":   saved_full.get("phase_a", {}),
+        "phase_b":   {"per_episode": per_episode},
+        "phase_c":   {"cross_episode_reasoning": cross_text, "parsed_prescription": structured},
+    }
+
+    with open(out_dir / "full_output.json", "w") as f:
+        json.dump(full_output, f, indent=2, default=str)
+
+    save_final_prescription(cross_text, structured, out_dir, per_episode)
+    return full_output
+Next: baselines/__init__.py
+
+File 13: baselines/__init__.py
+Responsibility: Package marker.
+
+Next: baselines/naive_dagger.py
+
+File 14: baselines/naive_dagger.py
+Responsibility: Baseline 1 — Naive DAgger. Run N rollouts with the current policy; for every failure episode, create one "expert demo request" covering the entire episode (start → BFS-optimal path). No LLM analysis, no clustering. This baseline emits one demo per failure, giving the upper-bound demo count the smart pipeline must beat. Writes to results/baselines/naive_<ts>/.
+pythonimport json
+import os
+import sys
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from pipeline.rollout import run_rollouts
+from envs.maze_env import MazeNavEnv, TILE_FIRE, TILE_WALL, ACTION_NAMES
+
+
+_ACTION_DELTAS = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
+
+
+def _bfs_solve(grid, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[int]]:
+    rows, cols = grid.shape
+    if start == goal:
+        return []
+    visited = {start}
+    queue = deque([(start, [])])
+    while queue:
+        pos, actions = queue.popleft()
+        for a, (dr, dc) in _ACTION_DELTAS.items():
+            nr, nc = pos[0] + dr, pos[1] + dc
+            if not (0 <= nr < rows and 0 <= nc < cols):
+                continue
+            tile = int(grid[nr, nc])
+            if tile == TILE_WALL or tile == TILE_FIRE:
+                continue
+            np_pos = (nr, nc)
+            if np_pos in visited:
+                continue
+            new_actions = actions + [a]
+            if np_pos == goal:
+                return new_actions
+            visited.add(np_pos)
+            queue.append((np_pos, new_actions))
+    return None
+
+
+def _build_expert_demo_for_episode(episode: Dict) -> Dict:
+    env = MazeNavEnv(
+        maze_name=episode["maze_name"],
+        render_mode="rgb_array",
+        randomize_start=True,
+        randomize_goal=True,
+        randomize_fire=True,
+        num_fire_tiles=len(episode.get("dynamic_config", {}).get("fire_positions", [])) or 3,
+        seed=episode["seed"],
+    )
+    env.reset()
+    grid = env.grid
+    start = tuple(env.agent_pos)
+    goal = tuple(env.goal_pos)
+    actions = _bfs_solve(grid, start, goal)
+    env.close()
+    return {
+        "episode_id":    episode["episode_id"],
+        "seed":          episode["seed"],
+        "start_pos":     list(start),
+        "goal_pos":      list(goal),
+        "fire_positions":[list(p) for p in zip(*(grid == TILE_FIRE).nonzero())] if (grid == TILE_FIRE).any() else [],
+        "expert_actions":[int(a) for a in actions] if actions is not None else None,
+        "expert_action_names":[ACTION_NAMES.get(int(a), "?") for a in actions] if actions is not None else None,
+        "demo_source":   "bfs_naive_dagger",
+    }
+
+
+def run_naive_dagger(config: Dict, out_dir: Optional[Path] = None) -> Dict:
+    if out_dir is None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path(config.get("tracking", {}).get("output_dir", "results/runs")).parent / "baselines" / f"naive_{ts}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rollout_result = run_rollouts(config, out_dir)
+    failures = [e for e in rollout_result["all_episodes"] if not e["success"]]
+
+    demos: List[Dict] = []
+    for ed in failures:
+        try:
+            demos.append(_build_expert_demo_for_episode(ed))
+        except Exception as e:
+            demos.append({"episode_id": ed["episode_id"], "error": str(e)})
+
+    summary = {
+        "baseline":              "naive_dagger",
+        "timestamp":             datetime.now().isoformat(),
+        "n_episodes":            rollout_result["n_episodes"],
+        "n_successes":           len(rollout_result["success_episode_ids"]),
+        "n_failures":            len(failures),
+        "success_rate":          (len(rollout_result["success_episode_ids"]) / max(rollout_result["n_episodes"], 1)),
+        "total_demonstrations_needed": len(demos),
+        "prescribed_demos":      demos,
+        "config":                config,
+    }
+    with open(out_dir / "baseline_summary.json", "w") as f:
+        json.dump(summary, f, indent=2, default=str)
+    print(f"[NaiveDAgger] Done. {len(demos)} demos prescribed → {out_dir}")
+    return summary
+Next: baselines/diff_dagger.py
+
+File 15: baselines/diff_dagger.py
+Responsibility: Baseline 2 — Diff-DAgger. Same rollout loop as naive, but only prescribes demos for episodes where the highest-loss step is an interior step (not the start/end); and the demo is the BFS-optimal path from that high-loss state to the goal. This is the "expert-intervenes-at-high-loss-step" baseline from the diff-dagger literature, and should produce fewer demos than naive DAgger. Writes to results/baselines/diff_<ts>/.
+pythonimport json
+import os
+import sys
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from pipeline.rollout import run_rollouts
+from envs.maze_env import MazeNavEnv, TILE_FIRE, TILE_WALL, ACTION_NAMES
+
+
+_ACTION_DELTAS = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
+
+
+def _bfs_solve(grid, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[int]]:
+    rows, cols = grid.shape
+    if start == goal:
+        return []
+    visited = {start}
+    queue = deque([(start, [])])
+    while queue:
+        pos, actions = queue.popleft()
+        for a, (dr, dc) in _ACTION_DELTAS.items():
+            nr, nc = pos[0] + dr, pos[1] + dc
+            if not (0 <= nr < rows and 0 <= nc < cols):
+                continue
+            tile = int(grid[nr, nc])
+            if tile == TILE_WALL or tile == TILE_FIRE:
+                continue
+            np_pos = (nr, nc)
+            if np_pos in visited:
+                continue
+            new_actions = actions + [a]
+            if np_pos == goal:
+                return new_actions
+            visited.add(np_pos)
+            queue.append((np_pos, new_actions))
+    return None
+
+
+def _build_intervention_for_episode(episode: Dict) -> Optional[Dict]:
+    key_frames = episode.get("key_frames", [])
+    hl_step = None
+    for kf in key_frames:
+        if kf["role"] == "highest_loss_frame":
+            hl_step = int(kf["step_idx"])
+            break
+    if hl_step is None:
+        return None
+    if hl_step <= 0 or hl_step >= len(episode["steps"]) - 1:
+        return None
+
+    hl_info = episode["steps"][hl_step].get("info", {})
+    hl_pos  = tuple(hl_info.get("agent_pos", (0, 0)))
+
+    env = MazeNavEnv(
+        maze_name=episode["maze_name"],
+        render_mode="rgb_array",
+        randomize_start=True,
+        randomize_goal=True,
+        randomize_fire=True,
+        num_fire_tiles=len(episode.get("dynamic_config", {}).get("fire_positions", [])) or 3,
+        seed=episode["seed"],
+    )
+    env.reset()
+    grid = env.grid
+    goal = tuple(env.goal_pos)
+    env.close()
+
+    actions = _bfs_solve(grid, hl_pos, goal)
+    if actions is None:
+        return None
+
+    return {
+        "episode_id":        episode["episode_id"],
+        "seed":              episode["seed"],
+        "intervention_step": hl_step,
+        "intervention_pos":  list(hl_pos),
+        "goal_pos":          list(goal),
+        "expert_actions":    [int(a) for a in actions],
+        "expert_action_names":[ACTION_NAMES.get(int(a), "?") for a in actions],
+        "demo_source":       "bfs_diff_dagger",
+    }
+
+
+def run_diff_dagger(config: Dict, out_dir: Optional[Path] = None) -> Dict:
+    if out_dir is None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path(config.get("tracking", {}).get("output_dir", "results/runs")).parent / "baselines" / f"diff_{ts}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rollout_result = run_rollouts(config, out_dir)
+    failures = [e for e in rollout_result["all_episodes"] if not e["success"]]
+
+    demos: List[Dict] = []
+    for ed in failures:
+        try:
+            d = _build_intervention_for_episode(ed)
+            if d is not None:
+                demos.append(d)
+        except Exception as e:
+            demos.append({"episode_id": ed["episode_id"], "error": str(e)})
+
+    summary = {
+        "baseline":              "diff_dagger",
+        "timestamp":             datetime.now().isoformat(),
+        "n_episodes":            rollout_result["n_episodes"],
+        "n_successes":           len(rollout_result["success_episode_ids"]),
+        "n_failures":            len(failures),
+        "success_rate":          (len(rollout_result["success_episode_ids"]) / max(rollout_result["n_episodes"], 1)),
+        "total_demonstrations_needed": len(demos),
+        "prescribed_demos":      demos,
+        "config":                config,
+    }
+    with open(out_dir / "baseline_summary.json", "w") as f:
+        json.dump(summary, f, indent=2, default=str)
+    print(f"[DiffDAgger] Done. {len(demos)} interventions prescribed → {out_dir}")
+    return summary
+Next: scripts/run_pipeline.py
+
+File 16: scripts/run_pipeline.py
+Responsibility: CLI entry point for the full pipeline. Merges master config + optional ablation profile, invokes pipeline_runner.run_pipeline.
+pythonimport argparse
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from dotenv import load_dotenv
+load_dotenv(REPO_ROOT / ".env")
+
+from pipeline.pipeline_runner import load_config, run_pipeline
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Run the full LLM-guided pipeline (Phase A + B + C).")
+    p.add_argument("--config",         type=str, default="configs/experiment_config.yaml")
+    p.add_argument("--ablation",       type=str, default=None,
+                   help="Path to an ablation profile YAML under configs/ablation_profiles/ (e.g. configs/ablation_profiles/no_rag.yaml).")
+    p.add_argument("--tag",            type=str, default=None,
+                   help="Optional tag appended to the run directory name.")
+    p.add_argument("--n_episodes",     type=int, default=None)
+    p.add_argument("--seed",           type=int, default=None)
+    p.add_argument("--checkpoint",     type=str, default=None)
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+    cfg = load_config(args.config, args.ablation)
+
+    if args.n_episodes is not None:
+        cfg.setdefault("rollout", {})["n_episodes"] = args.n_episodes
+    if args.seed is not None:
+        cfg.setdefault("rollout", {})["seed"] = args.seed
+    if args.checkpoint is not None:
+        cfg.setdefault("rollout", {})["checkpoint_path"] = args.checkpoint
+
+    tag = args.tag
+    if tag is None and args.ablation:
+        tag = Path(args.ablation).stem
+
+    run_pipeline(cfg, tag=tag)
+
+
+if __name__ == "__main__":
+    main()
+Next: scripts/run_baseline.py
+
+File 17: scripts/run_baseline.py
+Responsibility: CLI entry point for baselines. Pass --baseline naive or --baseline diff.
+pythonimport argparse
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from dotenv import load_dotenv
+load_dotenv(REPO_ROOT / ".env")
+
+from pipeline.pipeline_runner import load_config
+from baselines.naive_dagger import run_naive_dagger
+from baselines.diff_dagger import run_diff_dagger
+
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Run a baseline (naive DAgger or diff-DAgger).")
+    p.add_argument("--baseline",   type=str, choices=["naive", "diff"], required=True)
+    p.add_argument("--config",     type=str, default="configs/experiment_config.yaml")
+    p.add_argument("--ablation",   type=str, default="configs/ablation_profiles/baseline_naive.yaml")
+    p.add_argument("--n_episodes", type=int, default=None)
+    p.add_argument("--seed",       type=int, default=None)
+    p.add_argument("--checkpoint", type=str, default=None)
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+    cfg = load_config(args.config, args.ablation)
+
+    if args.n_episodes is not None:
+        cfg.setdefault("rollout", {})["n_episodes"] = args.n_episodes
+    if args.seed is not None:
+        cfg.setdefault("rollout", {})["seed"] = args.seed
+    if args.checkpoint is not None:
+        cfg.setdefault("rollout", {})["checkpoint_path"] = args.checkpoint
+
+    if args.baseline == "naive":
+        run_naive_dagger(cfg)
+    else:
+        run_diff_dagger(cfg)
+
+
+if __name__ == "__main__":
+    main()
+Next: dashboard/components/episode_viewer.py
+
+File 18: dashboard/components/episode_viewer.py
+Responsibility: Pure-function helpers the Gradio app uses to list episodes in a loaded run and fetch the three key-frame image paths + episode metadata for display.
+pythonimport json
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+def load_full_output(run_dir: str) -> Dict:
+    p = Path(run_dir) / "full_output.json"
+    if not p.exists():
+        raise FileNotFoundError(p)
+    with open(p, "r") as f:
+        return json.load(f)
+
+
+def list_failure_episodes(full_output: Dict) -> List[Dict]:
+    failure_ids = set(full_output.get("phase_a", {}).get("failure_episode_ids", []))
+    out = []
+    for e in full_output.get("phase_a", {}).get("all_rollouts", []):
+        if e.get("episode_id") in failure_ids:
+            dyn = e.get("dynamic_config", {})
+            out.append({
+                "episode_id":     e["episode_id"],
+                "seed":           e["seed"],
+                "total_steps":    e.get("total_steps"),
+                "total_reward":   e.get("total_reward"),
+                "label":          f"Episode {e['episode_id']} (seed={e['seed']}, steps={e.get('total_steps','?')}, reward={e.get('total_reward',0.0):.2f}) start={dyn.get('start_pos','?')} goal={dyn.get('goal_pos','?')}",
+                "frame_paths":    e.get("frame_paths", {}),
+                "dynamic_config": dyn,
+                "ascii_grid":     e.get("ascii_grid", ""),
+            })
+    return out
+
+
+def dropdown_choices(failure_episodes: List[Dict]) -> List[Tuple[str, int]]:
+    return [(ep["label"], ep["episode_id"]) for ep in failure_episodes]
+
+
+def get_episode_frames(run_dir: str, episode_id: int) -> Dict[str, Optional[str]]:
+    run = Path(run_dir)
+    fdir = run / "episodes" / f"episode_{episode_id}" / "frames"
+    mapping = {
+        "start_frame":        fdir / "start.png",
+        "highest_loss_frame": fdir / "high_loss.png",
+        "end_frame":          fdir / "end.png",
+    }
+    return {k: (str(v) if v.exists() else None) for k, v in mapping.items()}
+
+
+def get_episode_component_outputs(run_dir: str, episode_id: int) -> Dict[str, str]:
+    run = Path(run_dir)
+    edir = run / "episodes" / f"episode_{episode_id}"
+    fields = {
+        "vlm_report":          edir / "vlm_report.txt",
+        "kag_context":         edir / "kag_context.txt",
+        "rag_retrieved":       edir / "rag_retrieved.txt",
+        "reasoning":           edir / "reasoning.txt",
+        "tkf_result":          edir / "tkf_result.json",
+        "final_prescription":  edir / "final_prescription.txt",
+    }
+    out = {}
+    for key, p in fields.items():
+        if not p.exists():
+            out[key] = "(not available)"
+            continue
+        try:
+            if p.suffix == ".json":
+                with open(p, "r") as f:
+                    data = json.load(f)
+                out[key] = json.dumps(data, indent=2, default=str)
+            else:
+                out[key] = p.read_text(encoding="utf-8")
+        except Exception as e:
+            out[key] = f"(error loading {p.name}: {e})"
+    return out
+
+
+def get_episode_metadata(failure_episodes: List[Dict], episode_id: int) -> Dict:
+    for ep in failure_episodes:
+        if ep["episode_id"] == episode_id:
+            return ep
+    return {}
+Next: dashboard/components/prescription_diff.py
+
+File 19: dashboard/components/prescription_diff.py
+Responsibility: Build a side-by-side, readable text diff between two prescriptions (original saved run vs. re-run with new toggles).
+pythonimport difflib
+import json
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+
+def _read_prescription(run_dir: str, episode_id: int) -> str:
+    p = Path(run_dir) / "episodes" / f"episode_{episode_id}" / "final_prescription.txt"
+    if not p.exists():
+        return "(no prescription saved)"
+    return p.read_text(encoding="utf-8")
+
+
+def _read_cross_prescription(run_dir: str) -> str:
+    p = Path(run_dir) / "full_output.json"
+    if not p.exists():
+        return "(no full_output.json)"
+    with open(p, "r") as f:
+        data = json.load(f)
+    parsed = data.get("phase_c", {}).get("parsed_prescription", {})
+    if isinstance(parsed, dict) and parsed:
+        return json.dumps(parsed, indent=2, default=str)
+    return data.get("phase_c", {}).get("cross_episode_reasoning", "(empty)")
+
+
+def prescription_pair(original_run_dir: str, rerun_run_dir: Optional[str], episode_id: Optional[int]) -> Tuple[str, str]:
+    if episode_id is not None:
+        orig = _read_prescription(original_run_dir, episode_id)
+        new  = _read_prescription(rerun_run_dir, episode_id) if rerun_run_dir else "(no re-run)"
+    else:
+        orig = _read_cross_prescription(original_run_dir)
+        new  = _read_cross_prescription(rerun_run_dir) if rerun_run_dir else "(no re-run)"
+    return orig, new
+
+
+def unified_diff(original: str, new: str, fromfile: str = "original", tofile: str = "rerun") -> str:
+    a = (original or "").splitlines(keepends=False)
+    b = (new or "").splitlines(keepends=False)
+    diff = list(difflib.unified_diff(a, b, fromfile=fromfile, tofile=tofile, lineterm=""))
+    if not diff:
+        return "(no differences)"
+    return "\n".join(diff)
+
+
+def html_side_by_side(original: str, new: str, label_left: str = "Original", label_right: str = "Rerun") -> str:
+    def esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        "<div style='display:flex; gap:12px; font-family:monospace; font-size:13px;'>"
+        f"<div style='flex:1; border:1px solid #ccc; padding:8px; white-space:pre-wrap;'>"
+        f"<b>{esc(label_left)}</b><hr>{esc(original)}</div>"
+        f"<div style='flex:1; border:1px solid #ccc; padding:8px; white-space:pre-wrap;'>"
+        f"<b>{esc(label_right)}</b><hr>{esc(new)}</div>"
+        "</div>"
+    )
+Next: dashboard/components/performance_graph.py
+
+File 20: dashboard/components/performance_graph.py
+Responsibility: Scan results/ablations/ and results/baselines/ for saved runs, compute each method variant's success rate (and total demos prescribed), and produce the Matplotlib figure used in the dashboard's Performance Graph tab. Method labels are defined up front so the plot matches the required X-axis ordering from the spec.
+pythonimport json
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+METHOD_ORDER = [
+    "Naive DAgger",
+    "Diff-DAgger",
+    "Plain LLM",
+    "Plain+VLM (end frame only)",
+    "Plain+VLM (end+high-loss frames)",
+    "Plain+VLM+RAG",
+    "Plain+VLM+RAG+KAG",
+    "Plain+VLM+RAG+KAG+TKF (Full System)",
+]
+
+
+def _ablation_to_method(flags: Dict) -> Optional[str]:
+    use_vlm       = bool(flags.get("use_vlm", False))
+    use_kag       = bool(flags.get("use_kag", False))
+    use_rag       = bool(flags.get("use_rag", False))
+    use_reasoning = bool(flags.get("use_reasoning", False))
+    use_tkf       = bool(flags.get("use_tkf", False))
+
+    if use_vlm and use_kag and use_rag and use_reasoning and use_tkf:
+        return "Plain+VLM+RAG+KAG+TKF (Full System)"
+    if use_vlm and use_kag and use_rag and use_reasoning and not use_tkf:
+        return "Plain+VLM+RAG+KAG"
+    if use_vlm and use_rag and use_reasoning and not use_kag and not use_tkf:
+        return "Plain+VLM+RAG"
+    if use_vlm and use_reasoning and not use_rag and not use_kag and not use_tkf:
+        return "Plain+VLM (end+high-loss frames)"
+    if use_reasoning and not use_vlm and not use_rag and not use_kag and not use_tkf:
+        return "Plain LLM"
+    return None
+
+
+def _scan_run(run_path: Path) -> Optional[Dict]:
+    fp = run_path / "full_output.json"
+    if not fp.exists():
+        return None
+    try:
+        with open(fp, "r") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    meta = data.get("metadata", {})
+    flags = meta.get("pipeline_flags") or data.get("config", {}).get("pipeline", {})
+    n_ep = int(meta.get("n_episodes", 0) or 0)
+    n_succ = int(meta.get("n_successes", 0) or 0)
+    n_fail = int(meta.get("n_failures", n_ep - n_succ) or 0)
+    success_rate = (n_succ / n_ep) if n_ep > 0 else 0.0
+    parsed = data.get("phase_c", {}).get("parsed_prescription", {})
+    total_demos = 0
+    if isinstance(parsed, dict):
+        total_demos = int(parsed.get("total_demonstrations_needed", 0) or 0)
+    if total_demos == 0:
+        total_demos = n_fail
+    method = _ablation_to_method(flags)
+    return {
+        "run_dir":       str(run_path),
+        "pipeline_flags":flags,
+        "method":        method,
+        "n_episodes":    n_ep,
+        "n_successes":   n_succ,
+        "n_failures":    n_fail,
+        "success_rate":  success_rate,
+        "total_demos":   total_demos,
+    }
+
+
+def _scan_baseline(run_path: Path) -> Optional[Dict]:
+    fp = run_path / "baseline_summary.json"
+    if not fp.exists():
+        return None
+    try:
+        with open(fp, "r") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    name = data.get("baseline", "")
+    method = {"naive_dagger": "Naive DAgger", "diff_dagger": "Diff-DAgger"}.get(name)
+    return {
+        "run_dir":       str(run_path),
+        "method":        method,
+        "n_episodes":    int(data.get("n_episodes", 0) or 0),
+        "n_successes":   int(data.get("n_successes", 0) or 0),
+        "n_failures":    int(data.get("n_failures", 0) or 0),
+        "success_rate":  float(data.get("success_rate", 0.0) or 0.0),
+        "total_demos":   int(data.get("total_demonstrations_needed", 0) or 0),
+    }
+
+
+def collect_method_stats(ablations_dir: str = "results/ablations", baselines_dir: str = "results/baselines", runs_dir: str = "results/runs") -> Dict[str, List[Dict]]:
+    stats: Dict[str, List[Dict]] = {m: [] for m in METHOD_ORDER}
+    ab = Path(ablations_dir)
+    if ab.exists():
+        for p in sorted(ab.iterdir()):
+            if p.is_dir():
+                s = _scan_run(p)
+                if s and s.get("method") in stats:
+                    stats[s["method"]].append(s)
+    rn = Path(runs_dir)
+    if rn.exists():
+        for p in sorted(rn.iterdir()):
+            if p.is_dir():
+                s = _scan_run(p)
+                if s and s.get("method") in stats:
+                    stats[s["method"]].append(s)
+    bl = Path(baselines_dir)
+    if bl.exists():
+        for p in sorted(bl.iterdir()):
+            if p.is_dir():
+                s = _scan_baseline(p)
+                if s and s.get("method") in stats:
+                    stats[s["method"]].append(s)
+    return stats
+
+
+def build_performance_figure(ablations_dir: str = "results/ablations", baselines_dir: str = "results/baselines", runs_dir: str = "results/runs"):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    stats = collect_method_stats(ablations_dir, baselines_dir, runs_dir)
+
+    x_labels = METHOD_ORDER
+    mean_success = []
+    mean_demos = []
+    for m in x_labels:
+        runs = stats.get(m, [])
+        if runs:
+            mean_success.append(sum(r["success_rate"] for r in runs) / len(runs))
+            mean_demos.append(sum(r["total_demos"] for r in runs) / len(runs))
+        else:
+            mean_success.append(0.0)
+            mean_demos.append(0.0)
+
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    xs = list(range(len(x_labels)))
+    ax1.plot(xs, mean_success, marker="o", linewidth=2, label="Policy success rate", color="#1f77b4")
+    ax1.set_ylabel("Policy success rate", color="#1f77b4")
+    ax1.set_ylim(0.0, 1.05)
+    ax1.tick_params(axis="y", labelcolor="#1f77b4")
+    ax1.set_xticks(xs)
+    ax1.set_xticklabels(x_labels, rotation=30, ha="right")
+    ax1.grid(True, axis="y", alpha=0.3)
+    ax1.set_title("Method variants — success rate and demos prescribed")
+
+    ax2 = ax1.twinx()
+    ax2.bar(xs, mean_demos, alpha=0.25, color="#d62728", label="Total demos prescribed")
+    ax2.set_ylabel("Total demonstrations prescribed", color="#d62728")
+    ax2.tick_params(axis="y", labelcolor="#d62728")
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+    fig.tight_layout()
+    return fig, stats
+Next: dashboard/app.py
+
+File 21: dashboard/app.py
+Responsibility: The live interactive Gradio dashboard. Implements every item in the spec: load saved run, episode selector, frame viewer, component toggles, re-run pipeline button (Phases B+C only — reuses saved frames and episode data), per-component output tabs, side-by-side prescription diff, performance graph tab.
+pythonimport json
+import os
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from dotenv import load_dotenv
+load_dotenv(REPO_ROOT / ".env")
+
+import gradio as gr
+
+from pipeline.pipeline_runner import rerun_pipeline_only
+from dashboard.components.episode_viewer import (
+    load_full_output,
+    list_failure_episodes,
+    get_episode_frames,
+    get_episode_component_outputs,
+    get_episode_metadata,
+)
+from dashboard.components.prescription_diff import prescription_pair, html_side_by_side, unified_diff
+from dashboard.components.performance_graph import build_performance_figure
+
+
+RUNS_DIR_DEFAULT      = str(REPO_ROOT / "results" / "runs")
+ABLATIONS_DIR_DEFAULT = str(REPO_ROOT / "results" / "ablations")
+BASELINES_DIR_DEFAULT = str(REPO_ROOT / "results" / "baselines")
+
+
+def _state_init() -> Dict:
+    return {
+        "run_dir":          None,
+        "rerun_dir":        None,
+        "failure_episodes": [],
+    }
+
+
+def on_load_run(run_dir: str, state: Dict):
+    state = dict(state or {})
+    state["run_dir"] = run_dir
+    state["rerun_dir"] = None
+    try:
+        full = load_full_output(run_dir)
+    except Exception as e:
+        state["failure_episodes"] = []
+        return (
+            state,
+            gr.update(choices=[], value=None),
+            f"Error loading run: {e}",
+            None, None, None,
+            "", "", "", "", "", "",
+            "", "",
+        )
+    failures = list_failure_episodes(full)
+    state["failure_episodes"] = failures
+    choices = [(f["label"], f["episode_id"]) for f in failures]
+    value = choices[0][1] if choices else None
+    status = f"Loaded run: {run_dir}\n{len(failures)} failure episodes found."
+    return (
+        state,
+        gr.update(choices=choices, value=value),
+        status,
+        None, None, None,
+        "", "", "", "", "", "",
+        "", "",
+    )
+
+
+def on_select_episode(episode_id: Optional[int], state: Dict):
+    if not state or not state.get("run_dir") or episode_id is None:
+        return (None, None, None, "", "", "", "", "", "", "", "")
+    run_dir = state["run_dir"]
+    frames = get_episode_frames(run_dir, int(episode_id))
+    outputs = get_episode_component_outputs(run_dir, int(episode_id))
+    meta = get_episode_metadata(state.get("failure_episodes", []), int(episode_id))
+    meta_text = json.dumps({
+        "episode_id":     meta.get("episode_id"),
+        "seed":           meta.get("seed"),
+        "dynamic_config": meta.get("dynamic_config", {}),
+        "ascii_grid":     meta.get("ascii_grid", ""),
+    }, indent=2, default=str)
+    return (
+        frames.get("start_frame"),
+        frames.get("highest_loss_frame"),
+        frames.get("end_frame"),
+        outputs.get("vlm_report", ""),
+        outputs.get("kag_context", ""),
+        outputs.get("rag_retrieved", ""),
+        outputs.get("reasoning", ""),
+        outputs.get("tkf_result", ""),
+        outputs.get("final_prescription", ""),
+        meta_text,
+        "",
+    )
+
+
+def on_rerun(
+    use_vlm: bool,
+    use_kag: bool,
+    use_rag: bool,
+    use_reasoning: bool,
+    use_tkf: bool,
+    use_aggregator: bool,
+    state: Dict,
+):
+    state = dict(state or {})
+    if not state.get("run_dir"):
+        return state, "Load a saved run first.", "", "", ""
+    overrides = {"pipeline": {
+        "use_vlm":        bool(use_vlm),
+        "use_kag":        bool(use_kag),
+        "use_rag":        bool(use_rag),
+        "use_reasoning":  bool(use_reasoning),
+        "use_tkf":        bool(use_tkf),
+        "use_aggregator": bool(use_aggregator),
+    }}
+    try:
+        out = rerun_pipeline_only(state["run_dir"], overrides)
+    except Exception as e:
+        return state, f"Rerun failed: {e}", "", "", ""
+    rerun_dir = Path(state["run_dir"]).parent / out["metadata"]["run_id"]
+    state["rerun_dir"] = str(rerun_dir)
+    status = f"Rerun complete → {rerun_dir}"
+    return state, status, str(rerun_dir), "", ""
+
+
+def on_diff(episode_id: Optional[int], state: Dict, mode: str):
+    if not state or not state.get("run_dir"):
+        return "", "", "(load a run first)"
+    orig_dir = state["run_dir"]
+    rerun_dir = state.get("rerun_dir")
+    if mode == "Episode":
+        eid = int(episode_id) if episode_id is not None else None
+        orig, new = prescription_pair(orig_dir, rerun_dir, eid)
+    else:
+        orig, new = prescription_pair(orig_dir, rerun_dir, None)
+    html = html_side_by_side(orig, new, "Original (loaded run)", "Re-run (current toggles)")
+    diff = unified_diff(orig, new)
+    return orig, new, html + "\n\n<pre>" + diff + "</pre>"
+
+
+def on_refresh_graph():
+    fig, _stats = build_performance_figure(ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT, RUNS_DIR_DEFAULT)
+    return fig
+
+
+def _list_saved_runs() -> List[str]:
+    out = []
+    for base in [RUNS_DIR_DEFAULT, ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT]:
+        p = Path(base)
+        if p.exists():
+            for d in sorted(p.iterdir()):
+                if d.is_dir() and (d / "full_output.json").exists():
+                    out.append(str(d))
+    return out
+
+
+def build_app():
+    with gr.Blocks(title="MazeNav Research Dashboard") as app:
+        gr.Markdown("# MazeNav Research Dashboard")
+        gr.Markdown("Load a saved run → pick a failure episode → toggle components → re-run Phase B + C → compare prescriptions.")
+
+        state = gr.State(_state_init())
+
+        with gr.Tab("Explorer"):
+            with gr.Row():
+                with gr.Column(scale=2):
+                    run_picker = gr.Dropdown(choices=_list_saved_runs(), label="Saved run directory", allow_custom_value=True)
+                    run_refresh = gr.Button("Refresh run list")
+                    load_btn = gr.Button("Load Saved Run", variant="primary")
+                    load_status = gr.Textbox(label="Status", lines=3, interactive=False)
+
+                    gr.Markdown("### Component toggles (for re-run)")
+                    use_vlm = gr.Checkbox(label="VLM",        value=True)
+                    use_kag = gr.Checkbox(label="KAG",        value=True)
+                    use_rag = gr.Checkbox(label="RAG",        value=True)
+                    use_reasoning = gr.Checkbox(label="Reasoning",  value=True)
+                    use_tkf = gr.Checkbox(label="TKF",        value=True)
+                    use_aggregator = gr.Checkbox(label="Aggregator",value=True)
+                    rerun_btn = gr.Button("Re-run Pipeline (Phases B + C)", variant="primary")
+                    rerun_status = gr.Textbox(label="Re-run status", lines=2, interactive=False)
+                    rerun_dir_tb = gr.Textbox(label="Re-run dir", interactive=False)
+
+                with gr.Column(scale=3):
+                    episode_dd = gr.Dropdown(label="Failure episode", choices=[], interactive=True)
+
+                    with gr.Row():
+                        start_img = gr.Image(label="Start frame", type="filepath", height=220)
+                        highloss_img = gr.Image(label="Highest-loss frame", type="filepath", height=220)
+                        end_img   = gr.Image(label="End frame", type="filepath", height=220)
+
+                    meta_box = gr.Textbox(label="Episode metadata", lines=8, interactive=False)
+
+                    with gr.Tabs():
+                        with gr.Tab("VLM Report"):
+                            vlm_box = gr.Textbox(lines=14, interactive=False)
+                        with gr.Tab("KAG Context"):
+                            kag_box = gr.Textbox(lines=14, interactive=False)
+                        with gr.Tab("RAG Retrieved"):
+                            rag_box = gr.Textbox(lines=14, interactive=False)
+                        with gr.Tab("Reasoning"):
+                            reasoning_box = gr.Textbox(lines=20, interactive=False)
+                        with gr.Tab("TKF Verdict"):
+                            tkf_box = gr.Textbox(lines=14, interactive=False)
+                        with gr.Tab("Final Prescription"):
+                            final_box = gr.Textbox(lines=14, interactive=False)
+
+        with gr.Tab("Prescription Diff"):
+            with gr.Row():
+                diff_mode = gr.Radio(choices=["Episode", "Cross-episode (Phase C)"], value="Episode", label="Diff target")
+                diff_btn = gr.Button("Compute Diff", variant="primary")
+            with gr.Row():
+                orig_box = gr.Textbox(label="Original prescription", lines=16)
+                new_box  = gr.Textbox(label="Re-run prescription",    lines=16)
+            diff_html = gr.HTML()
+
+        with gr.Tab("Performance Graph"):
+            perf_btn = gr.Button("Refresh from results/ablations + results/baselines", variant="primary")
+            perf_plot = gr.Plot()
+
+        def _refresh_runs():
+            return gr.update(choices=_list_saved_runs())
+
+        run_refresh.click(_refresh_runs, inputs=None, outputs=run_picker)
+
+        load_btn.click(
+            fn=on_load_run,
+            inputs=[run_picker, state],
+            outputs=[state, episode_dd, load_status,
+                     start_img, highloss_img, end_img,
+                     vlm_box, kag_box, rag_box, reasoning_box, tkf_box, final_box,
+                     meta_box, rerun_status],
+        )
+
+        episode_dd.change(
+            fn=on_select_episode,
+            inputs=[episode_dd, state],
+            outputs=[start_img, highloss_img, end_img,
+                     vlm_box, kag_box, rag_box, reasoning_box, tkf_box, final_box,
+                     meta_box, rerun_status],
+        )
+
+        rerun_btn.click(
+            fn=on_rerun,
+            inputs=[use_vlm, use_kag, use_rag, use_reasoning, use_tkf, use_aggregator, state],
+            outputs=[state, rerun_status, rerun_dir_tb, orig_box, new_box],
+        )
+
+        diff_btn.click(
+            fn=on_diff,
+            inputs=[episode_dd, state, diff_mode],
+            outputs=[orig_box, new_box, diff_html],
+        )
+
+        perf_btn.click(fn=on_refresh_graph, inputs=None, outputs=perf_plot)
+
+    return app
+
+
+def main():
+    app = build_app()
+    app.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)), share=False)
+
+
+if __name__ == "__main__":
+    main()
+
+Summary
+All 21 files in the generation order are done. Here is a quick recap of what exists now and what is copied as-is from dynamic_maze_nav (you do not need me to regenerate these):
+
+configs/maze_layouts.py — COPY AS-IS from dynamic_maze_nav/configs/maze_layouts.py — no changes required.
+envs/maze_env.py — COPY AS-IS from dynamic_maze_nav/envs/maze_env.py — no changes required.
+model/diffusion_policy.py — COPY AS-IS from dynamic_maze_nav/model/diffusion_policy.py — no changes required. (Supervisor constraint: MazeDiffusionPolicy must remain untouched.)
+scripts/collect_expert_demos.py — COPY AS-IS from dynamic_maze_nav/scripts/collect_expert_demos.py — no changes required.
+scripts/train_diffusion.py — COPY AS-IS from dynamic_maze_nav/scripts/train_diffusion.py — no changes required.
+scripts/play_maze.py — COPY AS-IS from dynamic_maze_nav/scripts/play_maze.py — no changes required.
+
+Two small follow-ups you should do before the first real run
+
+Add these lines to environment.yml:
+
+yaml   - pyyaml
+   - openai
+   - python-dotenv
+   - transformers
+   - accelerate
+   - huggingface-hub
+   - faiss-cpu
+   - crewai
+   - gradio
+   - matplotlib
+
+Create .env in repo root with OPENAI_API_KEY=sk-... — required by all LLM modules.
+
+Smoke-test commands
+bashpython scripts/run_pipeline.py                                                   # full system
+python scripts/run_pipeline.py --ablation configs/ablation_profiles/no_kag.yaml  # one ablation
+python scripts/run_baseline.py --baseline naive                                  # baseline 1
+python scripts/run_baseline.py --baseline diff                                   # baseline 2
+python dashboard/app.py                                                          # live dashb
