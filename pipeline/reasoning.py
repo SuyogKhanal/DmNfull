@@ -14,7 +14,11 @@ Flow (enforced by pipeline_runner.py):
 Note on 'steps' field:
   Episodes loaded from phase_a.all_rollouts (ablation suite rollout dirs)
   only contain summary-level fields written by _save_rollout_only — there
-  is NO 'steps' list.  All helpers below must treat 'steps' as optional.
+  is NO 'steps' list.  All helpers below must treat 'steps' as optional and
+  build a usable fallback summary from the rollout-summary fields that ARE
+  present (total_steps, total_reward, success, dynamic_config, key_frames).
+  Without this fallback, the cross-episode LLM sees no trajectory evidence
+  and defaults to a generic wrong label like "uniform looping".
 """
 import traceback
 from pathlib import Path
@@ -47,10 +51,39 @@ def _chat_plain(client, model: str, messages: List[Dict], max_tokens: int) -> st
 
 
 def _format_trajectory(episode: Dict, max_entries: int = 60) -> str:
-    """Format step-by-step trajectory.  Returns empty string if 'steps' is absent."""
+    """Format step-by-step trajectory.
+
+    When the per-step log is absent (rollout-summary episodes loaded from
+    phase_a.all_rollouts in an ablation-suite full_output.json), build a
+    fallback summary from the fields that ARE present so the cross-episode
+    LLM has enough evidence to correctly identify fire-collision vs timeout
+    vs wall-thrashing — instead of defaulting to a generic "looping" label.
+    """
     steps = episode.get("steps") or []
     if not steps:
-        return "[step log not available — loaded from rollout summary]"
+        dyn = episode.get("dynamic_config", {}) or {}
+        total_steps  = episode.get("total_steps", "?")
+        total_reward = episode.get("total_reward", 0.0)
+        success      = episode.get("success", False)
+        start_pos    = dyn.get("start_pos", "?")
+        goal_pos     = dyn.get("goal_pos", "?")
+        fires        = dyn.get("fire_positions", "?")
+        kf_parts = []
+        for kf in episode.get("key_frames", []) or []:
+            role = kf.get("role", "?")
+            idx  = kf.get("step_idx", "?")
+            kf_parts.append(f"{role} at step {idx}")
+        kf_str = ", ".join(kf_parts) if kf_parts else "(no key frames)"
+        try:
+            reward_str = f"{float(total_reward):.2f}"
+        except (TypeError, ValueError):
+            reward_str = str(total_reward)
+        return (
+            f"[Step log not available. Summary: {total_steps} steps, "
+            f"reward={reward_str}, success={success}.\n"
+            f"Start={start_pos}, Goal={goal_pos}, Fires={fires}.\n"
+            f"Key frames: {kf_str}]"
+        )
     entries = []
     for s in steps:
         if s.get("action") is None:
