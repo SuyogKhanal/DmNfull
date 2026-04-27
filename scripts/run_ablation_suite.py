@@ -28,29 +28,38 @@ from pipeline.pipeline_runner import (
 from pipeline.response_cache import ResponseCache
 
 
-ALL_PROFILES = [
-    # existing
+# --- Profile order ---------------------------------------------------------
+# The suite runs *additively* by default: start with the minimal baseline and
+# add one component at a time, so each profile differs from the previous by a
+# single, scientifically-meaningful flag. This is the order Santu asked for —
+# it makes the contribution of each component immediately readable from the
+# performance plot.
+#
+# The "no_*" profiles are kept for backwards compatibility (subtractive
+# ablation) but are NOT part of the default suite anymore. Pass them
+# explicitly via --profiles if you want them.
+ADDITIVE_PROFILES = [
+    "vlm_only",
+    "vlm_plain_llm",
+    "vlm_reasoning",
+    "vlm_reasoning_kag",
+    "vlm_reasoning_rag_kag",
+    "vlm_reasoning_rag_kag_aggregator",
+    "vlm_reasoning_tkf",
+    "vlm_reasoning_tkf_rag_kag",
     "full_system",
+]
+
+REMOVAL_PROFILES = [
     "no_vlm",
     "no_kag",
     "no_rag",
     "no_reasoning",
     "no_tkf",
     "no_aggregator",
-    # new
-    "vlm_only",
-    "vlm_plain_llm",
-    "vlm_reasoning",
-    "reasoning_only",
-    "reasoning_rag",
-    "reasoning_kag",
-    "vlm_reasoning_rag",
-    "vlm_reasoning_kag",
-    "vlm_reasoning_rag_kag",
-    "vlm_reasoning_rag_kag_plain",
-    "vlm_reasoning_tkf",
-    "vlm_reasoning_tkf_plain",
 ]
+
+ALL_PROFILES = ADDITIVE_PROFILES + REMOVAL_PROFILES
 
 
 def parse_args():
@@ -59,7 +68,7 @@ def parse_args():
     p.add_argument("--n-episodes",        type=int, default=None, dest="n_episodes")
     p.add_argument("--seed",              type=int, default=None)
     p.add_argument("--checkpoint",        type=str, default=None)
-    p.add_argument("--profiles",          type=str, default=",".join(ALL_PROFILES))
+    p.add_argument("--profiles",          type=str, default=",".join(ADDITIVE_PROFILES))
     p.add_argument("--force-rerun-cache", action="store_true", dest="force_rerun_cache")
     p.add_argument("--launch-dashboard",  action="store_true", dest="launch_dashboard")
     return p.parse_args()
@@ -88,13 +97,6 @@ def _parse_profiles(arg: str) -> List[str]:
     if not out:
         out = list(ALL_PROFILES)
     return out
-
-
-def _ensure_full_system_first(profiles: List[str]) -> (List[str], bool):
-    if "full_system" in profiles:
-        ordered = ["full_system"] + [p for p in profiles if p != "full_system"]
-        return ordered, False
-    return ["full_system"] + profiles, True
 
 
 def _load_profile_yaml(profile_name: str) -> Dict:
@@ -216,7 +218,7 @@ def main():
 
     master_cfg = _load_master_config(args.config, args.n_episodes, args.seed, args.checkpoint)
     profiles_in = _parse_profiles(args.profiles)
-    profiles_ordered, prepended_full = _ensure_full_system_first(profiles_in)
+    profiles_ordered = profiles_in
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"run_{timestamp}"
@@ -231,7 +233,6 @@ def main():
         "timestamp":        datetime.now().isoformat(),
         "profiles_requested": profiles_in,
         "profiles_executed":  profiles_ordered,
-        "full_system_prepended_silently": prepended_full,
         "cli_overrides": {
             "config":            args.config,
             "n_episodes":        args.n_episodes,
