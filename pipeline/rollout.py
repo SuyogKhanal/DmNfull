@@ -272,7 +272,7 @@ def run_rollouts(config: Dict, run_dir: Path) -> Dict:
 
     all_episodes: List[Dict] = []
     for ep_idx in range(n_episodes):
-        seed = base_seed 
+        seed = base_seed + ep_idx
         print(f"\n[Rollout] Episode {ep_idx+1}/{n_episodes}  seed={seed}")
         ed = _run_single_episode(
             policy=policy,
