@@ -1,14 +1,15 @@
+"""VLM frame analyser — the ONLY module that uses the response cache.
+
+Cache policy (enforced here, stripped from reasoning.py):
+  - VLM outputs are expensive (vision API calls per frame) and deterministic
+    given the same frame + prompt, so they ARE cached keyed on episode_id.
+  - Reasoning, prescription, summary, aggregator, and TKF outputs are NOT
+    cached — see reasoning.py and aggregator.py.
+"""
 import base64
-import json
-import os
 import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
-
-def _b64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
 
 
 def _oai_client():
@@ -16,35 +17,60 @@ def _oai_client():
     return OpenAI()
 
 
-def _chat_vlm(client, model: str, image_b64: str, text_prompt: str, system_prompt: str, max_tokens: int) -> str:
-    content = [
-        {"type": "input_text", "text": text_prompt},
-        {"type": "input_image", "image_url": f"data:image/png;base64,{image_b64}"},
-    ]
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": content})
-
-    r = client.responses.create(
-        model=model,
-        input=messages,
-        max_output_tokens=max_tokens,
-        reasoning={"effort": "low"},
-    )
-    return r.output_text or ""
+def _encode_image(path: str) -> Optional[str]:
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        print(f"[VLM] Could not encode image {path}: {e}")
+        return None
 
 
-def _format_goal_fire_description(dyn_cfg: Dict) -> str:
-    start = dyn_cfg.get("start_pos", [0, 0])
-    goal  = dyn_cfg.get("goal_pos",  [4, 4])
-    fires = dyn_cfg.get("fire_positions", [])
-    fires_str = ", ".join([f"({r},{c})" for r, c in fires]) if fires else "(none)"
+def _frame_prompt(role: str, step_idx: int, episode: Dict) -> str:
+    dyn = episode.get("dynamic_config", {})
     return (
-        f"Episode start position: (row={start[0]}, col={start[1]}). "
-        f"Goal position: (row={goal[0]}, col={goal[1]}). "
-        f"Fire hazards at: {fires_str}."
+        f"You are analysing frame '{role}' (step {step_idx}) of a failed maze navigation episode.\n"
+        f"Episode config: start={dyn.get('start_pos','?')}, goal={dyn.get('goal_pos','?')}, "
+        f"fires={dyn.get('fire_positions','?')}.\n\n"
+        "Provide a structured analysis (~150 words):\n"
+        "1. Agent location and adjacent cells (note any walls/fires/goal nearby).\n"
+        "2. Goal location and Manhattan distance.\n"
+        "3. Fire hazards relative to the agent.\n"
+        "4. First corrective demonstration move (exact action + brief justification)."
     )
+
+
+def _analyse_frame(
+    client,
+    model: str,
+    image_path: str,
+    role: str,
+    step_idx: int,
+    episode: Dict,
+    max_tokens: int,
+) -> str:
+    b64 = _encode_image(image_path)
+    if b64 is None:
+        return f"[VLM: could not load frame {role}]"
+    prompt = _frame_prompt(role, step_idx, episode)
+    try:
+        r = client.responses.create(
+            model=model,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text",  "text": prompt},
+                        {"type": "input_image", "image_url": f"data:image/png;base64,{b64}"},
+                    ],
+                }
+            ],
+            max_output_tokens=max_tokens,
+        )
+        return r.output_text or ""
+    except Exception as e:
+        traceback.print_exc()
+        return f"[VLM ERROR on {role}: {e}]"
 
 
 def analyse_failure(
@@ -52,130 +78,54 @@ def analyse_failure(
     llm_cfg: Dict,
     cache=None,
 ) -> Tuple[str, List[Dict]]:
-    """Run chained VLM analysis over the 3 key frames. Returns (combined_report, per_frame_list)."""
+    """Run VLM analysis on the 3 key frames.  Results ARE cached per episode."""
+    episode_id = episode["episode_id"]
+    model      = str(llm_cfg.get("vlm_model", llm_cfg.get("model", "gpt-5-nano-2025-08-07")))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 4096))
+
+    # --- Cache hit path (VLM only) ---
     if cache is not None:
-        scope = cache.episode_scope(episode["episode_id"])
-        cached = cache.load(scope, "vlm_output")
+        scope  = cache.episode_scope(episode_id)
+        cached = cache.load(scope, "vlm_report")
         if cached is not None:
+            print(f"  [VLM][ep {episode_id}] cache HIT — skipping API calls")
             return cached.get("report", ""), cached.get("per_frame", [])
 
-    model = str(llm_cfg.get("vlm_model", llm_cfg.get("model", "gpt-5-nano-2025-08-07")))
-    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
-    client = _oai_client()
+    frame_paths = episode.get("frame_paths", {})
+    key_frames  = episode.get("key_frames", [])
 
-    dyn_cfg = episode.get("dynamic_config", {})
-    ascii_grid = episode.get("ascii_grid", "")
-    goal_fire_desc = _format_goal_fire_description(dyn_cfg)
-
-    system_prompt = (
-        "You are a demonstration coach for maze navigation imitation learning. "
-        "An agent is learning to navigate a 5x5 grid maze via a vision-conditioned diffusion policy "
-        "trained on human demonstrations. Every episode, the start position, goal position, and "
-        "fire hazard positions are RANDOMISED. The maze contains FIRE hazards (red cells) that "
-        "terminate the episode on contact. When the policy fails, a human operator must record a "
-        "corrective demonstration. Your job is to observe what the agent did wrong and describe what "
-        "the CORRECT demonstration should look like. Focus on: movement direction, proximity to fire "
-        "hazards, distance to goal, and optimal path choice. Be spatially precise — use grid "
-        "coordinates (row, col). Roughly 150 words per frame."
-    )
-
-    first_frame_template = (
-        "Observe this {role} from a maze navigation episode.\n\n"
-        "MAZE LAYOUT (·=free, █=wall, F=fire, G=goal, A=agent):\n{ascii_grid}\n\n"
-        "EPISODE CONFIGURATION:\n{goal_fire_desc}\n\n"
-        "CURRENT STATE DESCRIPTION:\n{state_desc}\n\n"
-        "ADJACENT CELLS: {neighbourhood}\n\n"
-        "You are coaching a human operator who will record a corrective demonstration.\n"
-        "Describe:\n"
-        "1. Where is the agent on the grid? What is at each adjacent cell (up/down/left/right)?\n"
-        "   State the exact (row, col) position.\n"
-        "2. Where is the GOAL relative to the agent? What is the Manhattan distance?\n"
-        "   How many cells right/left and how many cells down/up?\n"
-        "3. Where are the FIRE hazards relative to the agent?\n"
-        "   Is the agent in danger of stepping into fire on any adjacent move?\n"
-        "4. What direction should a human demonstrator move FIRST from this position?\n"
-        "   Justify by referencing which adjacent cells are safe vs dangerous.\n\n"
-        "Reference the state description data. Be spatially specific — use coordinates."
-    )
-
-    rolling_frame_template = (
-        "Observe this {role} from the maze episode (step {step_idx}).\n\n"
-        "PREVIOUS FRAME ANALYSIS:\n{previous_summary}\n\n"
-        "EPISODE CONFIGURATION:\n{goal_fire_desc}\n\n"
-        "CURRENT STATE DESCRIPTION:\n{state_desc}\n\n"
-        "ADJACENT CELLS: {neighbourhood}\n\n"
-        "Compare to the previous frame and assess what the agent is doing wrong:\n"
-        "1. How has the agent's position changed since the last frame? State old and new\n"
-        "   (row, col). Did it move closer to the goal or further away? By how many cells?\n"
-        "2. Did the agent move toward FIRE? Is it now adjacent to one of the fire cells?\n"
-        "   If it stepped INTO fire, state which fire cell and from which direction.\n"
-        "3. Was the agent's movement efficient? Did it revisit a cell it already visited?\n"
-        "   Did it move in a direction that doesn't reduce Manhattan distance to goal?\n"
-        "4. What should the human demonstrator do differently from THIS position?\n"
-        "   Give the exact action (UP/DOWN/LEFT/RIGHT) and explain why it avoids fire\n"
-        "   and progresses toward the goal.\n\n"
-        "Reference specific coordinates. Roughly 150 words."
-    )
-
+    client_obj = _oai_client()
     per_frame: List[Dict] = []
-    previous_summary = ""
-    frame_paths = episode.get("frame_paths", {}) or {}
+    report_sections: List[str] = []
 
-    try:
-        for i, kf in enumerate(episode["key_frames"]):
-            role = kf["role"]
-            idx  = kf["step_idx"]
-            step = episode["steps"][idx]
-            state_desc   = step.get("info", {}).get("llm_state_description", "")
-            neighbourhood= step.get("info", {}).get("neighbourhood", {})
-            fpath = frame_paths.get(role)
-            if not fpath or not os.path.exists(fpath):
-                per_frame.append({"role": role, "step_idx": idx, "summary": "[SKIPPED: frame path missing]"})
-                continue
+    for kf in key_frames:
+        role     = kf.get("role", "unknown")
+        step_idx = kf.get("step_idx", 0)
+        img_path = frame_paths.get(role)
 
-            img_b64 = _b64(fpath)
-            if i == 0:
-                prompt = first_frame_template.format(
-                    role=role.replace("_", " "),
-                    ascii_grid=ascii_grid,
-                    goal_fire_desc=goal_fire_desc,
-                    state_desc=state_desc,
-                    neighbourhood=json.dumps(neighbourhood, indent=2),
-                )
-            else:
-                prompt = rolling_frame_template.format(
-                    role=role.replace("_", " "),
-                    step_idx=idx,
-                    previous_summary=previous_summary,
-                    goal_fire_desc=goal_fire_desc,
-                    state_desc=state_desc,
-                    neighbourhood=json.dumps(neighbourhood, indent=2),
-                )
+        if not img_path or not Path(img_path).exists():
+            txt = f"[VLM: frame '{role}' not found at {img_path}]"
+        else:
+            txt = _analyse_frame(client_obj, model, img_path, role, step_idx, episode, max_tokens)
 
-            summary = _chat_vlm(client, model, img_b64, prompt, system_prompt, max_tokens)
-            per_frame.append({"role": role, "step_idx": idx, "summary": summary})
-            previous_summary = summary
-    except Exception as e:
-        traceback.print_exc()
-        per_frame.append({"role": "error", "step_idx": -1, "summary": f"[VLM ERROR: {e}]"})
+        per_frame.append({"role": role, "step_idx": step_idx, "text": txt})
+        report_sections.append(f"--- {role} frame step {step_idx} ---\n{txt}")
 
-    header = (
-        f"VISION REPORT  Maze={episode['maze_name']}  "
-        f"Steps={episode['total_steps']}  "
-        f"Reward={episode['total_reward']:.2f}  "
-        f"Success={episode['success']}"
+    report = (
+        f"VISION REPORT\nMaze={episode.get('maze_name','?')} "
+        f"Steps={episode.get('total_steps','?')} "
+        f"Reward={episode.get('total_reward',0.0):.2f} "
+        f"Success={episode.get('success',False)}\n"
+        "---\n" + "\n\n".join(report_sections)
     )
-    lines = [header]
-    for f_ in per_frame:
-        lines.append(f"--- {f_['role']} (step {f_['step_idx']}) ---")
-        lines.append(f_["summary"])
-        lines.append("")
 
-    report = "\n".join(lines)
-
+    # --- Cache miss path: save for next run ---
     if cache is not None:
-        scope = cache.episode_scope(episode["episode_id"])
-        cache.save(scope, "vlm_output", {"report": report, "per_frame": per_frame})
+        cache.save(
+            cache.episode_scope(episode_id),
+            "vlm_report",
+            {"report": report, "per_frame": per_frame},
+        )
 
     return report, per_frame
 

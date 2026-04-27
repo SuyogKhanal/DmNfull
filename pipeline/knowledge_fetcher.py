@@ -41,6 +41,7 @@ def _embed_text(text: str, model_id: str):
             tv = model.get_text_features(**enc)
             tv = torch.nn.functional.normalize(tv, dim=-1)[0].cpu().float().numpy()
         vecs.append(tv)
+    import numpy as np
     vec = np.mean(np.stack(vecs), axis=0).astype("float32")
     norm = np.linalg.norm(vec)
     return (vec / (norm + 1e-9)).astype("float32")
@@ -245,7 +246,59 @@ def _llm_identify_needs(reasoning_text: str, model: str) -> str:
     ).strip()
 
 
-def _llm_adjust_prescription(needs: str, retrieval_summary: str, verdict: str, reasoning: str, model: str) -> str:
+def _build_fallback_retrieval_block(results: List[Dict]) -> str:
+    """Format the top-2 best matches for the reasoning LLM when below threshold.
+
+    Each entry includes the similarity score so the LLM can reason about how
+    relevant the existing demos actually are.
+    """
+    if not results:
+        return "No demos exist in the training bank at all."
+    lines = ["Best available demos (below the confidence threshold — included for context):"]
+    for r in results[:2]:
+        m = r["metadata"]
+        lines.append(
+            f"  Demo (similarity={r['score']:.3f} / 100% would be a perfect match): "
+            f"{m.get('description', '?')} "
+            f"[corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}, "
+            f"n_steps={m.get('n_steps','?')}]"
+        )
+    return "\n".join(lines)
+
+
+def _llm_adjust_prescription(
+    needs: str,
+    retrieval_summary: str,
+    verdict: str,
+    reasoning: str,
+    model: str,
+    fallback_block: str = "",
+) -> str:
+    """Produce final adjusted guidance.
+
+    When verdict is NOT_FOUND but we have fallback demos (below threshold),
+    the LLM is shown those demos WITH their sim scores and asked to reason
+    about what specifically went off the margin — and whether variety or a
+    genuinely new demo type is needed.
+    """
+    if verdict == "NOT_FOUND" and fallback_block:
+        extra_section = textwrap.dedent(f"""
+
+        CLOSEST EXISTING DEMOS (did NOT meet the confidence threshold):
+        {fallback_block}
+
+        Given the similarity scores above, reason about:
+        1. Are these existing demos roughly covering the right situation, just
+           not quite matching (high sim ~0.4-0.6) — suggesting more VARIETY of
+           the same type is needed?
+        2. Or are they completely unrelated (low sim <0.3) — meaning a brand
+           new type of demo must be recorded from scratch?
+        3. What specific aspect of the failure situation is NOT covered by the
+           closest existing demos?
+        """)
+    else:
+        extra_section = ""
+
     prompt = textwrap.dedent(f"""
         You are finalising guidance for a human who will record corrective demonstrations.
 
@@ -255,14 +308,15 @@ def _llm_adjust_prescription(needs: str, retrieval_summary: str, verdict: str, r
         TRAINING-DATA RETRIEVAL VERDICT: {verdict}
         RETRIEVAL SUMMARY:
         {retrieval_summary}
-
+        {extra_section}
         ORIGINAL REASONING:
         {reasoning}
 
         Write 4-6 sentences of plain-English guidance.
         - If verdict is FOUND: explain why the policy likely still failed despite having this kind of demo, and recommend more variety.
         - If verdict is PARTIAL: describe what the existing demos cover and what new variation to add.
-        - If verdict is NOT_FOUND: confirm this demonstration is missing and describe what the human should record.
+        - If verdict is NOT_FOUND with close demos (sim >= 0.3): explain what is MISSING from those close demos and whether the human needs more variety or a genuinely new scenario.
+        - If verdict is NOT_FOUND with no close demos (sim < 0.3): confirm this demonstration is entirely missing and describe what the human should record from scratch.
         No coordinates, no action codes, no technical jargon.
     """)
     return _oai_plain(
@@ -274,53 +328,64 @@ def _llm_adjust_prescription(needs: str, retrieval_summary: str, verdict: str, r
     ).strip()
 
 
-def _identify_needs_cached(reasoning_text: str, llm_model: str, cache, episode_id: Optional[int]) -> str:
-    if cache is not None and episode_id is not None:
-        scope = cache.episode_scope(episode_id)
-        cached = cache.load(scope, "tkf_needs")
-        if cached is not None:
-            return cached.get("text", "")
-    text = _llm_identify_needs(reasoning_text, llm_model)
-    if cache is not None and episode_id is not None:
-        cache.save(cache.episode_scope(episode_id), "tkf_needs", {"text": text})
-    return text
-
-
-def _adjusted_cached(needs: str, summary: str, verdict: str, reasoning_text: str, llm_model: str, cache, episode_id: Optional[int]) -> str:
-    if cache is not None and episode_id is not None:
-        scope = cache.episode_scope(episode_id)
-        cached = cache.load(scope, "tkf_adjusted")
-        if cached is not None:
-            return cached.get("text", "")
-    text = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
-    if cache is not None and episode_id is not None:
-        cache.save(cache.episode_scope(episode_id), "tkf_adjusted", {"text": text})
-    return text
-
-
-def _run_direct(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str, cache=None, episode_id: Optional[int] = None) -> Dict:
-    needs = _identify_needs_cached(reasoning_text, llm_model, cache, episode_id)
+def _run_direct(
+    reasoning_text: str,
+    index,
+    meta,
+    clip_model: str,
+    found_thresh: float,
+    partial_thresh: float,
+    top_k: int,
+    llm_model: str,
+    cache=None,
+    episode_id: Optional[int] = None,
+) -> Dict:
+    needs = _llm_identify_needs(reasoning_text, llm_model)
     results = _query_index(index, meta, needs, clip_model, top_k)
     verdict = _verdict(results, found_thresh, partial_thresh)
+
     if results:
         lines = [f"Verdict: {verdict}", ""]
         for r in results:
             m = r["metadata"]
-            lines.append(f"  Match {r['rank']} (similarity={r['score']:.3f}): {m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]")
+            lines.append(
+                f"  Match {r['rank']} (similarity={r['score']:.3f}): "
+                f"{m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]"
+            )
         summary = "\n".join(lines)
     else:
         summary = f"Verdict: {verdict}\nNo matching demonstrations found."
-    adjusted = _adjusted_cached(needs, summary, verdict, reasoning_text, llm_model, cache, episode_id)
+
+    # --- Update 2: TKF fallback — pass top-2 with sim scores when below threshold ---
+    fallback_block = ""
+    if verdict == "NOT_FOUND":
+        fallback_block = _build_fallback_retrieval_block(results)
+
+    adjusted = _llm_adjust_prescription(
+        needs, summary, verdict, reasoning_text, llm_model, fallback_block=fallback_block
+    )
     return {
         "needs_description":     needs,
         "verdict":               verdict,
         "top_matches":           results,
         "retrieval_summary":     summary,
         "adjusted_prescription": adjusted,
+        "fallback_used":         verdict == "NOT_FOUND" and bool(results),
     }
 
 
-def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh: float, partial_thresh: float, top_k: int, llm_model: str, cache=None, episode_id: Optional[int] = None) -> Dict:
+def _run_crewai(
+    reasoning_text: str,
+    index,
+    meta,
+    clip_model: str,
+    found_thresh: float,
+    partial_thresh: float,
+    top_k: int,
+    llm_model: str,
+    cache=None,
+    episode_id: Optional[int] = None,
+) -> Dict:
     try:
         from crewai import Agent, Task, Crew, Process
         from crewai.tools import BaseTool
@@ -328,36 +393,6 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
     except ImportError as e:
         print(f"[TKF] CrewAI not installed ({e}) — falling back to direct pipeline.")
         return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model, cache, episode_id)
-
-    cached_needs = None
-    cached_adjusted = None
-    if cache is not None and episode_id is not None:
-        scope = cache.episode_scope(episode_id)
-        cn = cache.load(scope, "tkf_needs")
-        ca = cache.load(scope, "tkf_adjusted")
-        if cn is not None:
-            cached_needs = cn.get("text", "")
-        if ca is not None:
-            cached_adjusted = ca.get("text", "")
-
-    if cached_needs is not None and cached_adjusted is not None:
-        results = _query_index(index, meta, cached_needs, clip_model, top_k)
-        verdict = _verdict(results, found_thresh, partial_thresh)
-        if results:
-            lines = [f"Verdict: {verdict}", ""]
-            for r in results:
-                m = r["metadata"]
-                lines.append(f"  Match {r['rank']} (similarity={r['score']:.3f}): {m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]")
-            summary = "\n".join(lines)
-        else:
-            summary = f"Verdict: {verdict}\nNo matching demonstrations found."
-        return {
-            "needs_description":     cached_needs,
-            "verdict":               verdict,
-            "top_matches":           results,
-            "retrieval_summary":     summary,
-            "adjusted_prescription": cached_adjusted,
-        }
 
     needs_holder: Dict = {}
     retrieval_holder: Dict = {}
@@ -373,9 +408,6 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
         description: str = "Reads failure reasoning text and returns a plain-English description of what demo is missing."
         args_schema: type = NeedsQueryInput
         def _run(self, reasoning_text: str) -> str:
-            if cached_needs is not None:
-                needs_holder["needs"] = cached_needs
-                return cached_needs
             result = _llm_identify_needs(reasoning_text, llm_model)
             needs_holder["needs"] = result
             return result
@@ -395,7 +427,10 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
                 lines = [f"Verdict: {v}", ""]
                 for r in results:
                     m = r["metadata"]
-                    lines.append(f"  Match {r['rank']} (similarity={r['score']:.3f}): {m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]")
+                    lines.append(
+                        f"  Match {r['rank']} (similarity={r['score']:.3f}): "
+                        f"{m.get('description','?')} [corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}]"
+                    )
                 summary = "\n".join(lines)
             retrieval_holder["summary"] = summary
             return summary
@@ -417,17 +452,16 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
 
         needs   = needs_holder.get("needs") or _llm_identify_needs(reasoning_text, llm_model)
         verdict = retrieval_holder.get("verdict", "NOT_FOUND")
-        summary = retrieval_holder.get("summary", f"Verdict: {verdict}")
         matches = retrieval_holder.get("results", [])
+        summary = retrieval_holder.get("summary", f"Verdict: {verdict}")
         adjusted = str(crew_result).strip() if crew_result else ""
-        if not adjusted:
-            adjusted = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model)
 
-        if cache is not None and episode_id is not None:
-            scope = cache.episode_scope(episode_id)
-            if cached_needs is None:
-                cache.save(scope, "tkf_needs", {"text": needs})
-            cache.save(scope, "tkf_adjusted", {"text": adjusted})
+        # --- Update 2: apply fallback block even for CrewAI path ---
+        fallback_block = ""
+        if verdict == "NOT_FOUND":
+            fallback_block = _build_fallback_retrieval_block(matches)
+        if not adjusted:
+            adjusted = _llm_adjust_prescription(needs, summary, verdict, reasoning_text, llm_model, fallback_block=fallback_block)
 
         return {
             "needs_description":     needs,
@@ -435,6 +469,7 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
             "top_matches":           matches,
             "retrieval_summary":     summary,
             "adjusted_prescription": adjusted,
+            "fallback_used":         verdict == "NOT_FOUND" and bool(matches),
         }
     except Exception as e:
         traceback.print_exc()
@@ -442,7 +477,13 @@ def _run_crewai(reasoning_text: str, index, meta, clip_model: str, found_thresh:
         return _run_direct(reasoning_text, index, meta, clip_model, found_thresh, partial_thresh, top_k, llm_model, cache, episode_id)
 
 
-def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict, cache=None, episode_id: Optional[int] = None) -> Dict:
+def run_knowledge_check(
+    reasoning_text: str,
+    tkf_cfg: Dict,
+    llm_cfg: Dict,
+    cache=None,
+    episode_id: Optional[int] = None,
+) -> Dict:
     demo_dir   = Path(tkf_cfg.get("demo_dir", "demos"))
     index_dir  = Path(tkf_cfg.get("index_path", "results/demo_knowledge_base"))
     clip_model = str(tkf_cfg.get("clip_model", "openai/clip-vit-large-patch14"))
@@ -465,6 +506,7 @@ def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict, cache
                 "top_matches":           [],
                 "retrieval_summary":     f"TKF skipped — could not build demo index: {e}",
                 "adjusted_prescription": "",
+                "fallback_used":         False,
             }
 
     if use_crewai:
@@ -475,9 +517,16 @@ def run_knowledge_check(reasoning_text: str, tkf_cfg: Dict, llm_cfg: Dict, cache
 def format_tkf_block(tkf_result: Optional[Dict]) -> str:
     if not tkf_result:
         return ""
+    fallback_note = ""
+    if tkf_result.get("fallback_used"):
+        fallback_note = (
+            "\n[NOTE: No demo met the confidence threshold. "
+            "The 2 closest matches were used as context — see sim scores above.]\n"
+        )
     return (
         "=== TRAINING KNOWLEDGE CHECK ===\n"
         f"Verdict: {tkf_result.get('verdict','NOT_FOUND')}\n"
+        f"{fallback_note}"
         f"What was found in existing training demos:\n{tkf_result.get('retrieval_summary','(empty)')}\n"
         f"Adjusted guidance: {tkf_result.get('adjusted_prescription','(empty)')}\n"
     )

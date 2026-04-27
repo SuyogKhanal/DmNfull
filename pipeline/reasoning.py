@@ -156,76 +156,57 @@ def run_reasoning(
     use_kag: bool = True,
     use_rag: bool = True,
 ) -> Tuple[str, str, str]:
-    """Run both reasoning calls. Returns (analysis_text, prescription_text, combined_text)."""
+    """Run both reasoning calls.  Returns (analysis_text, prescription_text, combined_text).
+
+    CACHE POLICY (Update 1):
+      - Analysis and prescription are NEVER cached — they must be freshly generated
+        each run so that component ablations (RAG on/off, KAG on/off, TKF block
+        present/absent) always produce distinct outputs.
+      - Only VLM outputs are cached (handled in vlm_analyser.py).
+    """
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
     effort = str(llm_cfg.get("reasoning_effort", "high"))
-    suffix = _flag_suffix(use_vlm, use_kag, use_rag)
 
-    analysis_key     = f"reasoning_analysis_{suffix}"
-    prescription_key = f"reasoning_prescription_{suffix}"
-
-    scope = None
-    if cache is not None:
-        scope = cache.episode_scope(episode["episode_id"])
-
-    client = None
+    client = _oai_client()
     analysis_prompt = build_analysis_prompt(episode, vision_report, kag_context, rag_context)
     analysis_text = ""
 
-    cached_analysis = None
-    if cache is not None:
-        cached_analysis = cache.load(scope, analysis_key)
-    if cached_analysis is not None:
-        analysis_text = cached_analysis.get("text", "")
-    else:
-        client = _oai_client()
-        try:
-            analysis_text = _chat_reasoning(
-                client, model,
-                [
-                    {"role": "system", "content":
-                        "You are a navigation failure analyst for DAgger imitation learning. "
-                        "Walk through the agent's trajectory step by step. Identify what went wrong "
-                        "and why. Think step by step."},
-                    {"role": "user", "content": analysis_prompt},
-                ],
-                max_tokens, effort,
-            )
-        except Exception as e:
-            traceback.print_exc()
-            analysis_text = f"[ANALYSIS ERROR: {e}]"
-        if cache is not None:
-            cache.save(scope, analysis_key, {"text": analysis_text})
+    # --- Analysis (no cache) ---
+    try:
+        analysis_text = _chat_reasoning(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a navigation failure analyst for DAgger imitation learning. "
+                    "Walk through the agent's trajectory step by step. Identify what went wrong "
+                    "and why. Think step by step."},
+                {"role": "user", "content": analysis_prompt},
+            ],
+            max_tokens, effort,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        analysis_text = f"[ANALYSIS ERROR: {e}]"
 
+    # --- Prescription (no cache) ---
     prescription_prompt = build_prescription_prompt(episode, analysis_text, tkf_block)
     prescription_text = ""
-
-    cached_pres = None
-    if cache is not None:
-        cached_pres = cache.load(scope, prescription_key)
-    if cached_pres is not None:
-        prescription_text = cached_pres.get("text", "")
-    else:
-        if client is None:
-            client = _oai_client()
-        try:
-            prescription_text = _chat_reasoning(
-                client, model,
-                [
-                    {"role": "system", "content":
-                        "You are a friendly demonstration coach. Write in plain, everyday English. "
-                        "No coordinates, no technical jargon, no action sequences. "
-                        "Describe what the human should show the AI in simple terms."},
-                    {"role": "user", "content": prescription_prompt},
-                ],
-                max_tokens, effort,
-            )
-        except Exception as e:
-            traceback.print_exc()
-            prescription_text = f"[PRESCRIPTION ERROR: {e}]"
-        if cache is not None:
-            cache.save(scope, prescription_key, {"text": prescription_text})
+    try:
+        prescription_text = _chat_reasoning(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a friendly demonstration coach. Write in plain, everyday English. "
+                    "No coordinates, no technical jargon, no action sequences. "
+                    "Describe what the human should show the AI in simple terms."},
+                {"role": "user", "content": prescription_prompt},
+            ],
+            max_tokens, effort,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        prescription_text = f"[PRESCRIPTION ERROR: {e}]"
 
     combined = (
         "=== ROOT CAUSE ANALYSIS ===\n"
@@ -246,17 +227,13 @@ def summarise_episode(
     use_kag: bool = True,
     use_rag: bool = True,
 ) -> str:
-    """Condense full reasoning into a 3-5 sentence summary for Phase C input."""
+    """Condense full reasoning into a 3-5 sentence summary for Phase C input.
+
+    CACHE POLICY: Also not cached — the summary must reflect the current run's
+    reasoning_text (which is no longer cached).
+    """
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
-    suffix = _flag_suffix(use_vlm, use_kag, use_rag)
-    summary_key = f"reasoning_summary_{suffix}"
-
-    if cache is not None:
-        scope = cache.episode_scope(episode_id)
-        cached = cache.load(scope, summary_key)
-        if cached is not None:
-            return cached.get("text", reasoning_text)
 
     client = _oai_client()
     try:
@@ -279,8 +256,6 @@ def summarise_episode(
         traceback.print_exc()
         text = reasoning_text
 
-    if cache is not None:
-        cache.save(cache.episode_scope(episode_id), summary_key, {"text": text})
     return text
 
 
