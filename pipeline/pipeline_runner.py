@@ -75,11 +75,12 @@ def _build_phaseB_for_episode(
     rag_bank: Optional[RAGBank],
     run_id: str,
     cache=None,
+    rollout_id: str = "default",
 ) -> Dict:
     """
     Phase B per-episode flow — strict 3-pass order:
 
-      1. VLM  (cached per episode_id — VLM ONLY)
+      1. VLM  (cached per (rollout_id, episode_id) — VLM ONLY)
       2. KAG  (no cache)
       3. RAG  (no cache)
       4. run_analysis(VLM + KAG + RAG)  -> analysis_text   [no cache]
@@ -89,6 +90,10 @@ def _build_phaseB_for_episode(
     This guarantees reasoning flows correctly into the final prescription:
     the TKF block is built from the REAL analysis, and the prescription
     is built from BOTH the real analysis AND the real TKF block.
+
+    rollout_id must match the identifier used by all profiles in an ablation
+    suite so that VLM results are shared correctly across profiles without
+    polluting results from other suites.
     """
     pipeline_flags = config.get("pipeline", {})
     llm_cfg = config.get("llm", {})
@@ -105,13 +110,17 @@ def _build_phaseB_for_episode(
     episode_id = episode["episode_id"]
 
     # ------------------------------------------------------------------ #
-    # PASS 0-A: VLM  (the ONLY cached step — keyed on episode_id)         #
+    # PASS 0-A: VLM  (cached per (rollout_id, episode_id) — VLM ONLY)   #
+    # rollout_id is propagated so all profiles within the same ablation   #
+    # suite share VLM results (same frames) without cross-suite pollution. #
     # ------------------------------------------------------------------ #
     vlm_report = ""
     per_frame: List[Dict] = []
     if use_vlm:
         print(f"  [Phase B][ep {episode_id}] VLM...")
-        vlm_report, per_frame = analyse_failure(episode, llm_cfg, cache=cache)
+        vlm_report, per_frame = analyse_failure(
+            episode, llm_cfg, cache=cache, rollout_id=rollout_id
+        )
         if track_cfg.get("save_prescriptions", True):
             save_vlm_report(vlm_report, episode_dir)
     else:
@@ -302,7 +311,10 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     for ed in failures:
         episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
         per_episode.append(
-            _build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, run_id, cache=cache)
+            _build_phaseB_for_episode(
+                ed, episode_dir, config, kag_context, rag_bank,
+                run_id, cache=cache, rollout_id=run_id,
+            )
         )
 
     cross_text = ""
@@ -364,15 +376,45 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     return full_output
 
 
-def _load_episode_from_saved_run(run_dir: Path, episode_id: int) -> Optional[Dict]:
-    ed_path = run_dir / "episodes" / f"episode_{episode_id}" / "episode_data.json"
-    if not ed_path.exists():
-        return None
-    with open(ed_path, "r") as f:
-        ed = json.load(f)
-    for s in ed.get("steps", []):
-        s.setdefault("rgb", None)
-    return ed
+def _load_episodes_from_saved_run(run_dir: Path, episode_ids: List[int]) -> List[Dict]:
+    """
+    Load episode dicts for the given IDs from a saved run directory.
+
+    Resolution order (first hit wins):
+      1. full_output.json  phase_a.all_rollouts   — always present in ablation
+         suite rollout dirs (written by _save_rollout_only).
+      2. episodes/episode_N/episode_data.json — present in full pipeline runs.
+
+    This dual-source lookup means both run_ablation_suite (which stores
+    everything in full_output.json) and standalone run_pipeline runs (which
+    write individual episode_data.json files) are handled correctly.
+    """
+    # Source 1: full_output.json
+    full_out_path = run_dir / "full_output.json"
+    rollout_map: Dict[int, Dict] = {}
+    if full_out_path.exists():
+        with open(full_out_path, "r") as f:
+            saved = json.load(f)
+        for ep in saved.get("phase_a", {}).get("all_rollouts", []):
+            rollout_map[int(ep["episode_id"])] = ep
+
+    episodes: List[Dict] = []
+    for eid in episode_ids:
+        ep = rollout_map.get(int(eid))
+        if ep is not None:
+            episodes.append(ep)
+            continue
+        # Source 2: individual episode_data.json (standalone runs)
+        ed_path = run_dir / "episodes" / f"episode_{eid}" / "episode_data.json"
+        if ed_path.exists():
+            with open(ed_path, "r") as f:
+                ed = json.load(f)
+            for s in ed.get("steps", []):
+                s.setdefault("rgb", None)
+            episodes.append(ed)
+        else:
+            print(f"[Rerun] WARNING: episode {eid} not found in {run_dir} — skipping.")
+    return episodes
 
 
 def rerun_pipeline_only(
@@ -413,11 +455,13 @@ def rerun_pipeline_only(
 
     saved_failure_ids = saved_full.get("phase_a", {}).get("failure_episode_ids", [])
 
-    failures = []
-    for eid in saved_failure_ids:
-        ed = _load_episode_from_saved_run(saved, eid)
-        if ed is not None:
-            failures.append(ed)
+    # Use the rollout dir name as rollout_id so VLM cache is shared correctly
+    # across all profiles in the same ablation suite.
+    rollout_id = saved.name
+
+    failures = _load_episodes_from_saved_run(saved, saved_failure_ids)
+    if not failures:
+        print(f"[Rerun] WARNING: no failure episodes could be loaded from {saved}.")
 
     kag_context = ""
     if config.get("pipeline", {}).get("use_kag", True):
@@ -445,7 +489,10 @@ def rerun_pipeline_only(
     for ed in failures:
         episode_dir = out_dir / "episodes" / f"episode_{ed['episode_id']}"
         per_episode.append(
-            _build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, out_dir.name, cache=cache)
+            _build_phaseB_for_episode(
+                ed, episode_dir, config, kag_context, rag_bank,
+                out_dir.name, cache=cache, rollout_id=rollout_id,
+            )
         )
 
     cross_text = ""
