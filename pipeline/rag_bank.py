@@ -2,7 +2,7 @@ import json
 import os
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -50,6 +50,45 @@ def _clip_embed(text: str, image_path: Optional[str], model_id: str) -> Optional
     except Exception:
         traceback.print_exc()
         return None
+
+
+def _normalise_pos(p: Any) -> Optional[Tuple[int, ...]]:
+    """Coerce a position-like value into a hashable tuple, or return None."""
+    if p is None:
+        return None
+    try:
+        return tuple(int(x) for x in p)
+    except Exception:
+        return None
+
+
+def _config_key(start_pos: Any, goal_pos: Any, fire_positions: Any) -> Optional[Tuple]:
+    """Build a hashable key from a (start, goal, fires) triple.
+
+    Returns None if all three fields are absent — callers treat that as
+    "no usable config to compare against" and fall back to id-only matching.
+    Fire positions are sorted so that ordering doesn't affect equality.
+    """
+    sp = _normalise_pos(start_pos)
+    gp = _normalise_pos(goal_pos)
+    fp_list = []
+    for f in (fire_positions or []):
+        nf = _normalise_pos(f)
+        if nf is not None:
+            fp_list.append(nf)
+    fp = tuple(sorted(fp_list))
+    if sp is None and gp is None and not fp:
+        return None
+    return (sp, gp, fp)
+
+
+def _meta_config_key(m: Dict) -> Optional[Tuple]:
+    """Extract a config key from a stored RAG meta entry."""
+    return _config_key(
+        m.get("start_pos"),
+        m.get("goal_pos"),
+        m.get("fire_positions"),
+    )
 
 
 class RAGBank:
@@ -113,10 +152,26 @@ class RAGBank:
         vision_report: str,
         end_frame_path: Optional[str],
         exclude_episode_id: Optional[int] = None,
+        exclude_episode_config: Optional[Dict] = None,
     ) -> str:
-        """Retrieve top-k similar past failures. Excludes any meta entry whose
-        episode_id matches `exclude_episode_id` to prevent self-contamination
-        across ablation profiles that share the same RAG bank.
+        """Retrieve top-k similar past failures.
+
+        Self-contamination is prevented by TWO independent filters:
+
+          1. `exclude_episode_id` skips entries whose stored episode_id matches.
+             Sufficient within a single ablation-suite run where all profiles
+             share rollout indices.
+
+          2. `exclude_episode_config` skips entries whose stored
+             (start_pos, goal_pos, fire_positions) matches the current
+             episode's config — needed across separate suite invocations,
+             where a previous profile run (e.g. p5) may have stored the same
+             physical episode under a different run_id but with the SAME
+             dynamic config.  Without this, p6's retrieve for ep4 returns
+             p5's stored ep4 with sim≈0.95 even though episode_id-only
+             filtering passes.
+
+        Both filters are applied; an entry is skipped if EITHER matches.
         """
         if self._index is None or self._index.ntotal == 0 or not self._meta:
             return ""
@@ -124,10 +179,19 @@ class RAGBank:
         if qv is None:
             return ""
         qv = self._align_vec(qv).reshape(1, -1)
-        # Search a wider window so that filtering out the excluded episode can
-        # still leave us with up to top_k useful matches.
+        # Search a wider window so filtering can still leave us with up to
+        # top_k useful matches after both filters run.
         k = min(max(self.top_k * 4, self.top_k), self._index.ntotal)
         scores, idxs = self._index.search(qv, k)
+
+        exclude_cfg_key: Optional[Tuple] = None
+        if exclude_episode_config:
+            exclude_cfg_key = _config_key(
+                exclude_episode_config.get("start_pos"),
+                exclude_episode_config.get("goal_pos"),
+                exclude_episode_config.get("fire_positions"),
+            )
+
         retrieved = []
         for rank, (score, idx) in enumerate(zip(scores[0], idxs[0]), 1):
             if idx < 0:
@@ -135,11 +199,19 @@ class RAGBank:
             if float(score) < self.sim_threshold:
                 continue
             m = self._meta[int(idx)]
+
             if exclude_episode_id is not None and m.get("episode_id") == exclude_episode_id:
                 continue
+
+            if exclude_cfg_key is not None:
+                m_key = _meta_config_key(m)
+                if m_key is not None and m_key == exclude_cfg_key:
+                    continue
+
             retrieved.append({"rank": rank, "similarity": float(score), **m})
             if len(retrieved) >= self.top_k:
                 break
+
         if not retrieved:
             return ""
         lines = ["=== RAG — SIMILAR PAST FAILURES ==="]
@@ -161,6 +233,13 @@ class RAGBank:
         self._index.add(qv)
 
         dyn = episode.get("dynamic_config", {})
+        # config_key persisted alongside the entry so future loads can do
+        # config-based exclusion without recomputing every time.
+        cfg_key = _config_key(
+            dyn.get("start_pos"),
+            dyn.get("goal_pos"),
+            dyn.get("fire_positions"),
+        )
         entry = {
             "run_id":         run_id,
             "episode_id":     episode.get("episode_id"),
@@ -172,6 +251,7 @@ class RAGBank:
             "start_pos":      dyn.get("start_pos"),
             "goal_pos":       dyn.get("goal_pos"),
             "fire_positions": dyn.get("fire_positions"),
+            "config_key":     list(cfg_key) if cfg_key is not None else None,
             "summary":        prescription.get("summary", ""),
             "root_cause":     prescription.get("root_cause", "pending"),
         }
