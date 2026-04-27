@@ -21,18 +21,40 @@ def _chat_plain(client, model: str, messages: List[Dict], max_tokens: int) -> st
 
 
 def _build_summary_block(failure_summaries: List[Dict], failure_ids: List[int]) -> str:
+    """Build rich per-episode context block for the aggregator LLM.
+
+    Update 3: Instead of only passing `summary` (which is a 3-5 sentence
+    condensed version), we now include the full `reasoning_combined` text so
+    that all KAG/RAG/TKF-enriched reasoning flows into the final prescription.
+    `summary` is kept as a header for readability.
+    """
     out = []
     for es in failure_summaries:
         eid = es.get("episode_id")
         if eid not in failure_ids:
             continue
         dyn = es.get("dynamic_config", {})
-        out.append(
-            f"\n--- Episode {eid} (seed={es.get('seed','?')}, steps={es.get('total_steps','?')}, "
+
+        # Short header
+        header = (
+            f"\n--- Episode {eid} (seed={es.get('seed','?')}, "
+            f"steps={es.get('total_steps','?')}, "
             f"reward={es.get('total_reward', 0.0):.2f}) ---\n"
-            f"  dynamic_config: start={dyn.get('start_pos','?')} goal={dyn.get('goal_pos','?')} fires={dyn.get('fire_positions','?')}\n"
-            f"{es.get('summary', '')}\n"
+            f"  dynamic_config: start={dyn.get('start_pos','?')} "
+            f"goal={dyn.get('goal_pos','?')} "
+            f"fires={dyn.get('fire_positions','?')}\n"
         )
+
+        # Prefer full reasoning_combined; fall back to summary alone
+        full_reasoning = es.get("reasoning_combined", "").strip()
+        short_summary  = es.get("summary", "").strip()
+
+        if full_reasoning:
+            body = f"  SUMMARY: {short_summary}\n\n  FULL REASONING:\n{full_reasoning}\n"
+        else:
+            body = f"  {short_summary}\n"
+
+        out.append(header + body)
     return "".join(out)
 
 
@@ -43,11 +65,8 @@ def cross_episode_reasoning(
     llm_cfg: Dict,
     cache=None,
 ) -> str:
-    if cache is not None:
-        cached = cache.load(cache.run_scope(), "aggregator_cross")
-        if cached is not None:
-            return cached.get("text", "")
-
+    # Update 3: cross-episode reasoning is NEVER cached so it always reflects
+    # the freshly generated (uncached) per-episode reasoning_combined texts.
     n = len(failure_summaries)
     client = _oai_client()
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
@@ -71,7 +90,7 @@ def cross_episode_reasoning(
                     f"REPRESENTATIVE MAZE ASCII (one episode):\n{maze_ascii}\n\n"
                     f"CONFIRMED FAILURE EPISODE IDs (ONLY these are failures): [{valid_ids_str}]\n"
                     f"Do NOT include any episode ID outside this list in failure_clusters.\n\n"
-                    f"PER-FAILURE SUMMARIES:\n{summary_block}\n\n"
+                    f"PER-FAILURE SUMMARIES (including full reasoning where available):\n{summary_block}\n\n"
                     f"Answer:\n"
                     f"1. FAILURE CLUSTERING: Group failures by failure mode. Each cluster's "
                     f"episodes_in_cluster must only contain IDs from the list above.\n"
@@ -85,8 +104,6 @@ def cross_episode_reasoning(
         traceback.print_exc()
         text = f"[CROSS-EPISODE ERROR: {e}]"
 
-    if cache is not None:
-        cache.save(cache.run_scope(), "aggregator_cross", {"text": text})
     return text
 
 
@@ -97,11 +114,8 @@ def final_structured_prescription(
     llm_cfg: Dict,
     cache=None,
 ) -> Tuple[str, Dict]:
-    if cache is not None:
-        cached = cache.load(cache.run_scope(), "aggregator_structured")
-        if cached is not None:
-            return cached.get("raw", ""), cached.get("parsed", {})
-
+    # Update 3: structured prescription is NEVER cached — it must be derived
+    # from the freshly produced cross_reasoning each run.
     n = len(failure_summaries)
     client = _oai_client()
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
@@ -116,10 +130,11 @@ def final_structured_prescription(
                 {"role": "system", "content":
                     "You are a JSON formatting assistant. Output ONLY valid JSON. "
                     "IMPORTANT: episodes_in_cluster must ONLY contain IDs from the confirmed failure list. "
-                    "Guidance text must be written in plain, friendly English — no coordinates, no action codes, no technical jargon."},
+                    "Guidance text must be written in plain, friendly English — no coordinates, no action codes, no technical jargon. "
+                    "Base your output STRICTLY on the cross-episode reasoning text provided — do NOT generate generic template output."},
                 {"role": "user", "content":
                     f"A diffusion policy failed across {n} episodes in a RANDOMISED 5x5 maze. "
-                    f"Cross-episode analysis:\n\n{cross_reasoning}\n\n"
+                    f"Cross-episode analysis (use this as your primary source — do not substitute generic text):\n\n{cross_reasoning}\n\n"
                     f"CONFIRMED FAILURE EPISODE IDs: [{valid_ids_str}]\n"
                     f"Each cluster's episodes_in_cluster must ONLY contain IDs from that list.\n\n"
                     "Output ONLY this JSON (no fences, no preamble):\n"
@@ -128,24 +143,24 @@ def final_structured_prescription(
                     '  "failure_modes_found": <int>,\n'
                     '  "failure_clusters": [\n'
                     '    {\n'
-                    '      "cluster_label": "<short human-readable label>",\n'
+                    '      "cluster_label": "<short human-readable label SPECIFIC to this run — do NOT use a generic template label>",\n'
                     f'      "episodes_in_cluster": [<only IDs from: {valid_ids_str}>],\n'
                     '      "root_cause": "<fire_collision | looping | wrong_direction | timeout | wall_thrashing>",\n'
-                    '      "where_it_fails": "<plain English description of where in the maze>",\n'
-                    '      "what_it_does_wrong": "<plain English>"\n'
+                    '      "where_it_fails": "<plain English description of where in THIS maze config>",\n'
+                    '      "what_it_does_wrong": "<plain English, specific to this run — NOT generic>"\n'
                     '    }\n'
                     '  ],\n'
                     '  "demonstration_prescriptions": [\n'
                     '    {\n'
                     '      "demo_id": 1,\n'
-                    '      "guidance": "<plain English, describe the SITUATION to show>",\n'
-                    '      "target_region": "<plain English description of the maze area>",\n'
-                    '      "what_it_teaches": "<plain English>",\n'
+                    '      "guidance": "<plain English, SPECIFIC to the failure pattern found — not a generic template>",\n'
+                    '      "target_region": "<plain English description of the maze area, specific to this run>",\n'
+                    '      "what_it_teaches": "<plain English, specific to this failure>",\n'
                     '      "n_repetitions": <1-3>\n'
                     '    }\n'
                     '  ],\n'
                     '  "total_demonstrations_needed": <int 3-10>,\n'
-                    '  "overall_summary": "<2-3 plain English sentences>",\n'
+                    '  "overall_summary": "<2-3 plain English sentences SPECIFIC to these failures — not a generic template>",\n'
                     '  "confidence": <float 0.0-1.0>\n'
                     "}"
                 },
@@ -154,8 +169,6 @@ def final_structured_prescription(
         )
     except Exception as e:
         traceback.print_exc()
-        if cache is not None:
-            cache.save(cache.run_scope(), "aggregator_structured", {"raw": f"[STRUCTURED ERROR: {e}]", "parsed": {}})
         return f"[STRUCTURED ERROR: {e}]", {}
 
     cleaned = re.sub(r"^```(?:json)?\s*\n?", "", raw.strip())
@@ -171,9 +184,6 @@ def final_structured_prescription(
         for cluster in clusters:
             ep_ids = cluster.get("episodes_in_cluster", [])
             cluster["episodes_in_cluster"] = [eid for eid in ep_ids if eid in failure_ids_set]
-
-    if cache is not None:
-        cache.save(cache.run_scope(), "aggregator_structured", {"raw": raw, "parsed": parsed})
 
     return raw, parsed
 
@@ -192,19 +202,24 @@ def run_aggregator(
     If pipeline_flags["use_cross_episode_reasoning"] is False, the expensive
     cross-episode reasoning LLM call is skipped and the aggregator goes
     straight to final_structured_prescription with an empty cross_text.
+
+    Update 3: cache parameter is intentionally ignored for all aggregator
+    calls — both cross_episode_reasoning and final_structured_prescription
+    are always freshly generated so the output reflects the current run's
+    per-episode reasoning (which is itself no longer cached).
     """
     flags = pipeline_flags or {}
     use_cer = bool(flags.get("use_cross_episode_reasoning", True))
 
     if use_cer:
         cross_text = cross_episode_reasoning(
-            failure_summaries, failure_ids, maze_ascii, llm_cfg, cache=cache
+            failure_summaries, failure_ids, maze_ascii, llm_cfg, cache=None  # never cached
         )
     else:
         cross_text = "[CROSS-EPISODE REASONING DISABLED FOR THIS PROFILE]"
 
     raw, parsed = final_structured_prescription(
-        cross_text, failure_summaries, failure_ids, llm_cfg, cache=cache
+        cross_text, failure_summaries, failure_ids, llm_cfg, cache=None  # never cached
     )
     return cross_text, raw, parsed
 
