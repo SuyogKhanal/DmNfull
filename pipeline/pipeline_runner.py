@@ -112,7 +112,7 @@ def _build_phaseB_for_episode(
     # ------------------------------------------------------------------ #
     # PASS 0-A: VLM  (cached per (rollout_id, episode_id) — VLM ONLY)   #
     # rollout_id is propagated so all profiles within the same ablation   #
-    # suite share VLM results (same frames) without cross-suite pollution. #
+    # suite share VLM results (same frames) without cross-suite pollution.#
     # ------------------------------------------------------------------ #
     vlm_report = ""
     per_frame: List[Dict] = []
@@ -143,11 +143,20 @@ def _build_phaseB_for_episode(
     # ------------------------------------------------------------------ #
     # PASS 0-C: RAG (no cache)                                            #
     # ------------------------------------------------------------------ #
+    # exclude_episode_id prevents the RAG bank from returning the SAME    #
+    # episode_id back to itself across profiles in an ablation suite —    #
+    # otherwise p6 retrieves p5's record of ep2 with sim=1.000, which is  #
+    # zero useful signal and artificially inflates similarity.            #
+    # ------------------------------------------------------------------ #
     rag_ctx = ""
     if use_rag and rag_bank is not None:
         print(f"  [Phase B][ep {episode_id}] RAG retrieve...")
         end_frame = episode.get("frame_paths", {}).get("end_frame")
-        rag_ctx = rag_bank.retrieve(vlm_report or "", end_frame)
+        rag_ctx = rag_bank.retrieve(
+            vlm_report or "",
+            end_frame,
+            exclude_episode_id=episode_id,
+        )
         if track_cfg.get("save_prescriptions", True):
             save_rag_retrieved(rag_ctx or "(no matches above threshold)", episode_dir)
     else:

@@ -108,14 +108,25 @@ class RAGBank:
             return np.concatenate([vec, pad]).astype("float32")
         return vec[:self._dim].astype("float32")
 
-    def retrieve(self, vision_report: str, end_frame_path: Optional[str]) -> str:
+    def retrieve(
+        self,
+        vision_report: str,
+        end_frame_path: Optional[str],
+        exclude_episode_id: Optional[int] = None,
+    ) -> str:
+        """Retrieve top-k similar past failures. Excludes any meta entry whose
+        episode_id matches `exclude_episode_id` to prevent self-contamination
+        across ablation profiles that share the same RAG bank.
+        """
         if self._index is None or self._index.ntotal == 0 or not self._meta:
             return ""
         qv = _clip_embed(vision_report, end_frame_path, self.clip_model)
         if qv is None:
             return ""
         qv = self._align_vec(qv).reshape(1, -1)
-        k = min(self.top_k, self._index.ntotal)
+        # Search a wider window so that filtering out the excluded episode can
+        # still leave us with up to top_k useful matches.
+        k = min(max(self.top_k * 4, self.top_k), self._index.ntotal)
         scores, idxs = self._index.search(qv, k)
         retrieved = []
         for rank, (score, idx) in enumerate(zip(scores[0], idxs[0]), 1):
@@ -124,7 +135,11 @@ class RAGBank:
             if float(score) < self.sim_threshold:
                 continue
             m = self._meta[int(idx)]
+            if exclude_episode_id is not None and m.get("episode_id") == exclude_episode_id:
+                continue
             retrieved.append({"rank": rank, "similarity": float(score), **m})
+            if len(retrieved) >= self.top_k:
+                break
         if not retrieved:
             return ""
         lines = ["=== RAG — SIMILAR PAST FAILURES ==="]

@@ -11,6 +11,13 @@ Safer-side update:
     3. It explicitly answers whether the human should add more variety of the
        same type of demo, or record an entirely new scenario.
 
+Corridor identification (Bug 3 fix):
+  The needs-identification prompt now requires the LLM to explicitly name the
+  corridor type the failing agent SHOULD have used (left_edge / top_edge /
+  right_edge / bottom_edge / central_mixed).  Without this, the FAISS query
+  string contained no corridor keyword and CLIP defaulted to whatever corridor
+  was most common in the demo bank, retrieving wrong-corridor demos.
+
 Cache policy:
   TKF outputs are NEVER cached.  Caching is for VLM only (vlm_analyser.py).
 """
@@ -235,27 +242,50 @@ def _oai_plain(messages: List[Dict], model: str, max_tokens: int = 16384) -> str
 
 
 def _llm_identify_needs(reasoning_text: str, model: str) -> str:
+    """Identify the missing demonstration in plain English AND name the corridor.
+
+    Bug 3 fix: previously this prompt asked for "plain English with no jargon"
+    and stripped corridor information, leaving the FAISS query with no
+    corridor keyword.  CLIP then matched the most common demo type in the
+    bank (right_edge), even when the failure required left_edge or top_edge.
+
+    The prompt now requires the LLM to explicitly name the corridor the
+    failing agent should have used, using one of the exact terms that appear
+    in the demo metadata.  This embeds the right keyword in the FAISS query
+    so retrieval becomes semantically aligned.
+    """
     prompt = textwrap.dedent(f"""
         You are reviewing the failure analysis of a maze navigation agent.
         The agent learned from human demonstrations (imitation learning) and failed.
         Below is the COMPLETE failure reasoning text from the pipeline.
 
-        Your job is to extract, in plain everyday English (no jargon, no coordinates),
-        what kind of human demonstration is MISSING from the training data.
+        Your job is to extract, in plain everyday English, what kind of human
+        demonstration is MISSING from the training data.
 
         Write 3-5 sentences covering:
         - What behaviour is the agent NOT showing that it should?
         - What kind of situation or path does it need to see demonstrated?
         - Why would seeing that demonstration help it avoid failing next time?
 
+        IMPORTANT: Based on the failure analysis, identify which corridor
+        the agent should have taken. You MUST name it explicitly using one
+        of these exact terms: left_edge (hugging column 0),
+        top_edge (hugging row 0), right_edge (hugging column 4),
+        bottom_edge (hugging row 4), or central_mixed.
+        Include the corridor name in your output.
+
         COMPLETE FAILURE REASONING:
         {reasoning_text}
 
-        OUTPUT ONLY the plain-English needs description. Nothing else.
+        OUTPUT ONLY the plain-English needs description (with the corridor
+        name embedded in it). Nothing else.
     """)
     return _oai_plain(
         [
-            {"role": "system", "content": "You extract missing demonstration needs in plain English. No technical jargon."},
+            {"role": "system", "content":
+                "You extract missing demonstration needs in plain English and "
+                "explicitly name the corridor the agent should have used "
+                "(one of: left_edge, top_edge, right_edge, bottom_edge, central_mixed)."},
             {"role": "user",   "content": prompt},
         ],
         model,
