@@ -80,19 +80,43 @@ def _resolve_frame(run_dir: Path, episode_id: int, frame_key: str, frame_paths: 
 
 
 def get_episode_frames(run_dir: str, episode_id: int) -> Dict[str, Optional[str]]:
+    """
+    Resolve image filepaths for the start, highest-loss, and end frames of a
+    failure episode.
+
+    Resolution order for each frame (per spec):
+      1. Absolute path stored in full_output.json → phase_b.per_episode[i].frame_paths
+         (with phase_a.all_rollouts[i].frame_paths as a secondary lookup, since
+         in some layouts only Phase A has it populated).
+      2. Relative to the profile/run dir:
+            <run_dir>/episodes/episode_<id>/frames/<filename>
+      3. Walk up to the parent and into the shared rollout sibling:
+            <run_dir.parent>/rollout/episodes/episode_<id>/frames/<filename>
+
+    Returns None for any frame that cannot be resolved (does not crash).
+    """
     run = Path(run_dir)
 
-    # Load frame_paths from full_output.json for absolute path resolution
+    # Look up frame_paths from full_output.json — phase_b first, phase_a fallback
     frame_paths: Dict = {}
     full_out_path = run / "full_output.json"
     if full_out_path.exists():
         try:
             with open(full_out_path, "r") as f:
                 fo = json.load(f)
-            for ep in fo.get("phase_a", {}).get("all_rollouts", []):
+            # Priority: phase_b.per_episode[i].frame_paths
+            for ep in fo.get("phase_b", {}).get("per_episode", []) or []:
                 if ep.get("episode_id") == episode_id:
-                    frame_paths = ep.get("frame_paths", {})
+                    fp = ep.get("frame_paths") or {}
+                    if fp:
+                        frame_paths = fp
                     break
+            # Fallback: phase_a.all_rollouts[i].frame_paths
+            if not frame_paths:
+                for ep in fo.get("phase_a", {}).get("all_rollouts", []) or []:
+                    if ep.get("episode_id") == episode_id:
+                        frame_paths = ep.get("frame_paths") or {}
+                        break
         except Exception:
             pass
 
@@ -164,8 +188,46 @@ def _read_from_phase_b(run: Path, episode_id: int, field: str) -> str:
     return "(not available)"
 
 
-def get_episode_metadata(failure_episodes: List[Dict], episode_id: int) -> Dict:
-    for ep in failure_episodes:
-        if ep["episode_id"] == episode_id:
+def get_episode_metadata(
+    failure_episodes: List[Dict],
+    episode_id: int,
+    run_dir: Optional[str] = None,
+) -> Dict:
+    """
+    Look up episode metadata (seed, dynamic_config, ascii_grid, maze_name).
+
+    Resolution order (per spec):
+      1. The pre-built failure_episodes list — this is populated by
+         list_failure_episodes() from phase_a.all_rollouts, which is the
+         authoritative source of episode-level metadata.
+      2. Direct lookup in phase_a.all_rollouts inside full_output.json
+         (used when failure_episodes is empty or the episode_id is missing
+         from it, e.g. after a partial state).
+      3. Fallback to phase_b.per_episode inside full_output.json — Phase B
+         only stores a subset of fields (no ascii_grid, no maze_name) but is
+         a useful last resort.
+    """
+    # 1) failure_episodes (built from phase_a)
+    for ep in failure_episodes or []:
+        if ep.get("episode_id") == episode_id:
             return ep
+
+    # 2) and 3) direct lookup in full_output.json
+    if run_dir:
+        full_out_path = Path(run_dir) / "full_output.json"
+        if full_out_path.exists():
+            try:
+                with open(full_out_path, "r") as f:
+                    fo = json.load(f)
+                # phase_a.all_rollouts is the primary source
+                for ep in fo.get("phase_a", {}).get("all_rollouts", []) or []:
+                    if ep.get("episode_id") == episode_id:
+                        return ep
+                # Fallback: phase_b.per_episode
+                for ep in fo.get("phase_b", {}).get("per_episode", []) or []:
+                    if ep.get("episode_id") == episode_id:
+                        return ep
+            except Exception:
+                pass
+
     return {}
