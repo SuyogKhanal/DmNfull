@@ -44,6 +44,11 @@ def _list_saved_runs() -> List[str]:
     (up to 2 levels deep) that contains a full_output.json file.
     Ablation suite layout: results/ablations/<run_TIMESTAMP>/<profile>/full_output.json
     Single run layout:     results/runs/<run_TIMESTAMP>/full_output.json
+
+    Note: the shared Phase-A `rollout/` sibling inside a suite run also contains
+    a `full_output.json`, but it is NOT a selectable pipeline result — it only
+    holds Phase-A rollout data. We explicitly skip any directory named "rollout"
+    when scanning suite profile subdirs.
     """
     out = []
     for base in [RUNS_DIR_DEFAULT, ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT]:
@@ -59,7 +64,13 @@ def _list_saved_runs() -> List[str]:
             else:
                 # One level deeper: profile subdirs inside an ablation suite run
                 for sub in sorted(d.iterdir()):
-                    if sub.is_dir() and (sub / "full_output.json").exists():
+                    if not sub.is_dir():
+                        continue
+                    # Skip the shared Phase-A rollout sibling — it is not a
+                    # selectable run, just shared rollout data for the suite.
+                    if sub.name == "rollout":
+                        continue
+                    if (sub / "full_output.json").exists():
                         out.append(str(sub))
     return out
 
@@ -101,10 +112,11 @@ def on_select_episode(episode_id: Optional[int], state: Dict):
     run_dir = state["run_dir"]
     frames = get_episode_frames(run_dir, int(episode_id))
     outputs = get_episode_component_outputs(run_dir, int(episode_id))
-    meta = get_episode_metadata(state.get("failure_episodes", []), int(episode_id))
+    meta = get_episode_metadata(state.get("failure_episodes", []), int(episode_id), run_dir)
     meta_text = json.dumps({
         "episode_id":     meta.get("episode_id"),
         "seed":           meta.get("seed"),
+        "maze_name":      meta.get("maze_name"),
         "dynamic_config": meta.get("dynamic_config", {}),
         "ascii_grid":     meta.get("ascii_grid", ""),
     }, indent=2, default=str)
@@ -128,6 +140,7 @@ def on_rerun(
     use_kag: bool,
     use_rag: bool,
     use_reasoning: bool,
+    use_plain_llm: bool,
     use_tkf: bool,
     use_aggregator: bool,
     state: Dict,
@@ -136,22 +149,34 @@ def on_rerun(
     if not state.get("run_dir"):
         return state, "Load a saved run first.", "", "", ""
 
-    # The rerun source must be the rollout dir (shared Phase A data).
-    # For profile dirs inside a suite run, walk up to find the sibling rollout/.
+    # The rerun source must be the rollout dir (shared Phase A data) — it
+    # contains the episodes/<id>/episode_data.json files that
+    # rerun_pipeline_only() needs in order to replay Phase B + C.  A profile
+    # dir does NOT have those.
+    #
+    # Resolution order (per spec):
+    #   1. run_dir/rollout/                  — single-run layout where the
+    #                                          rollout sits inside the run
+    #   2. run_dir.parent/rollout/           — ablation-suite layout where
+    #                                          all profiles share a sibling
+    #                                          rollout/ at the suite root
+    #   3. run_dir itself                    — fallback (e.g. a single run
+    #                                          where Phase A and Phase B
+    #                                          live in the same dir)
     run_dir = Path(state["run_dir"])
-    rollout_dir = run_dir / "rollout"
-    if not rollout_dir.exists():
-        parent_rollout = run_dir.parent / "rollout"
-        if parent_rollout.exists() and (parent_rollout / "full_output.json").exists():
-            rollout_dir = parent_rollout
-        else:
-            rollout_dir = run_dir  # fallback: use as-is
+    if (run_dir / "rollout").exists():
+        rollout_dir = run_dir / "rollout"
+    elif (run_dir.parent / "rollout").exists():
+        rollout_dir = run_dir.parent / "rollout"
+    else:
+        rollout_dir = run_dir
 
     overrides = {"pipeline": {
         "use_vlm":        bool(use_vlm),
         "use_kag":        bool(use_kag),
         "use_rag":        bool(use_rag),
         "use_reasoning":  bool(use_reasoning),
+        "use_plain_llm":  bool(use_plain_llm),
         "use_tkf":        bool(use_tkf),
         "use_aggregator": bool(use_aggregator),
     }}
@@ -223,6 +248,7 @@ def build_app():
                     use_kag        = gr.Checkbox(label="KAG",        value=True)
                     use_rag        = gr.Checkbox(label="RAG",        value=True)
                     use_reasoning  = gr.Checkbox(label="Reasoning",  value=True)
+                    use_plain_llm  = gr.Checkbox(label="Plain LLM (per-episode summariser)", value=True)
                     use_tkf        = gr.Checkbox(label="TKF",        value=True)
                     use_aggregator = gr.Checkbox(label="Aggregator", value=True)
                     rerun_btn      = gr.Button("Re-run Pipeline (Phases B + C)", variant="primary")
@@ -290,7 +316,7 @@ def build_app():
 
         rerun_btn.click(
             fn=on_rerun,
-            inputs=[use_vlm, use_kag, use_rag, use_reasoning, use_tkf, use_aggregator, state],
+            inputs=[use_vlm, use_kag, use_rag, use_reasoning, use_plain_llm, use_tkf, use_aggregator, state],
             outputs=[state, rerun_status, rerun_dir_tb, orig_box, new_box],
         )
 
