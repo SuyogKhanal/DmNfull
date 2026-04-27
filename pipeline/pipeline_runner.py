@@ -15,7 +15,7 @@ from pipeline.rollout import run_rollouts
 from pipeline.vlm_analyser import analyse_failure, save_vlm_report
 from pipeline.kag_loader import load_and_format, save_kag_context
 from pipeline.rag_bank import RAGBank, save_rag_retrieved
-from pipeline.reasoning import run_reasoning, summarise_episode, save_reasoning
+from pipeline.reasoning import run_analysis, run_prescription, summarise_episode, save_reasoning
 from pipeline.knowledge_fetcher import run_knowledge_check, format_tkf_block, save_tkf_result
 from pipeline.aggregator import (
     run_aggregator,
@@ -76,6 +76,20 @@ def _build_phaseB_for_episode(
     run_id: str,
     cache=None,
 ) -> Dict:
+    """
+    Phase B per-episode flow — strict 3-pass order:
+
+      1. VLM  (cached per episode_id — VLM ONLY)
+      2. KAG  (no cache)
+      3. RAG  (no cache)
+      4. run_analysis(VLM + KAG + RAG)  -> analysis_text   [no cache]
+      5. TKF(analysis_text)             -> tkf_block        [no cache]
+      6. run_prescription(analysis_text, tkf_block) -> prescription_text [no cache]
+
+    This guarantees reasoning flows correctly into the final prescription:
+    the TKF block is built from the REAL analysis, and the prescription
+    is built from BOTH the real analysis AND the real TKF block.
+    """
     pipeline_flags = config.get("pipeline", {})
     llm_cfg = config.get("llm", {})
     tkf_cfg = config.get("tkf", {})
@@ -90,7 +104,9 @@ def _build_phaseB_for_episode(
 
     episode_id = episode["episode_id"]
 
-    # --- VLM ---
+    # ------------------------------------------------------------------ #
+    # PASS 0-A: VLM  (the ONLY cached step — keyed on episode_id)         #
+    # ------------------------------------------------------------------ #
     vlm_report = ""
     per_frame: List[Dict] = []
     if use_vlm:
@@ -103,7 +119,9 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_vlm_report("DISABLED", episode_dir)
 
-    # --- KAG ---
+    # ------------------------------------------------------------------ #
+    # PASS 0-B: KAG (no cache)                                            #
+    # ------------------------------------------------------------------ #
     if use_kag:
         kag_ctx_for_ep = kag_context
         if track_cfg.get("save_prescriptions", True):
@@ -113,7 +131,9 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_kag_context("DISABLED", episode_dir)
 
-    # --- RAG ---
+    # ------------------------------------------------------------------ #
+    # PASS 0-C: RAG (no cache)                                            #
+    # ------------------------------------------------------------------ #
     rag_ctx = ""
     if use_rag and rag_bank is not None:
         print(f"  [Phase B][ep {episode_id}] RAG retrieve...")
@@ -125,36 +145,38 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_rag_retrieved("DISABLED", episode_dir)
 
+    # ------------------------------------------------------------------ #
+    # PASS 1: Analysis (no cache) — MUST run before TKF                   #
+    # ------------------------------------------------------------------ #
     analysis_text = ""
-    prescription_text = ""
-    combined_text = ""
-    tkf_result: Optional[Dict] = None
-    tkf_block = ""
-
-    # --- Reasoning pass 1 (analysis, before TKF) ---
     if use_reasoning:
-        print(f"  [Phase B][ep {episode_id}] Reasoning (analysis)...")
-        analysis_text, _prelim_rx, _prelim_combined = run_reasoning(
+        print(f"  [Phase B][ep {episode_id}] Reasoning — analysis pass...")
+        analysis_text = run_analysis(
             episode=episode,
             vision_report=vlm_report if use_vlm else "",
             kag_context=kag_ctx_for_ep,
             rag_context=rag_ctx,
-            tkf_block="",
             llm_cfg=llm_cfg,
-            cache=cache,
-            use_vlm=use_vlm,
-            use_kag=use_kag,
-            use_rag=use_rag,
         )
     else:
         analysis_text = "[REASONING DISABLED]"
 
-    # --- TKF ---
+    # ------------------------------------------------------------------ #
+    # PASS 2: TKF — receives the REAL analysis_text (no cache)            #
+    # When no demo meets the threshold, top-2 closest demos are passed    #
+    # WITH sim scores to the LLM so it can reason about variety vs new.   #
+    # ------------------------------------------------------------------ #
+    tkf_result: Optional[Dict] = None
+    tkf_block = ""
     if use_tkf:
-        print(f"  [Phase B][ep {episode_id}] TKF...")
+        print(f"  [Phase B][ep {episode_id}] TKF (knowledge check)...")
         try:
             tkf_result = run_knowledge_check(
-                analysis_text, tkf_cfg, llm_cfg, cache=cache, episode_id=episode_id,
+                reasoning_text=analysis_text,
+                tkf_cfg=tkf_cfg,
+                llm_cfg=llm_cfg,
+                cache=None,          # TKF is never cached
+                episode_id=episode_id,
             )
             tkf_block = format_tkf_block(tkf_result)
             if track_cfg.get("save_prescriptions", True):
@@ -168,20 +190,19 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_tkf_result({"verdict": "DISABLED"}, episode_dir)
 
-    # --- Reasoning pass 2 (prescription, after TKF) ---
+    # ------------------------------------------------------------------ #
+    # PASS 3: Prescription — receives analysis_text + tkf_block (no cache)#
+    # This is where reasoning flows into the final prescription.          #
+    # ------------------------------------------------------------------ #
+    prescription_text = ""
+    combined_text = ""
     if use_reasoning:
-        print(f"  [Phase B][ep {episode_id}] Reasoning (prescription)...")
-        analysis_text, prescription_text, combined_text = run_reasoning(
+        print(f"  [Phase B][ep {episode_id}] Reasoning — prescription pass...")
+        prescription_text, combined_text = run_prescription(
             episode=episode,
-            vision_report=vlm_report if use_vlm else "",
-            kag_context=kag_ctx_for_ep,
-            rag_context=rag_ctx,
+            analysis_text=analysis_text,
             tkf_block=tkf_block,
             llm_cfg=llm_cfg,
-            cache=cache,
-            use_vlm=use_vlm,
-            use_kag=use_kag,
-            use_rag=use_rag,
         )
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
@@ -190,11 +211,12 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
 
-    # --- Plain LLM summariser (per-episode prescription) ---
+    # ------------------------------------------------------------------ #
+    # PASS 4: Plain LLM summariser (per-episode, no cache)                #
+    # ------------------------------------------------------------------ #
     if use_reasoning and use_plain_llm:
         summary = summarise_episode(
-            combined_text, episode_id, llm_cfg, cache=cache,
-            use_vlm=use_vlm, use_kag=use_kag, use_rag=use_rag,
+            combined_text, episode_id, llm_cfg,
         )
     elif use_reasoning:
         summary = combined_text
@@ -204,7 +226,9 @@ def _build_phaseB_for_episode(
             f"with config {episode.get('dynamic_config', {})}."
         )
 
-    # --- RAG store ---
+    # ------------------------------------------------------------------ #
+    # RAG store (for future episodes to retrieve from)                    #
+    # ------------------------------------------------------------------ #
     if rag_bank is not None and use_rag:
         end_frame = episode.get("frame_paths", {}).get("end_frame")
         rag_bank.store(

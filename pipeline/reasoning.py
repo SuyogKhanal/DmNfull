@@ -1,3 +1,16 @@
+"""Reasoning module — analysis and prescription are separate passes.
+
+Cache policy (enforced here):
+  - run_analysis and run_prescription are NEVER cached.  Each call must
+    produce a fresh output so that component ablations (RAG on/off, KAG
+    on/off, TKF block present/absent) always produce distinct results.
+  - Only VLM outputs are cached — that happens in vlm_analyser.py.
+
+Flow (enforced by pipeline_runner.py):
+  Pass 1 → run_analysis(...)        → analysis_text
+  TKF    → run_knowledge_check(analysis_text, ...)  → tkf_block
+  Pass 2 → run_prescription(analysis_text, tkf_block, ...)  → prescription_text
+"""
 import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -54,10 +67,6 @@ def _format_dynamic_config(episode: Dict) -> str:
         f"Goal: {dyn.get('goal_pos','?')} | "
         f"Fires: {dyn.get('fire_positions','?')}"
     )
-
-
-def _flag_suffix(use_vlm: bool, use_kag: bool, use_rag: bool) -> str:
-    return f"v{int(bool(use_vlm))}_k{int(bool(use_kag))}_r{int(bool(use_rag))}"
 
 
 def build_analysis_prompt(
@@ -144,25 +153,17 @@ def build_prescription_prompt(
     )
 
 
-def run_reasoning(
+def run_analysis(
     episode: Dict,
     vision_report: str,
     kag_context: str,
     rag_context: str,
-    tkf_block: str,
     llm_cfg: Dict,
-    cache=None,
-    use_vlm: bool = True,
-    use_kag: bool = True,
-    use_rag: bool = True,
-) -> Tuple[str, str, str]:
-    """Run both reasoning calls.  Returns (analysis_text, prescription_text, combined_text).
+) -> str:
+    """Pass 1: Root-cause analysis only.  No cache — always fresh.
 
-    CACHE POLICY (Update 1):
-      - Analysis and prescription are NEVER cached — they must be freshly generated
-        each run so that component ablations (RAG on/off, KAG on/off, TKF block
-        present/absent) always produce distinct outputs.
-      - Only VLM outputs are cached (handled in vlm_analyser.py).
+    Returns analysis_text (str).  This output is then fed into TKF so the
+    knowledge fetcher reasons about the ACTUAL failure, not a placeholder.
     """
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
@@ -170,11 +171,9 @@ def run_reasoning(
 
     client = _oai_client()
     analysis_prompt = build_analysis_prompt(episode, vision_report, kag_context, rag_context)
-    analysis_text = ""
 
-    # --- Analysis (no cache) ---
     try:
-        analysis_text = _chat_reasoning(
+        return _chat_reasoning(
             client, model,
             [
                 {"role": "system", "content":
@@ -187,11 +186,31 @@ def run_reasoning(
         )
     except Exception as e:
         traceback.print_exc()
-        analysis_text = f"[ANALYSIS ERROR: {e}]"
+        return f"[ANALYSIS ERROR: {e}]"
 
-    # --- Prescription (no cache) ---
+
+def run_prescription(
+    episode: Dict,
+    analysis_text: str,
+    tkf_block: str,
+    llm_cfg: Dict,
+) -> Tuple[str, str]:
+    """Pass 2: Prescription — uses the real analysis_text AND the real tkf_block.
+
+    Called AFTER TKF so the tkf_block is populated with actual retrieval
+    results (including sim scores and fallback demos when below threshold).
+
+    Returns (prescription_text, combined_text).
+    No cache — always fresh.
+    """
+    model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+    effort = str(llm_cfg.get("reasoning_effort", "high"))
+
+    client = _oai_client()
     prescription_prompt = build_prescription_prompt(episode, analysis_text, tkf_block)
     prescription_text = ""
+
     try:
         prescription_text = _chat_reasoning(
             client, model,
@@ -215,22 +234,56 @@ def run_reasoning(
         "=== DEMONSTRATION PRESCRIPTION ===\n"
         f"{prescription_text}\n"
     )
-    return analysis_text, prescription_text, combined
+    return prescription_text, combined
+
+
+def run_reasoning(
+    episode: Dict,
+    vision_report: str,
+    kag_context: str,
+    rag_context: str,
+    tkf_block: str,
+    llm_cfg: Dict,
+    cache=None,           # ignored — kept for backwards-compat signature only
+    use_vlm: bool = True, # unused here, kept for compat
+    use_kag: bool = True,
+    use_rag: bool = True,
+) -> Tuple[str, str, str]:
+    """Backwards-compat wrapper: analysis + prescription in one call.
+
+    Prefer calling run_analysis() then run_prescription() directly (as
+    pipeline_runner does) so TKF can run in between the two passes.
+
+    Returns (analysis_text, prescription_text, combined_text).
+    """
+    analysis_text = run_analysis(
+        episode=episode,
+        vision_report=vision_report if use_vlm else "",
+        kag_context=kag_context if use_kag else "",
+        rag_context=rag_context if use_rag else "",
+        llm_cfg=llm_cfg,
+    )
+    prescription_text, combined_text = run_prescription(
+        episode=episode,
+        analysis_text=analysis_text,
+        tkf_block=tkf_block,
+        llm_cfg=llm_cfg,
+    )
+    return analysis_text, prescription_text, combined_text
 
 
 def summarise_episode(
     reasoning_text: str,
     episode_id: int,
     llm_cfg: Dict,
-    cache=None,
+    cache=None,           # ignored — kept for backwards-compat signature only
     use_vlm: bool = True,
     use_kag: bool = True,
     use_rag: bool = True,
 ) -> str:
     """Condense full reasoning into a 3-5 sentence summary for Phase C input.
 
-    CACHE POLICY: Also not cached — the summary must reflect the current run's
-    reasoning_text (which is no longer cached).
+    Not cached — must reflect whatever combined_text was produced this run.
     """
     model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
     max_tokens = int(llm_cfg.get("max_output_tokens", 16384))

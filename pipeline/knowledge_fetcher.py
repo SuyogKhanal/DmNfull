@@ -1,3 +1,19 @@
+"""Training Knowledge Fetcher (TKF).
+
+Safer-side update:
+  When no demo meets the confidence threshold (verdict == NOT_FOUND), instead
+  of returning empty-handed the pipeline now:
+    1. Passes the top-2 closest demos WITH their similarity scores to the
+       prescription LLM.
+    2. The LLM reasons about whether the gap is a variety problem (demos are
+       in the right ballpark, sim ~0.4-0.6) or a brand-new scenario gap
+       (completely unrelated, sim < 0.3).
+    3. It explicitly answers whether the human should add more variety of the
+       same type of demo, or record an entirely new scenario.
+
+Cache policy:
+  TKF outputs are NEVER cached.  Caching is for VLM only (vlm_analyser.py).
+"""
 import json
 import os
 import sys
@@ -247,18 +263,29 @@ def _llm_identify_needs(reasoning_text: str, model: str) -> str:
 
 
 def _build_fallback_retrieval_block(results: List[Dict]) -> str:
-    """Format the top-2 best matches for the reasoning LLM when below threshold.
+    """Format the top-2 best-matching demos for the reasoning LLM when below threshold.
 
-    Each entry includes the similarity score so the LLM can reason about how
-    relevant the existing demos actually are.
+    Each entry includes the raw similarity score (0-1, where 1.0 = perfect match)
+    so the LLM can reason about whether the existing demos are close enough to
+    just need more variety, or whether a completely new scenario is required.
     """
     if not results:
         return "No demos exist in the training bank at all."
-    lines = ["Best available demos (below the confidence threshold — included for context):"]
+    lines = [
+        "Best available demos (BELOW the confidence threshold — shown so you can judge"
+        " whether variety or an entirely new scenario is needed):",
+    ]
     for r in results[:2]:
         m = r["metadata"]
+        sim = r["score"]
+        if sim >= 0.4:
+            sim_note = f"reasonably close ({sim:.3f}/1.0) — probably a variety gap"
+        elif sim >= 0.3:
+            sim_note = f"somewhat related ({sim:.3f}/1.0) — may need a new variant"
+        else:
+            sim_note = f"quite different ({sim:.3f}/1.0) — likely needs a brand-new scenario"
         lines.append(
-            f"  Demo (similarity={r['score']:.3f} / 100% would be a perfect match): "
+            f"  Demo [similarity={sim:.3f}/1.0, {sim_note}]: "
             f"{m.get('description', '?')} "
             f"[corridor={m.get('corridor','?')}, outcome={m.get('outcome','?')}, "
             f"n_steps={m.get('n_steps','?')}]"
@@ -277,9 +304,10 @@ def _llm_adjust_prescription(
     """Produce final adjusted guidance.
 
     When verdict is NOT_FOUND but we have fallback demos (below threshold),
-    the LLM is shown those demos WITH their sim scores and asked to reason
-    about what specifically went off the margin — and whether variety or a
-    genuinely new demo type is needed.
+    the LLM is shown those demos WITH annotated sim scores and asked:
+      - Are these covering the right situation (high sim) → need more variety?
+      - Or completely different (low sim) → need a brand-new scenario?
+      - What specific aspect of the failure is NOT covered?
     """
     if verdict == "NOT_FOUND" and fallback_block:
         extra_section = textwrap.dedent(f"""
@@ -287,14 +315,15 @@ def _llm_adjust_prescription(
         CLOSEST EXISTING DEMOS (did NOT meet the confidence threshold):
         {fallback_block}
 
-        Given the similarity scores above, reason about:
-        1. Are these existing demos roughly covering the right situation, just
-           not quite matching (high sim ~0.4-0.6) — suggesting more VARIETY of
-           the same type is needed?
-        2. Or are they completely unrelated (low sim <0.3) — meaning a brand
-           new type of demo must be recorded from scratch?
-        3. What specific aspect of the failure situation is NOT covered by the
-           closest existing demos?
+        Given the similarity scores and notes above, reason explicitly about:
+        1. Are these existing demos roughly covering the right situation (sim >= 0.4)?
+           If yes — the human probably needs MORE VARIETY of the same type of demo
+           (different fire placements, different start positions, same corridor style).
+        2. Or are they quite different (sim < 0.3)?
+           If yes — a BRAND NEW type of demo must be recorded from scratch.
+        3. What specific aspect of this failure situation is NOT covered by the
+           closest existing demos, and what would a recording of that missing
+           aspect look like in plain English?
         """)
     else:
         extra_section = ""
@@ -313,10 +342,16 @@ def _llm_adjust_prescription(
         {reasoning}
 
         Write 4-6 sentences of plain-English guidance.
-        - If verdict is FOUND: explain why the policy likely still failed despite having this kind of demo, and recommend more variety.
-        - If verdict is PARTIAL: describe what the existing demos cover and what new variation to add.
-        - If verdict is NOT_FOUND with close demos (sim >= 0.3): explain what is MISSING from those close demos and whether the human needs more variety or a genuinely new scenario.
-        - If verdict is NOT_FOUND with no close demos (sim < 0.3): confirm this demonstration is entirely missing and describe what the human should record from scratch.
+        - If verdict is FOUND: explain why the policy likely still failed despite having
+          this kind of demo, and recommend adding more variety.
+        - If verdict is PARTIAL: describe what the existing demos cover and what new
+          variation to add.
+        - If verdict is NOT_FOUND with close demos (sim >= 0.3): explain what is MISSING
+          from those close demos and whether the human needs more variety or a genuinely
+          new scenario (use the sim score and note to justify your answer).
+        - If verdict is NOT_FOUND with no close demos (all sim < 0.3): confirm this
+          demonstration type is entirely absent and describe what the human should
+          record from scratch.
         No coordinates, no action codes, no technical jargon.
     """)
     return _oai_plain(
@@ -337,7 +372,7 @@ def _run_direct(
     partial_thresh: float,
     top_k: int,
     llm_model: str,
-    cache=None,
+    cache=None,          # kept for signature compat — TKF never uses cache
     episode_id: Optional[int] = None,
 ) -> Dict:
     needs = _llm_identify_needs(reasoning_text, llm_model)
@@ -356,7 +391,8 @@ def _run_direct(
     else:
         summary = f"Verdict: {verdict}\nNo matching demonstrations found."
 
-    # --- Update 2: TKF fallback — pass top-2 with sim scores when below threshold ---
+    # Safer-side fallback: when below threshold, pass top-2 WITH annotated sim
+    # scores so the LLM can judge variety gap vs brand-new scenario gap.
     fallback_block = ""
     if verdict == "NOT_FOUND":
         fallback_block = _build_fallback_retrieval_block(results)
@@ -371,6 +407,7 @@ def _run_direct(
         "retrieval_summary":     summary,
         "adjusted_prescription": adjusted,
         "fallback_used":         verdict == "NOT_FOUND" and bool(results),
+        "fallback_block":        fallback_block,
     }
 
 
@@ -456,7 +493,7 @@ def _run_crewai(
         summary = retrieval_holder.get("summary", f"Verdict: {verdict}")
         adjusted = str(crew_result).strip() if crew_result else ""
 
-        # --- Update 2: apply fallback block even for CrewAI path ---
+        # Safer-side fallback also applied on CrewAI path
         fallback_block = ""
         if verdict == "NOT_FOUND":
             fallback_block = _build_fallback_retrieval_block(matches)
@@ -470,6 +507,7 @@ def _run_crewai(
             "retrieval_summary":     summary,
             "adjusted_prescription": adjusted,
             "fallback_used":         verdict == "NOT_FOUND" and bool(matches),
+            "fallback_block":        fallback_block,
         }
     except Exception as e:
         traceback.print_exc()
@@ -481,7 +519,7 @@ def run_knowledge_check(
     reasoning_text: str,
     tkf_cfg: Dict,
     llm_cfg: Dict,
-    cache=None,
+    cache=None,           # TKF is never cached — kept for call-site compat only
     episode_id: Optional[int] = None,
 ) -> Dict:
     demo_dir   = Path(tkf_cfg.get("demo_dir", "demos"))
@@ -507,6 +545,7 @@ def run_knowledge_check(
                 "retrieval_summary":     f"TKF skipped — could not build demo index: {e}",
                 "adjusted_prescription": "",
                 "fallback_used":         False,
+                "fallback_block":        "",
             }
 
     if use_crewai:
@@ -521,7 +560,8 @@ def format_tkf_block(tkf_result: Optional[Dict]) -> str:
     if tkf_result.get("fallback_used"):
         fallback_note = (
             "\n[NOTE: No demo met the confidence threshold. "
-            "The 2 closest matches were used as context — see sim scores above.]\n"
+            "The 2 closest matches (with sim scores) were shown to the reasoning model — "
+            "see 'fallback_block' in tkf_result.json for details.]\n"
         )
     return (
         "=== TRAINING KNOWLEDGE CHECK ===\n"
