@@ -108,6 +108,7 @@ def _build_phaseB_for_episode(
     use_plain_llm = bool(pipeline_flags.get("use_plain_llm", True))
 
     episode_id = episode["episode_id"]
+    episode_dyn_cfg = episode.get("dynamic_config", {}) or {}
 
     # ------------------------------------------------------------------ #
     # PASS 0-A: VLM  (cached per (rollout_id, episode_id) — VLM ONLY)   #
@@ -143,10 +144,13 @@ def _build_phaseB_for_episode(
     # ------------------------------------------------------------------ #
     # PASS 0-C: RAG (no cache)                                            #
     # ------------------------------------------------------------------ #
-    # exclude_episode_id prevents the RAG bank from returning the SAME    #
-    # episode_id back to itself across profiles in an ablation suite —    #
-    # otherwise p6 retrieves p5's record of ep2 with sim=1.000, which is  #
-    # zero useful signal and artificially inflates similarity.            #
+    # exclude_episode_id alone is insufficient across profiles in the     #
+    # ablation suite: p5 stores ep4 with episode_id=4 BEFORE p6 runs ep4, #
+    # and although both share id=4 the cross-profile carry-over still     #
+    # leaks because the bank persists between profile invocations.        #
+    # exclude_episode_config additionally skips any stored entry whose    #
+    # (start, goal, fires) matches the current episode — catching the     #
+    # cross-profile "same physical episode" case directly.                #
     # ------------------------------------------------------------------ #
     rag_ctx = ""
     if use_rag and rag_bank is not None:
@@ -156,6 +160,7 @@ def _build_phaseB_for_episode(
             vlm_report or "",
             end_frame,
             exclude_episode_id=episode_id,
+            exclude_episode_config=episode_dyn_cfg,
         )
         if track_cfg.get("save_prescriptions", True):
             save_rag_retrieved(rag_ctx or "(no matches above threshold)", episode_dir)
