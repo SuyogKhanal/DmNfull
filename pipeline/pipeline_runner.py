@@ -81,15 +81,16 @@ def _build_phaseB_for_episode(
     tkf_cfg = config.get("tkf", {})
     track_cfg = config.get("tracking", {})
 
-    use_vlm        = bool(pipeline_flags.get("use_vlm", True))
-    use_kag        = bool(pipeline_flags.get("use_kag", True))
-    use_rag        = bool(pipeline_flags.get("use_rag", True))
-    use_reasoning  = bool(pipeline_flags.get("use_reasoning", True))
-    use_tkf        = bool(pipeline_flags.get("use_tkf", True))
-    use_plain_llm   = bool(pipeline_flags.get("use_plain_llm", True))
+    use_vlm       = bool(pipeline_flags.get("use_vlm",       True))
+    use_kag       = bool(pipeline_flags.get("use_kag",       True))
+    use_rag       = bool(pipeline_flags.get("use_rag",       True))
+    use_reasoning = bool(pipeline_flags.get("use_reasoning", True))
+    use_tkf       = bool(pipeline_flags.get("use_tkf",       True))
+    use_plain_llm = bool(pipeline_flags.get("use_plain_llm", True))
 
     episode_id = episode["episode_id"]
 
+    # --- VLM ---
     vlm_report = ""
     per_frame: List[Dict] = []
     if use_vlm:
@@ -102,6 +103,7 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_vlm_report("DISABLED", episode_dir)
 
+    # --- KAG ---
     if use_kag:
         kag_ctx_for_ep = kag_context
         if track_cfg.get("save_prescriptions", True):
@@ -111,6 +113,7 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_kag_context("DISABLED", episode_dir)
 
+    # --- RAG ---
     rag_ctx = ""
     if use_rag and rag_bank is not None:
         print(f"  [Phase B][ep {episode_id}] RAG retrieve...")
@@ -128,6 +131,7 @@ def _build_phaseB_for_episode(
     tkf_result: Optional[Dict] = None
     tkf_block = ""
 
+    # --- Reasoning pass 1 (analysis, before TKF) ---
     if use_reasoning:
         print(f"  [Phase B][ep {episode_id}] Reasoning (analysis)...")
         analysis_text, _prelim_rx, _prelim_combined = run_reasoning(
@@ -145,15 +149,12 @@ def _build_phaseB_for_episode(
     else:
         analysis_text = "[REASONING DISABLED]"
 
+    # --- TKF ---
     if use_tkf:
         print(f"  [Phase B][ep {episode_id}] TKF...")
         try:
             tkf_result = run_knowledge_check(
-                analysis_text,
-                tkf_cfg,
-                llm_cfg,
-                cache=cache,
-                episode_id=episode_id,
+                analysis_text, tkf_cfg, llm_cfg, cache=cache, episode_id=episode_id,
             )
             tkf_block = format_tkf_block(tkf_result)
             if track_cfg.get("save_prescriptions", True):
@@ -167,6 +168,7 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_tkf_result({"verdict": "DISABLED"}, episode_dir)
 
+    # --- Reasoning pass 2 (prescription, after TKF) ---
     if use_reasoning:
         print(f"  [Phase B][ep {episode_id}] Reasoning (prescription)...")
         analysis_text, prescription_text, combined_text = run_reasoning(
@@ -188,22 +190,21 @@ def _build_phaseB_for_episode(
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
 
+    # --- Plain LLM summariser (per-episode prescription) ---
     if use_reasoning and use_plain_llm:
         summary = summarise_episode(
-            combined_text,
-            episode_id,
-            llm_cfg,
-            cache=cache,
-            use_vlm=use_vlm,
-            use_kag=use_kag,
-            use_rag=use_rag,
+            combined_text, episode_id, llm_cfg, cache=cache,
+            use_vlm=use_vlm, use_kag=use_kag, use_rag=use_rag,
         )
-
     elif use_reasoning:
         summary = combined_text
     else:
-        summary = f"Reasoning disabled. Failure at episode {episode_id} with config {episode.get('dynamic_config', {})}."
+        summary = (
+            f"Reasoning disabled. Failure at episode {episode_id} "
+            f"with config {episode.get('dynamic_config', {})}."
+        )
 
+    # --- RAG store ---
     if rag_bank is not None and use_rag:
         end_frame = episode.get("frame_paths", {}).get("end_frame")
         rag_bank.store(
@@ -218,26 +219,26 @@ def _build_phaseB_for_episode(
         save_episode_final_prescription(prescription_text or "[NO PRESCRIPTION]", episode_dir)
 
     return {
-        "episode_id":       episode_id,
-        "seed":             episode["seed"],
-        "total_steps":      episode["total_steps"],
-        "total_reward":     episode["total_reward"],
-        "success":          episode["success"],
-        "dynamic_config":   episode.get("dynamic_config", {}),
-        "summary":          summary,
-        "vlm_report":       vlm_report,
-        "kag_context":      kag_ctx_for_ep,
-        "rag_context":      rag_ctx,
-        "analysis_text":    analysis_text,
-        "prescription":     prescription_text,
+        "episode_id":        episode_id,
+        "seed":              episode["seed"],
+        "total_steps":       episode["total_steps"],
+        "total_reward":      episode["total_reward"],
+        "success":           episode["success"],
+        "dynamic_config":    episode.get("dynamic_config", {}),
+        "summary":           summary,
+        "vlm_report":        vlm_report,
+        "kag_context":       kag_ctx_for_ep,
+        "rag_context":       rag_ctx,
+        "analysis_text":     analysis_text,
+        "prescription":      prescription_text,
         "reasoning_combined":combined_text,
-        "tkf_result":       tkf_result,
-        "frame_paths":      episode.get("frame_paths", {}),
+        "tkf_result":        tkf_result,
+        "frame_paths":       episode.get("frame_paths", {}),
     }
 
 
 def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str] = None, cache=None) -> Dict:
-    """Full Phase A + Phase B + Phase C run. Returns the full_output dict and writes all files to run_dir."""
+    """Full Phase A + B + C run."""
     if run_dir is None:
         run_dir = _make_run_dir(config, tag=tag)
     run_id = run_dir.name
@@ -247,14 +248,14 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     print(f"\n{'='*70}\n[PipelineRunner] PHASE A — rollouts\n{'='*70}")
     rollout_result = run_rollouts(config, run_dir)
 
-    kag_cfg = config.get("kag", {})
     kag_context = ""
     if config.get("pipeline", {}).get("use_kag", True):
         try:
-            kag_context = load_and_format(kag_cfg.get("document_path", "knowledge/kag_maze_knowledge.json"))
+            kag_context = load_and_format(
+                config.get("kag", {}).get("document_path", "knowledge/kag_maze_knowledge.json")
+            )
         except Exception as e:
             print(f"[PipelineRunner] KAG load failed: {e}")
-            kag_context = ""
 
     rag_bank: Optional[RAGBank] = None
     if config.get("pipeline", {}).get("use_rag", True):
@@ -268,7 +269,6 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
             )
         except Exception as e:
             print(f"[PipelineRunner] RAG init failed: {e}")
-            rag_bank = None
 
     failures = [e for e in rollout_result["all_episodes"] if not e["success"]]
     failure_ids = [e["episode_id"] for e in failures]
@@ -277,7 +277,9 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     per_episode: List[Dict] = []
     for ed in failures:
         episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
-        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, run_id, cache=cache))
+        per_episode.append(
+            _build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, run_id, cache=cache)
+        )
 
     cross_text = ""
     structured: Dict = {}
@@ -289,42 +291,41 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
             failure_ids=failure_ids,
             maze_ascii=maze_ascii,
             llm_cfg=config.get("llm", {}),
+            pipeline_flags=config.get("pipeline", {}),
             cache=cache,
         )
 
     full_output = {
         "metadata": {
-            "run_id":        run_id,
-            "timestamp":     datetime.now().isoformat(),
-            "n_episodes":    rollout_result["n_episodes"],
-            "seed_base":     rollout_result["seed_base"],
-            "n_successes":   len(rollout_result["success_episode_ids"]),
-            "n_failures":    len(failure_ids),
-            "pipeline_flags":config.get("pipeline", {}),
+            "run_id":         run_id,
+            "timestamp":      datetime.now().isoformat(),
+            "n_episodes":     rollout_result["n_episodes"],
+            "seed_base":      rollout_result["seed_base"],
+            "n_successes":    len(rollout_result["success_episode_ids"]),
+            "n_failures":     len(failure_ids),
+            "pipeline_flags": config.get("pipeline", {}),
         },
-        "config":        config,
+        "config":  config,
         "phase_a": {
             "all_rollouts": [
                 {
-                    "episode_id":   e["episode_id"],
-                    "maze_name":    e["maze_name"],
-                    "seed":         e["seed"],
-                    "total_steps":  e["total_steps"],
-                    "total_reward": e["total_reward"],
-                    "success":      e["success"],
-                    "ascii_grid":   e["ascii_grid"],
+                    "episode_id":    e["episode_id"],
+                    "maze_name":     e["maze_name"],
+                    "seed":          e["seed"],
+                    "total_steps":   e["total_steps"],
+                    "total_reward":  e["total_reward"],
+                    "success":       e["success"],
+                    "ascii_grid":    e["ascii_grid"],
                     "dynamic_config":e["dynamic_config"],
-                    "key_frames":   e["key_frames"],
-                    "frame_paths":  e.get("frame_paths", {}),
+                    "key_frames":    e["key_frames"],
+                    "frame_paths":   e.get("frame_paths", {}),
                 }
                 for e in rollout_result["all_episodes"]
             ],
             "success_episode_ids": rollout_result["success_episode_ids"],
             "failure_episode_ids": failure_ids,
         },
-        "phase_b": {
-            "per_episode": per_episode,
-        },
+        "phase_b": {"per_episode": per_episode},
         "phase_c": {
             "cross_episode_reasoning": cross_text,
             "parsed_prescription":     structured,
@@ -335,7 +336,6 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
         json.dump(full_output, f, indent=2, default=str)
 
     save_final_prescription(cross_text, structured, run_dir, per_episode)
-
     print(f"\n[PipelineRunner] Done. Results → {run_dir}")
     return full_output
 
@@ -351,8 +351,14 @@ def _load_episode_from_saved_run(run_dir: Path, episode_id: int) -> Optional[Dic
     return ed
 
 
-def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Optional[str] = None, master_config_path: Optional[str] = None, cache=None) -> Dict:
-    """Re-run Phase B + Phase C over a saved run's stored episodes/frames, with new toggle overrides."""
+def rerun_pipeline_only(
+    saved_run_dir: str,
+    overrides: Dict,
+    out_run_dir: Optional[str] = None,
+    master_config_path: Optional[str] = None,
+    cache=None,
+) -> Dict:
+    """Re-run Phase B + Phase C over a saved rollout, with new toggle overrides."""
     saved = Path(saved_run_dir)
     if not saved.exists():
         raise FileNotFoundError(saved)
@@ -360,7 +366,9 @@ def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Option
     base_cfg_path = saved / "config_used.yaml"
     if not base_cfg_path.exists():
         if master_config_path is None:
-            raise FileNotFoundError(f"config_used.yaml missing in {saved} and no master config provided")
+            raise FileNotFoundError(
+                f"config_used.yaml missing in {saved} and no master config provided"
+            )
         base_cfg = _load_yaml(master_config_path)
     else:
         base_cfg = _load_yaml(str(base_cfg_path))
@@ -390,7 +398,9 @@ def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Option
     kag_context = ""
     if config.get("pipeline", {}).get("use_kag", True):
         try:
-            kag_context = load_and_format(config.get("kag", {}).get("document_path", "knowledge/kag_maze_knowledge.json"))
+            kag_context = load_and_format(
+                config.get("kag", {}).get("document_path", "knowledge/kag_maze_knowledge.json")
+            )
         except Exception as e:
             print(f"[Rerun] KAG load failed: {e}")
 
@@ -410,7 +420,9 @@ def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Option
     per_episode = []
     for ed in failures:
         episode_dir = out_dir / "episodes" / f"episode_{ed['episode_id']}"
-        per_episode.append(_build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, out_dir.name, cache=cache))
+        per_episode.append(
+            _build_phaseB_for_episode(ed, episode_dir, config, kag_context, rag_bank, out_dir.name, cache=cache)
+        )
 
     cross_text = ""
     structured: Dict = {}
@@ -421,24 +433,28 @@ def rerun_pipeline_only(saved_run_dir: str, overrides: Dict, out_run_dir: Option
             failure_ids=[f["episode_id"] for f in failures],
             maze_ascii=maze_ascii,
             llm_cfg=config.get("llm", {}),
+            pipeline_flags=config.get("pipeline", {}),
             cache=cache,
         )
 
     full_output = {
         "metadata": {
-            "run_id":          out_dir.name,
-            "timestamp":       datetime.now().isoformat(),
-            "rerun_of":        str(saved),
-            "pipeline_flags":  config.get("pipeline", {}),
-            "n_episodes":      saved_full.get("metadata", {}).get("n_episodes", 0),
-            "n_successes":     saved_full.get("metadata", {}).get("n_successes", 0),
-            "n_failures":      saved_full.get("metadata", {}).get("n_failures", len(saved_failure_ids)),
-            "seed_base":       saved_full.get("metadata", {}).get("seed_base"),
+            "run_id":         out_dir.name,
+            "timestamp":      datetime.now().isoformat(),
+            "rerun_of":       str(saved),
+            "pipeline_flags": config.get("pipeline", {}),
+            "n_episodes":     saved_full.get("metadata", {}).get("n_episodes", 0),
+            "n_successes":    saved_full.get("metadata", {}).get("n_successes", 0),
+            "n_failures":     saved_full.get("metadata", {}).get("n_failures", len(saved_failure_ids)),
+            "seed_base":      saved_full.get("metadata", {}).get("seed_base"),
         },
-        "config":    config,
-        "phase_a":   saved_full.get("phase_a", {}),
-        "phase_b":   {"per_episode": per_episode},
-        "phase_c":   {"cross_episode_reasoning": cross_text, "parsed_prescription": structured},
+        "config":  config,
+        "phase_a": saved_full.get("phase_a", {}),
+        "phase_b": {"per_episode": per_episode},
+        "phase_c": {
+            "cross_episode_reasoning": cross_text,
+            "parsed_prescription":     structured,
+        },
     }
 
     with open(out_dir / "full_output.json", "w") as f:

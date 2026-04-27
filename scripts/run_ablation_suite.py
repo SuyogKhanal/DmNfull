@@ -28,38 +28,20 @@ from pipeline.pipeline_runner import (
 from pipeline.response_cache import ResponseCache
 
 
-# --- Profile order ---------------------------------------------------------
-# The suite runs *additively* by default: start with the minimal baseline and
-# add one component at a time, so each profile differs from the previous by a
-# single, scientifically-meaningful flag. This is the order Santu asked for —
-# it makes the contribution of each component immediately readable from the
-# performance plot.
-#
-# The "no_*" profiles are kept for backwards compatibility (subtractive
-# ablation) but are NOT part of the default suite anymore. Pass them
-# explicitly via --profiles if you want them.
+# ---------------------------------------------------------------------------
+# Six additive profiles — each adds exactly one new component to the previous.
+# Removal profiles are no longer part of the default suite.
+# ---------------------------------------------------------------------------
 ADDITIVE_PROFILES = [
-    "vlm_only",
-    "vlm_plain_llm",
-    "vlm_reasoning",
-    "vlm_reasoning_kag",
-    "vlm_reasoning_rag_kag",
-    "vlm_reasoning_rag_kag_aggregator",
-    "vlm_reasoning_tkf",
-    "vlm_reasoning_tkf_rag_kag",
-    "full_system",
+    "p1_vlm_plain_llm",
+    "p2_vlm_reasoning_plain_llm",
+    "p3_vlm_reasoning_cross_plain_llm",
+    "p4_vlm_reasoning_kag_cross_plain_llm",
+    "p5_vlm_reasoning_kag_rag_cross_plain_llm",
+    "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm",
 ]
 
-REMOVAL_PROFILES = [
-    "no_vlm",
-    "no_kag",
-    "no_rag",
-    "no_reasoning",
-    "no_tkf",
-    "no_aggregator",
-]
-
-ALL_PROFILES = ADDITIVE_PROFILES + REMOVAL_PROFILES
+ALL_PROFILES = ADDITIVE_PROFILES
 
 
 def parse_args():
@@ -157,36 +139,35 @@ def _save_rollout_only(rollout_result: Dict, target_dir: Path, master_cfg: Dict)
 def _summarise_profile(profile: str, profile_dir: Path, full_output: Dict, cache: ResponseCache, prev_hits: int, prev_miss: int) -> Dict:
     metadata = full_output.get("metadata", {})
     parsed   = (full_output.get("phase_c", {}) or {}).get("parsed_prescription", {}) or {}
-    n_ep     = int(metadata.get("n_episodes", 0) or 0)
+    n_ep     = int(metadata.get("n_episodes",  0) or 0)
     n_succ   = int(metadata.get("n_successes", 0) or 0)
-    n_fail   = int(metadata.get("n_failures", n_ep - n_succ) or 0)
+    n_fail   = int(metadata.get("n_failures",  n_ep - n_succ) or 0)
     sr       = (n_succ / n_ep) if n_ep > 0 else 0.0
     total_demos = int(parsed.get("total_demonstrations_needed", 0) or 0) if isinstance(parsed, dict) else 0
-
     delta_hits = cache.hit_count  - prev_hits
     delta_miss = cache.miss_count - prev_miss
     return {
-        "profile":           profile,
-        "run_dir":           str(profile_dir),
-        "n_episodes":        n_ep,
-        "n_successes":       n_succ,
-        "n_failures":        n_fail,
-        "success_rate":      sr,
+        "profile":                profile,
+        "run_dir":                str(profile_dir),
+        "n_episodes":             n_ep,
+        "n_successes":            n_succ,
+        "n_failures":             n_fail,
+        "success_rate":           sr,
         "total_demos_prescribed": total_demos,
-        "llm_calls_made":    delta_miss,
-        "cache_hits":        delta_hits,
+        "llm_calls_made":         delta_miss,
+        "cache_hits":             delta_hits,
     }
 
 
 def _print_table(rows: List[Dict]):
     header = (
-        f"{'Profile':<16} | {'SR':>5} | {'Failed':>6} | {'Demos':>6} | {'LLM calls':>9} | {'Cache hits':>10}"
+        f"{'Profile':<42} | {'SR':>5} | {'Failed':>6} | {'Demos':>6} | {'LLM calls':>9} | {'Cache hits':>10}"
     )
     sep = "-" * len(header)
     print("\n" + sep); print(header); print(sep)
     for r in rows:
         print(
-            f"{r['profile']:<16} | "
+            f"{r['profile']:<42} | "
             f"{r['success_rate']:>5.2f} | "
             f"{r['n_failures']:>6d} | "
             f"{r['total_demos_prescribed']:>6d} | "
@@ -216,22 +197,21 @@ def _try_launch_dashboard(suite_root: Path):
 def main():
     args = parse_args()
 
-    master_cfg = _load_master_config(args.config, args.n_episodes, args.seed, args.checkpoint)
-    profiles_in = _parse_profiles(args.profiles)
-    profiles_ordered = profiles_in
+    master_cfg        = _load_master_config(args.config, args.n_episodes, args.seed, args.checkpoint)
+    profiles_ordered  = _parse_profiles(args.profiles)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = f"run_{timestamp}"
+    timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id     = f"run_{timestamp}"
     suite_root = REPO_ROOT / "results" / "ablations" / run_id
     suite_root.mkdir(parents=True, exist_ok=True)
 
     cache_root = REPO_ROOT / "results" / "cache" / run_id
-    cache = ResponseCache(cache_root, force_rerun=args.force_rerun_cache)
+    cache      = ResponseCache(cache_root, force_rerun=args.force_rerun_cache)
 
     manifest = {
-        "run_id":           run_id,
-        "timestamp":        datetime.now().isoformat(),
-        "profiles_requested": profiles_in,
+        "run_id":             run_id,
+        "timestamp":          datetime.now().isoformat(),
+        "profiles_requested": profiles_ordered,
         "profiles_executed":  profiles_ordered,
         "cli_overrides": {
             "config":            args.config,
@@ -241,9 +221,9 @@ def main():
             "force_rerun_cache": bool(args.force_rerun_cache),
             "launch_dashboard":  bool(args.launch_dashboard),
         },
-        "master_config":      master_cfg,
-        "cache_root":         str(cache_root),
-        "suite_root":         str(suite_root),
+        "master_config": master_cfg,
+        "cache_root":     str(cache_root),
+        "suite_root":     str(suite_root),
     }
     with open(suite_root / "suite_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2, default=str)
@@ -288,9 +268,9 @@ def main():
     suite_summary_path = suite_root / f"suite_summary_{timestamp}.json"
     with open(suite_summary_path, "w") as f:
         json.dump({
-            "run_id":          run_id,
-            "timestamp":       datetime.now().isoformat(),
-            "profiles":        summaries,
+            "run_id":             run_id,
+            "timestamp":          datetime.now().isoformat(),
+            "profiles":           summaries,
             "total_cache_hits":   cache.hit_count,
             "total_cache_misses": cache.miss_count,
         }, f, indent=2, default=str)
