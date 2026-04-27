@@ -2,7 +2,11 @@
 
 Cache policy (enforced here, stripped from reasoning.py):
   - VLM outputs are expensive (vision API calls per frame) and deterministic
-    given the same frame + prompt, so they ARE cached keyed on episode_id.
+    given the same frame + prompt, so they ARE cached keyed on
+    (rollout_id, episode_id).  Including rollout_id ensures that two
+    ablation suites run against different rollouts never share cached VLM
+    results, while all profiles within the SAME suite (same shared rollout)
+    DO share VLM results — saving API cost without polluting ablations.
   - Reasoning, prescription, summary, aggregator, and TKF outputs are NOT
     cached — see reasoning.py and aggregator.py.
 """
@@ -77,19 +81,32 @@ def analyse_failure(
     episode: Dict,
     llm_cfg: Dict,
     cache=None,
+    rollout_id: str = "default",
 ) -> Tuple[str, List[Dict]]:
-    """Run VLM analysis on the 3 key frames.  Results ARE cached per episode."""
+    """Run VLM analysis on the 3 key frames.  Results ARE cached per (rollout_id, episode_id).
+
+    The rollout_id parameter must be passed by the caller and should identify
+    the specific rollout directory (e.g. the rollout folder name or its absolute
+    path).  This ensures:
+      - All ablation profiles that share the same rollout reuse the same VLM
+        outputs (saves API cost — the rollout frames are identical).
+      - Two different ablation suites with different rollouts never share
+        cached VLM results, preventing stale cache pollution.
+    """
     episode_id = episode["episode_id"]
     model      = str(llm_cfg.get("vlm_model", llm_cfg.get("model", "gpt-5-nano-2025-08-07")))
     max_tokens = int(llm_cfg.get("max_output_tokens", 4096))
 
     # --- Cache hit path (VLM only) ---
+    # Scope is now (rollout_id, episode_id) so different rollouts never collide.
     if cache is not None:
-        scope  = cache.episode_scope(episode_id)
+        scope  = f"rollout_{rollout_id}_episode_{int(episode_id)}"
         cached = cache.load(scope, "vlm_report")
         if cached is not None:
             print(f"  [VLM][ep {episode_id}] cache HIT — skipping API calls")
             return cached.get("report", ""), cached.get("per_frame", [])
+    else:
+        scope = f"rollout_{rollout_id}_episode_{int(episode_id)}"
 
     frame_paths = episode.get("frame_paths", {})
     key_frames  = episode.get("key_frames", [])
@@ -122,7 +139,7 @@ def analyse_failure(
     # --- Cache miss path: save for next run ---
     if cache is not None:
         cache.save(
-            cache.episode_scope(episode_id),
+            scope,
             "vlm_report",
             {"report": report, "per_frame": per_frame},
         )
