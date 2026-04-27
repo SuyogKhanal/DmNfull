@@ -1,31 +1,24 @@
 """
 dashboard/app.py
-=========================================================================
-Gradio dashboard for inspecting MazeNav pipeline runs.
+=================================================================================
+MazeNav Profile Comparator — Gradio dashboard.
 
-Three tabs:
-  * Explorer            — pick a profile dir, drill into a failure episode,
-                          see frames + per-component outputs, and re-run
-                          Phase B + C with new component toggles.
-  * Prescription Diff   — side-by-side and unified diff of the original
-                          loaded run's prescription vs the latest re-run.
-  * Performance Graph   — aggregated success-rate / demo-count plot over
-                          all ablation runs and baselines.
-
-The Explorer tab is intentionally tolerant of partial / missing data: if a
-profile dir doesn't store its own frames, the dashboard walks up to the
-sibling `rollout/` dir; if a profile didn't save per-component .txt files,
-it reads them from `phase_b.per_episode` inside `full_output.json`; if
-metadata is missing from the run-level structure, it walks up to the
-canonical `episode_data.json` in the rollout dir.
+Layout
+------
+* Suite auto-loads the LATEST run under results/ablations/.
+* Top bar: shared failure-episode selector + 3 frame thumbnails.
+* Six profile tabs (P1 … P6), each with component sub-tabs:
+    VLM Report | KAG Context | RAG Retrieved | Reasoning | TKF Verdict
+    Per-Episode Prescription | Cross-Episode Reasoning | Final Prescription
+  Tabs whose component was DISABLED for that profile show a gray notice.
+* Bottom: Final Prescription row (all 6 profiles side-by-side in one tab each).
 """
 
 import json
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -36,434 +29,449 @@ load_dotenv(REPO_ROOT / ".env")
 
 import gradio as gr
 
-from pipeline.pipeline_runner import rerun_pipeline_only
-from dashboard.components.episode_viewer import (
-    load_full_output,
-    list_failure_episodes,
-    get_episode_frames,
-    get_episode_component_outputs,
-    get_episode_metadata,
-)
-from dashboard.components.prescription_diff import (
-    prescription_pair, html_side_by_side, unified_diff,
-)
-from dashboard.components.performance_graph import build_performance_figure
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+ABLATIONS_DIR = REPO_ROOT / "results" / "ablations"
 
-RUNS_DIR_DEFAULT      = str(REPO_ROOT / "results" / "runs")
-ABLATIONS_DIR_DEFAULT = str(REPO_ROOT / "results" / "ablations")
-BASELINES_DIR_DEFAULT = str(REPO_ROOT / "results" / "baselines")
+PROFILE_ORDER = [
+    "p1_vlm_plain_llm",
+    "p2_vlm_reasoning_plain_llm",
+    "p3_vlm_reasoning_cross_plain_llm",
+    "p4_vlm_reasoning_kag_cross_plain_llm",
+    "p5_vlm_reasoning_kag_rag_cross_plain_llm",
+    "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm",
+]
+
+PROFILE_LABELS = {
+    "p1_vlm_plain_llm":                              "P1 · VLM + Plain LLM",
+    "p2_vlm_reasoning_plain_llm":                    "P2 · VLM + Reasoning + Plain LLM",
+    "p3_vlm_reasoning_cross_plain_llm":              "P3 · P2 + Cross-Ep Reasoning",
+    "p4_vlm_reasoning_kag_cross_plain_llm":          "P4 · P3 + KAG",
+    "p5_vlm_reasoning_kag_rag_cross_plain_llm":      "P5 · P4 + RAG",
+    "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm": "P6 · P5 + TKF (Full)",
+}
+
+# Map pipeline flag → human label
+FLAG_LABELS = {
+    "use_vlm":                    "VLM",
+    "use_reasoning":              "Reasoning",
+    "use_cross_episode_reasoning":"Cross-Ep Reasoning",
+    "use_kag":                    "KAG",
+    "use_rag":                    "RAG",
+    "use_tkf":                    "TKF",
+    "use_plain_llm":              "Plain LLM",
+    "use_aggregator":             "Aggregator",
+}
+
+# Which component tab maps to which pipeline flag (None = always shown)
+COMPONENT_FLAG = {
+    "VLM Report":               "use_vlm",
+    "KAG Context":              "use_kag",
+    "RAG Retrieved":            "use_rag",
+    "Reasoning":                "use_reasoning",
+    "TKF Verdict":              "use_tkf",
+    "Per-Episode Prescription": None,
+    "Cross-Ep Reasoning":       "use_cross_episode_reasoning",
+    "Final Prescription":       None,
+}
+
+DISABLED_NOTICE = "— DISABLED for this profile —"
 
 
 # ---------------------------------------------------------------------------
-# State + run-list helpers
+# Data helpers
 # ---------------------------------------------------------------------------
 
-def _state_init() -> Dict:
+def _latest_suite_dir() -> Optional[Path]:
+    """Return the most-recently-created suite dir under results/ablations/."""
+    if not ABLATIONS_DIR.exists():
+        return None
+    candidates = sorted(
+        [d for d in ABLATIONS_DIR.iterdir() if d.is_dir() and (d / "suite_manifest.json").exists()],
+        key=lambda d: d.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def _load_suite(suite_dir: Path) -> Dict:
+    """
+    Load all six profile full_output.json files from a suite directory.
+    Returns a dict keyed by profile name.
+    """
+    data: Dict[str, Dict] = {}
+    for profile in PROFILE_ORDER:
+        fo_path = suite_dir / profile / "full_output.json"
+        if fo_path.exists():
+            try:
+                with open(fo_path, "r") as f:
+                    data[profile] = json.load(f)
+            except Exception as e:
+                data[profile] = {"_load_error": str(e)}
+        else:
+            data[profile] = {"_missing": True}
+    return data
+
+
+def _failure_episode_choices(suite_data: Dict) -> List[Tuple[str, int]]:
+    """Extract failure episode IDs shared across profiles (from phase_a of any loaded profile)."""
+    for profile_data in suite_data.values():
+        phase_a = profile_data.get("phase_a", {})
+        failure_ids = phase_a.get("failure_episode_ids", [])
+        if failure_ids:
+            return [(f"Episode {eid}", eid) for eid in sorted(failure_ids)]
+    # Fallback: also check rollout/full_output.json
+    return []
+
+
+def _resolve_rollout_dir(suite_dir: Path) -> Optional[Path]:
+    rd = suite_dir / "rollout"
+    return rd if rd.exists() else None
+
+
+def _get_frames(suite_dir: Path, episode_id: int) -> Dict:
+    """Resolve start / highest-loss / end frame paths for an episode."""
+    frames: Dict[str, Optional[str]] = {"start": None, "mid": None, "end": None}
+
+    # Try rollout dir first
+    rollout_dir = _resolve_rollout_dir(suite_dir)
+    search_dirs = [rollout_dir] if rollout_dir else []
+    # Also check each profile dir
+    for profile in PROFILE_ORDER:
+        pd = suite_dir / profile
+        if pd.exists():
+            search_dirs.append(pd)
+
+    for base in search_dirs:
+        if base is None:
+            continue
+        ep_dir = base / "episodes" / f"episode_{episode_id}"
+        if not ep_dir.exists():
+            # Try frames directly under base
+            frames_dir = base / "frames" / f"episode_{episode_id}"
+            if frames_dir.exists():
+                ep_dir = frames_dir
+            else:
+                continue
+
+        for fname, key in [("start_frame.png", "start"), ("frame_start.png", "start"),
+                           ("highest_loss_frame.png", "mid"), ("frame_mid.png", "mid"),
+                           ("end_frame.png", "end"), ("frame_end.png", "end")]:
+            candidate = ep_dir / fname
+            if candidate.exists() and frames[key] is None:
+                frames[key] = str(candidate)
+
+        if all(v is not None for v in frames.values()):
+            break
+
+    # Fallback: read frame_paths from full_output.json of any profile
+    if any(v is None for v in frames.values()):
+        for profile in PROFILE_ORDER:
+            fo = suite_dir / profile / "full_output.json"
+            if not fo.exists():
+                continue
+            try:
+                with open(fo) as f:
+                    fo_data = json.load(f)
+                for ep in fo_data.get("phase_a", {}).get("all_rollouts", []):
+                    if ep.get("episode_id") == episode_id:
+                        fp = ep.get("frame_paths", {})
+                        frames["start"] = frames["start"] or fp.get("start_frame")
+                        frames["mid"]   = frames["mid"]   or fp.get("highest_loss_frame")
+                        frames["end"]   = frames["end"]   or fp.get("end_frame")
+                        break
+            except Exception:
+                pass
+            if all(v is not None for v in frames.values()):
+                break
+
+    return frames
+
+
+def _get_episode_outputs(profile_data: Dict, episode_id: int) -> Dict:
+    """
+    Extract all per-component text outputs for one episode from a profile's full_output.json.
+    Returns a dict with keys matching COMPONENT_FLAG.
+    """
+    flags = profile_data.get("config", {}).get("pipeline", {})
+    # Also check metadata.pipeline_flags as fallback
+    if not flags:
+        flags = profile_data.get("metadata", {}).get("pipeline_flags", {})
+
+    per_ep = profile_data.get("phase_b", {}).get("per_episode", [])
+    ep_data = next((e for e in per_ep if e.get("episode_id") == episode_id), {})
+
+    phase_c = profile_data.get("phase_c", {})
+
+    def _disabled(flag_key):
+        return not bool(flags.get(flag_key, True))
+
+    def _val(text, flag_key):
+        if flag_key and _disabled(flag_key):
+            return DISABLED_NOTICE
+        return text or ""
+
     return {
-        "run_dir":          None,
-        "rerun_dir":        None,
-        "failure_episodes": [],
+        "VLM Report":               _val(ep_data.get("vlm_report", ""),        "use_vlm"),
+        "KAG Context":              _val(ep_data.get("kag_context", ""),       "use_kag"),
+        "RAG Retrieved":            _val(ep_data.get("rag_context", ""),       "use_rag"),
+        "Reasoning":                _val(ep_data.get("reasoning_combined", ""),"use_reasoning"),
+        "TKF Verdict":              _val(json.dumps(ep_data.get("tkf_result") or {}, indent=2), "use_tkf"),
+        "Per-Episode Prescription": ep_data.get("prescription", ep_data.get("summary", "")),
+        "Cross-Ep Reasoning":       _val(phase_c.get("cross_episode_reasoning", ""), "use_cross_episode_reasoning"),
+        "Final Prescription":       json.dumps(phase_c.get("parsed_prescription", {}), indent=2),
+        "_flags":                   flags,
     }
 
 
-def _list_saved_runs() -> List[str]:
-    """
-    Scan results/runs, results/ablations, results/baselines for any directory
-    (up to 2 levels deep) that contains a full_output.json file.
-
-    Layouts supported:
-      * Single run        -> results/runs/<run>/full_output.json
-      * Ablation suite    -> results/ablations/<run>/<profile>/full_output.json
-      * Baseline run      -> results/baselines/<run>/full_output.json
-
-    NOTE: the shared Phase-A `rollout/` sibling inside an ablation-suite run
-    also contains a `full_output.json`, but that file only holds Phase-A
-    rollout data — it is NOT a selectable pipeline result.  We explicitly
-    skip any directory named "rollout" when scanning suite profile subdirs.
-    """
-    out: List[str] = []
-    for base in [RUNS_DIR_DEFAULT, ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT]:
-        p = Path(base)
-        if not p.exists():
-            continue
-        for d in sorted(p.iterdir()):
-            if not d.is_dir():
-                continue
-            if (d / "full_output.json").exists():
-                out.append(str(d))
-                continue
-            for sub in sorted(d.iterdir()):
-                if not sub.is_dir():
-                    continue
-                if sub.name == "rollout":
-                    continue
-                if (sub / "full_output.json").exists():
-                    out.append(str(sub))
-    return out
+def _flags_badge_html(flags: Dict) -> str:
+    """Render a small coloured badge row showing which flags are ON/OFF."""
+    parts = []
+    for flag, label in FLAG_LABELS.items():
+        on = bool(flags.get(flag, False))
+        colour = "#2d7a4f" if on else "#888"
+        bg     = "#d4f0e0" if on else "#f0f0f0"
+        parts.append(
+            f'<span style="background:{bg};color:{colour};border:1px solid {colour};'
+            f'border-radius:4px;padding:2px 7px;margin:2px;font-size:12px;'
+            f'font-family:monospace;display:inline-block;">'
+            f'{"✓" if on else "✗"} {label}</span>'
+        )
+    return "<div style='padding:6px 0'>" + "".join(parts) + "</div>"
 
 
-def _resolve_rollout_dir(run_dir: Path) -> Path:
-    """
-    Return the directory that holds the shared Phase-A artefacts
-    (`episode_data.json`, frames, etc.) for this run.
+# ---------------------------------------------------------------------------
+# State helpers
+# ---------------------------------------------------------------------------
 
-    Resolution order:
-      1. <run_dir>/rollout/         — single-run layout
-      2. <run_dir.parent>/rollout/  — ablation-suite layout
-      3. <run_dir>                  — fallback
-    """
-    if (run_dir / "rollout").exists():
-        return run_dir / "rollout"
-    if (run_dir.parent / "rollout").exists():
-        return run_dir.parent / "rollout"
-    return run_dir
+def _state_init() -> Dict:
+    return {"suite_dir": None, "suite_data": {}, "episode_id": None}
 
 
 # ---------------------------------------------------------------------------
 # Event handlers
 # ---------------------------------------------------------------------------
 
-def on_load_run(run_dir: str, state: Dict):
-    state = dict(state or {})
-    state["run_dir"] = run_dir
-    state["rerun_dir"] = None
+def on_load_suite(state: Dict):
+    """Called on page load — find the latest suite and populate everything."""
+    suite_dir = _latest_suite_dir()
+    if suite_dir is None:
+        status = "No completed suite found under results/ablations/. Run the ablation suite first."
+        return _empty_outputs(state, status)
 
-    if not run_dir:
-        state["failure_episodes"] = []
-        return (
-            state, gr.update(choices=[], value=None),
-            "Pick a saved run directory first.",
-            None, None, None,
-            "", "", "", "", "", "",
-            "", "",
-        )
+    suite_data = _load_suite(suite_dir)
+    failures   = _failure_episode_choices(suite_data)
+    first_eid  = failures[0][1] if failures else None
 
-    try:
-        full = load_full_output(run_dir)
-    except Exception as e:
-        state["failure_episodes"] = []
-        return (
-            state, gr.update(choices=[], value=None),
-            f"Error loading run: {e}",
-            None, None, None,
-            "", "", "", "", "", "",
-            "", "",
-        )
-
-    failures = list_failure_episodes(full)
-    state["failure_episodes"] = failures
-    choices = [(f["label"], f["episode_id"]) for f in failures]
-    value = choices[0][1] if choices else None
-
-    rollout_dir = _resolve_rollout_dir(Path(run_dir))
-    n_total = len((full.get("phase_a", {}) or {}).get("all_rollouts", []) or [])
+    state = {"suite_dir": str(suite_dir), "suite_data": suite_data, "episode_id": first_eid}
     status = (
-        f"Loaded run: {run_dir}\n"
-        f"  total episodes : {n_total}\n"
-        f"  failures       : {len(failures)}\n"
-        f"  frames source  : {rollout_dir}"
+        f"Suite loaded: {suite_dir.name}\n"
+        f"Profiles found: {sum(1 for v in suite_data.values() if '_missing' not in v)} / {len(PROFILE_ORDER)}\n"
+        f"Failure episodes: {len(failures)}"
     )
+
+    ep_choices = gr.update(choices=failures, value=first_eid)
+    ep_outputs = _build_all_episode_outputs(suite_data, first_eid, str(suite_dir))
+    return (state, status, ep_choices) + ep_outputs
+
+
+def on_select_episode(episode_id, state: Dict):
+    if not state or not state.get("suite_data") or episode_id is None:
+        return _empty_episode_outputs()
+    state["episode_id"] = int(episode_id)
+    suite_data = state["suite_data"]
+    suite_dir  = state["suite_dir"]
+    return _build_all_episode_outputs(suite_data, int(episode_id), suite_dir)
+
+
+def _build_all_episode_outputs(suite_data: Dict, episode_id: Optional[int], suite_dir_str: str):
+    """
+    Returns a flat tuple of all Gradio output values:
+      (start_img, mid_img, end_img,
+       p1_badge, p1_vlm, p1_kag, p1_rag, p1_rsn, p1_tkf, p1_per, p1_cer, p1_final,
+       p2_badge, ... x6 profiles)
+    """
+    suite_dir = Path(suite_dir_str) if suite_dir_str else None
+    frames = _get_frames(suite_dir, episode_id) if suite_dir and episode_id is not None else {}
+
+    result = [
+        frames.get("start"),
+        frames.get("mid"),
+        frames.get("end"),
+    ]
+
+    for profile in PROFILE_ORDER:
+        pdata   = suite_data.get(profile, {})
+        outputs = _get_episode_outputs(pdata, episode_id) if episode_id is not None else {}
+        flags   = outputs.get("_flags", {})
+        result.append(_flags_badge_html(flags))                          # badge
+        result.append(outputs.get("VLM Report",               ""))       # vlm
+        result.append(outputs.get("KAG Context",              ""))       # kag
+        result.append(outputs.get("RAG Retrieved",            ""))       # rag
+        result.append(outputs.get("Reasoning",                ""))       # rsn
+        result.append(outputs.get("TKF Verdict",              ""))       # tkf
+        result.append(outputs.get("Per-Episode Prescription", ""))       # per_ep
+        result.append(outputs.get("Cross-Ep Reasoning",       ""))       # cer
+        result.append(outputs.get("Final Prescription",       ""))       # final
+
+    return tuple(result)
+
+
+def _empty_outputs(state, status):
+    n_profile_outputs = len(PROFILE_ORDER) * 9  # badge + 8 text boxes
     return (
-        state, gr.update(choices=choices, value=value), status,
+        state, status,
+        gr.update(choices=[], value=None),
         None, None, None,
-        "", "", "", "", "", "",
-        "", "",
-    )
+    ) + ("",) * n_profile_outputs
 
 
-def on_select_episode(episode_id: Optional[int], state: Dict):
-    if not state or not state.get("run_dir") or episode_id is None:
-        return (None, None, None, "", "", "", "", "", "", "", "")
-
-    run_dir = state["run_dir"]
-    eid = int(episode_id)
-
-    frames  = get_episode_frames(run_dir, eid)
-    outputs = get_episode_component_outputs(run_dir, eid)
-    meta    = get_episode_metadata(state.get("failure_episodes", []), eid, run_dir)
-
-    meta_text = json.dumps({
-        "episode_id":     meta.get("episode_id"),
-        "seed":           meta.get("seed"),
-        "maze_name":      meta.get("maze_name", ""),
-        "total_steps":    meta.get("total_steps"),
-        "total_reward":   meta.get("total_reward"),
-        "dynamic_config": meta.get("dynamic_config", {}),
-        "key_frames":     meta.get("key_frames", []),
-        "ascii_grid":     meta.get("ascii_grid", ""),
-    }, indent=2, default=str)
-
-    return (
-        frames.get("start_frame"),
-        frames.get("highest_loss_frame"),
-        frames.get("end_frame"),
-        outputs.get("vlm_report",         ""),
-        outputs.get("kag_context",        ""),
-        outputs.get("rag_retrieved",      ""),
-        outputs.get("reasoning",          ""),
-        outputs.get("tkf_result",         ""),
-        outputs.get("final_prescription", ""),
-        meta_text,
-        "",
-    )
-
-
-def on_rerun(
-    use_vlm: bool,
-    use_kag: bool,
-    use_rag: bool,
-    use_reasoning: bool,
-    use_plain_llm: bool,
-    use_tkf: bool,
-    use_aggregator: bool,
-    state: Dict,
-):
-    state = dict(state or {})
-    if not state.get("run_dir"):
-        return state, "Load a saved run first.", "", "", ""
-
-    run_dir = Path(state["run_dir"])
-    rollout_dir = _resolve_rollout_dir(run_dir)
-
-    overrides = {"pipeline": {
-        "use_vlm":        bool(use_vlm),
-        "use_kag":        bool(use_kag),
-        "use_rag":        bool(use_rag),
-        "use_reasoning":  bool(use_reasoning),
-        "use_plain_llm":  bool(use_plain_llm),
-        "use_tkf":        bool(use_tkf),
-        "use_aggregator": bool(use_aggregator),
-    }}
-
-    suite_root = run_dir.parent
-    rerun_name = f"rerun_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    out_run_dir = str(suite_root / rerun_name)
-    master_cfg_path = str(REPO_ROOT / "configs" / "experiment_config.yaml")
-
-    try:
-        rerun_pipeline_only(
-            saved_run_dir=str(rollout_dir),
-            overrides=overrides,
-            out_run_dir=out_run_dir,
-            master_config_path=master_cfg_path,
-        )
-    except Exception as e:
-        return state, f"Rerun failed: {e}", "", "", ""
-
-    state["rerun_dir"] = out_run_dir
-    return state, f"Rerun complete \u2192 {out_run_dir}", out_run_dir, "", ""
-
-
-def on_diff(episode_id: Optional[int], state: Dict, mode: str):
-    if not state or not state.get("run_dir"):
-        return "", "", "(load a run first)"
-    orig_dir  = state["run_dir"]
-    rerun_dir = state.get("rerun_dir")
-    if mode == "Episode":
-        eid = int(episode_id) if episode_id is not None else None
-        orig, new = prescription_pair(orig_dir, rerun_dir, eid)
-    else:
-        orig, new = prescription_pair(orig_dir, rerun_dir, None)
-    html = html_side_by_side(orig, new, "Original (loaded run)", "Re-run (current toggles)")
-    diff = unified_diff(orig, new)
-    return orig, new, html + "\n\n<pre>" + diff + "</pre>"
-
-
-def on_refresh_graph():
-    fig, _stats = build_performance_figure(
-        ABLATIONS_DIR_DEFAULT, BASELINES_DIR_DEFAULT, RUNS_DIR_DEFAULT,
-    )
-    return fig
+def _empty_episode_outputs():
+    n_profile_outputs = len(PROFILE_ORDER) * 9
+    return (None, None, None) + ("",) * n_profile_outputs
 
 
 # ---------------------------------------------------------------------------
-# UI
+# UI builder
 # ---------------------------------------------------------------------------
 
 def build_app():
-    with gr.Blocks(title="MazeNav Research Dashboard") as app:
-        gr.Markdown("# MazeNav Research Dashboard")
+    with gr.Blocks(title="MazeNav Profile Comparator", theme=gr.themes.Soft()) as app:
+
+        gr.Markdown("# MazeNav Profile Comparator")
         gr.Markdown(
-            "**Three tabs** &nbsp;·&nbsp; "
-            "**Explorer** = inspect *one* failure episode and see what each pipeline component said about it. &nbsp;·&nbsp; "
-            "**Prescription Diff** = compare the *loaded run* vs your most recent *re-run* (turn a component off, see what changed). &nbsp;·&nbsp; "
-            "**Performance Graph** = overall success rate across every profile in `results/ablations/`."
+            "Automatically loads the **latest suite run** from `results/ablations/`. "
+            "Select a failure episode to see what each of the six profiles produced."
         )
 
         state = gr.State(_state_init())
 
-        with gr.Tab("Explorer"):
-            with gr.Row():
-                with gr.Column(scale=2):
-                    run_picker = gr.Dropdown(
-                        choices=_list_saved_runs(),
-                        label="Saved run directory",
-                        allow_custom_value=True,
-                    )
-                    run_refresh = gr.Button("Refresh run list")
-                    load_btn    = gr.Button("Load Saved Run", variant="primary")
-                    load_status = gr.Textbox(label="Status", lines=4, interactive=False)
+        # ---- Top bar -------------------------------------------------------
+        with gr.Row():
+            load_status = gr.Textbox(
+                label="Suite status", lines=3, interactive=False, scale=3
+            )
+            episode_dd = gr.Dropdown(
+                label="Failure episode", choices=[], interactive=True, scale=1
+            )
 
-                    gr.Markdown(
-                        "### Component toggles\n"
-                        "These are the seven `pipeline.use_*` flags from "
-                        "`experiment_config.yaml`. They **don't** affect the "
-                        "currently loaded run — they only kick in when you "
-                        "click **Re-run Pipeline** below. The button replays "
-                        "Phase B (per-episode VLM/KAG/RAG/Reasoning/TKF) and "
-                        "Phase C (aggregator) over the *same* shared rollout, "
-                        "with these toggles applied. The new output appears as "
-                        "a sibling `rerun_<TIMESTAMP>/` dir."
-                    )
-                    use_vlm        = gr.Checkbox(label="VLM",        value=True)
-                    use_kag        = gr.Checkbox(label="KAG",        value=True)
-                    use_rag        = gr.Checkbox(label="RAG",        value=True)
-                    use_reasoning  = gr.Checkbox(label="Reasoning",  value=True)
-                    use_plain_llm  = gr.Checkbox(label="Plain LLM (per-episode summariser)", value=True)
-                    use_tkf        = gr.Checkbox(label="TKF",        value=True)
-                    use_aggregator = gr.Checkbox(label="Aggregator", value=True)
-                    rerun_btn      = gr.Button("Re-run Pipeline (Phases B + C)", variant="primary")
-                    rerun_status   = gr.Textbox(label="Re-run status", lines=2, interactive=False)
-                    rerun_dir_tb   = gr.Textbox(label="Re-run dir", interactive=False)
+        with gr.Row():
+            start_img = gr.Image(label="Start frame",        type="filepath", height=200)
+            mid_img   = gr.Image(label="Highest-loss frame", type="filepath", height=200)
+            end_img   = gr.Image(label="End frame",          type="filepath", height=200)
 
-                with gr.Column(scale=3):
-                    episode_dd = gr.Dropdown(label="Failure episode", choices=[], interactive=True)
+        # ---- Per-profile tabs ----------------------------------------------
+        # We build one gr.Tab per profile.  Each tab contains:
+        #   - a flag-badge HTML row
+        #   - sub-tabs for each component
+        # All textbox handles are stored in order so we can wire them up.
 
-                    with gr.Row():
-                        start_img    = gr.Image(label="Start frame",        type="filepath", height=220)
-                        highloss_img = gr.Image(label="Highest-loss frame", type="filepath", height=220)
-                        end_img      = gr.Image(label="End frame",          type="filepath", height=220)
+        all_badge_html:  List[gr.HTML]    = []
+        all_vlm:         List[gr.Textbox] = []
+        all_kag:         List[gr.Textbox] = []
+        all_rag:         List[gr.Textbox] = []
+        all_rsn:         List[gr.Textbox] = []
+        all_tkf:         List[gr.Textbox] = []
+        all_per_ep:      List[gr.Textbox] = []
+        all_cer:         List[gr.Textbox] = []
+        all_final:       List[gr.Textbox] = []
 
-                    meta_box = gr.Textbox(
-                        label="Episode metadata",
-                        lines=10,
-                        interactive=False,
-                    )
+        with gr.Tabs():
+            for profile in PROFILE_ORDER:
+                label = PROFILE_LABELS.get(profile, profile)
+                with gr.Tab(label):
+                    badge_html = gr.HTML()
+                    all_badge_html.append(badge_html)
 
                     with gr.Tabs():
                         with gr.Tab("VLM Report"):
-                            vlm_box = gr.Textbox(
-                                lines=14,
-                                interactive=False,
-                                placeholder="VLM analysis of the failure episode "
-                                            "(per-frame description of what went wrong).",
+                            tb = gr.Textbox(
+                                lines=14, interactive=False,
+                                placeholder="VLM frame-by-frame analysis of this failure."
                             )
+                            all_vlm.append(tb)
+
                         with gr.Tab("KAG Context"):
-                            kag_box = gr.Textbox(
-                                lines=14,
-                                interactive=False,
-                                placeholder="Knowledge-Augmented Generation context — "
-                                            "domain knowledge injected into the prompt.",
+                            tb = gr.Textbox(
+                                lines=14, interactive=False,
+                                placeholder="Domain knowledge injected via KAG."
                             )
+                            all_kag.append(tb)
+
                         with gr.Tab("RAG Retrieved"):
-                            rag_box = gr.Textbox(
-                                lines=14,
-                                interactive=False,
-                                placeholder="RAG bank retrievals — past similar "
-                                            "failures pulled by image+text similarity.",
+                            tb = gr.Textbox(
+                                lines=14, interactive=False,
+                                placeholder="Past failure retrievals from the RAG bank."
                             )
+                            all_rag.append(tb)
+
                         with gr.Tab("Reasoning"):
-                            reasoning_box = gr.Textbox(
-                                lines=20,
-                                interactive=False,
-                                placeholder="LLM reasoning over (VLM + KAG + RAG + TKF) — "
-                                            "the chain-of-thought leading to the prescription.",
+                            tb = gr.Textbox(
+                                lines=20, interactive=False,
+                                placeholder="Per-episode chain-of-thought reasoning."
                             )
+                            all_rsn.append(tb)
+
                         with gr.Tab("TKF Verdict"):
-                            tkf_box = gr.Textbox(
-                                lines=14,
-                                interactive=False,
-                                placeholder="Training-Knowledge Fetcher verdict — does a "
-                                            "demo addressing this failure already exist?",
+                            tb = gr.Textbox(
+                                lines=14, interactive=False,
+                                placeholder="Training-Knowledge Fetcher result."
                             )
+                            all_tkf.append(tb)
+
+                        with gr.Tab("Per-Episode Prescription"):
+                            tb = gr.Textbox(
+                                lines=14, interactive=False,
+                                placeholder="Plain LLM per-episode prescription."
+                            )
+                            all_per_ep.append(tb)
+
+                        with gr.Tab("Cross-Ep Reasoning"):
+                            tb = gr.Textbox(
+                                lines=20, interactive=False,
+                                placeholder="Cross-episode reasoning (Phase C)."
+                            )
+                            all_cer.append(tb)
+
                         with gr.Tab("Final Prescription"):
-                            final_box = gr.Textbox(
-                                lines=14,
-                                interactive=False,
-                                placeholder="Per-episode prescription — the demo(s) "
-                                            "that should be recorded to fix this failure.",
+                            tb = gr.Textbox(
+                                lines=20, interactive=False,
+                                placeholder="Structured JSON prescription from the aggregator."
                             )
+                            all_final.append(tb)
 
-        with gr.Tab("Prescription Diff"):
-            gr.Markdown(
-                "### What this tab does\n"
-                "After you click **Re-run Pipeline** on the Explorer tab with a "
-                "different toggle combination, this tab shows the **original** "
-                "loaded run's prescription on the left and the **re-run's** "
-                "prescription on the right, plus a unified diff below.\n\n"
-                "**Episode** mode diffs the prescription for the single failure "
-                "episode currently selected on the Explorer tab. "
-                "**Cross-episode (Phase C)** mode diffs the *aggregator's* final "
-                "prescription across all failures."
-            )
-            with gr.Row():
-                diff_mode = gr.Radio(
-                    choices=["Episode", "Cross-episode (Phase C)"],
-                    value="Episode",
-                    label="Diff target",
-                )
-                diff_btn = gr.Button("Compute Diff", variant="primary")
-            with gr.Row():
-                orig_box = gr.Textbox(label="Original prescription", lines=16)
-                new_box  = gr.Textbox(label="Re-run prescription",   lines=16)
-            diff_html = gr.HTML()
+        # ---- Build the flat output list in the same order as _build_all_episode_outputs ----
+        # (start_img, mid_img, end_img, then per profile: badge,vlm,kag,rag,rsn,tkf,per,cer,final)
+        all_outputs = [start_img, mid_img, end_img]
+        for i in range(len(PROFILE_ORDER)):
+            all_outputs += [
+                all_badge_html[i],
+                all_vlm[i],
+                all_kag[i],
+                all_rag[i],
+                all_rsn[i],
+                all_tkf[i],
+                all_per_ep[i],
+                all_cer[i],
+                all_final[i],
+            ]
 
-        with gr.Tab("Performance Graph"):
-            gr.Markdown(
-                "### What this tab does\n"
-                "Aggregates **success rate** and **total demos prescribed** across "
-                "every profile dir under `results/ablations/` and `results/baselines/`. "
-                "Use it to compare configurations side-by-side after a full suite run. "
-                "Click the button to refresh after a new run finishes."
-            )
-            perf_btn  = gr.Button("Refresh from results/ablations + results/baselines", variant="primary")
-            perf_plot = gr.Plot()
+        # on_load_suite returns: state, status, ep_dd_update, + all_outputs
+        load_outputs = [state, load_status, episode_dd] + all_outputs
 
-        # ---------- wiring ----------
-
-        def _refresh_runs():
-            return gr.update(choices=_list_saved_runs())
-
-        run_refresh.click(_refresh_runs, inputs=None, outputs=run_picker)
-
-        load_btn.click(
-            fn=on_load_run,
-            inputs=[run_picker, state],
-            outputs=[
-                state, episode_dd, load_status,
-                start_img, highloss_img, end_img,
-                vlm_box, kag_box, rag_box, reasoning_box, tkf_box, final_box,
-                meta_box, rerun_status,
-            ],
+        app.load(
+            fn=on_load_suite,
+            inputs=[state],
+            outputs=load_outputs,
         )
 
         episode_dd.change(
             fn=on_select_episode,
             inputs=[episode_dd, state],
-            outputs=[
-                start_img, highloss_img, end_img,
-                vlm_box, kag_box, rag_box, reasoning_box, tkf_box, final_box,
-                meta_box, rerun_status,
-            ],
+            outputs=all_outputs,
         )
-
-        rerun_btn.click(
-            fn=on_rerun,
-            inputs=[
-                use_vlm, use_kag, use_rag, use_reasoning,
-                use_plain_llm, use_tkf, use_aggregator, state,
-            ],
-            outputs=[state, rerun_status, rerun_dir_tb, orig_box, new_box],
-        )
-
-        diff_btn.click(
-            fn=on_diff,
-            inputs=[episode_dd, state, diff_mode],
-            outputs=[orig_box, new_box, diff_html],
-        )
-
-        perf_btn.click(fn=on_refresh_graph, inputs=None, outputs=perf_plot)
 
     return app
 

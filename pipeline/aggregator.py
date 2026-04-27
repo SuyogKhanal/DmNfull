@@ -183,11 +183,29 @@ def run_aggregator(
     failure_ids: List[int],
     maze_ascii: str,
     llm_cfg: Dict,
+    pipeline_flags: Optional[Dict] = None,
     cache=None,
 ) -> Tuple[str, str, Dict]:
-    """Phase C wrapper. Returns (cross_text, raw_structured, parsed_structured)."""
-    cross_text = cross_episode_reasoning(failure_summaries, failure_ids, maze_ascii, llm_cfg, cache=cache)
-    raw, parsed = final_structured_prescription(cross_text, failure_summaries, failure_ids, llm_cfg, cache=cache)
+    """
+    Phase C wrapper.  Returns (cross_text, raw_structured, parsed_structured).
+
+    If pipeline_flags["use_cross_episode_reasoning"] is False, the expensive
+    cross-episode reasoning LLM call is skipped and the aggregator goes
+    straight to final_structured_prescription with an empty cross_text.
+    """
+    flags = pipeline_flags or {}
+    use_cer = bool(flags.get("use_cross_episode_reasoning", True))
+
+    if use_cer:
+        cross_text = cross_episode_reasoning(
+            failure_summaries, failure_ids, maze_ascii, llm_cfg, cache=cache
+        )
+    else:
+        cross_text = "[CROSS-EPISODE REASONING DISABLED FOR THIS PROFILE]"
+
+    raw, parsed = final_structured_prescription(
+        cross_text, failure_summaries, failure_ids, llm_cfg, cache=cache
+    )
     return cross_text, raw, parsed
 
 
