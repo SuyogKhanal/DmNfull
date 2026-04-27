@@ -10,6 +10,11 @@ Flow (enforced by pipeline_runner.py):
   Pass 1 → run_analysis(...)        → analysis_text
   TKF    → run_knowledge_check(analysis_text, ...)  → tkf_block
   Pass 2 → run_prescription(analysis_text, tkf_block, ...)  → prescription_text
+
+Note on 'steps' field:
+  Episodes loaded from phase_a.all_rollouts (ablation suite rollout dirs)
+  only contain summary-level fields written by _save_rollout_only — there
+  is NO 'steps' list.  All helpers below must treat 'steps' as optional.
 """
 import traceback
 from pathlib import Path
@@ -42,20 +47,30 @@ def _chat_plain(client, model: str, messages: List[Dict], max_tokens: int) -> st
 
 
 def _format_trajectory(episode: Dict, max_entries: int = 60) -> str:
+    """Format step-by-step trajectory.  Returns empty string if 'steps' is absent."""
+    steps = episode.get("steps") or []
+    if not steps:
+        return "[step log not available — loaded from rollout summary]"
     entries = []
-    for s in episode["steps"]:
+    for s in steps:
         if s.get("action") is None:
             continue
         pos = s.get("info", {}).get("agent_pos", "?")
-        entries.append(f"  step {s['step_idx']}: at {pos} -> {s.get('action_name','?')} -> reward={s.get('reward',0.0):+.2f}")
+        entries.append(
+            f"  step {s['step_idx']}: at {pos} -> {s.get('action_name','?')} -> reward={s.get('reward',0.0):+.2f}"
+        )
     return "\n".join(entries[:max_entries])
 
 
 def _format_key_states(episode: Dict) -> str:
+    """Format key-frame state descriptions.  Safe when 'steps' is absent."""
+    steps = episode.get("steps") or []
     lines = []
-    for kf in episode["key_frames"]:
+    for kf in episode.get("key_frames", []):
         idx = kf["step_idx"]
-        desc = episode["steps"][idx].get("info", {}).get("llm_state_description", "")
+        desc = ""
+        if steps and idx < len(steps):
+            desc = steps[idx].get("info", {}).get("llm_state_description", "")
         lines.append(f"[{kf['role']}, step {idx}] {desc}")
     return "\n\n".join(lines)
 
@@ -75,9 +90,16 @@ def build_analysis_prompt(
     kag_context: str,
     rag_context: str,
 ) -> str:
-    traj_str = _format_trajectory(episode)
+    traj_str   = _format_trajectory(episode)
     key_states = _format_key_states(episode)
-    dyn_str = _format_dynamic_config(episode)
+    dyn_str    = _format_dynamic_config(episode)
+
+    # Final position: prefer last step entry; fall back to graceful placeholder.
+    steps = episode.get("steps") or []
+    final_pos = (
+        steps[-1].get("info", {}).get("agent_pos", "?")
+        if steps else "[not available]"
+    )
 
     sections = []
     sections.append(
@@ -101,7 +123,7 @@ def build_analysis_prompt(
         f"  Success      : {episode.get('success', False)}\n"
         f"  Total steps  : {episode.get('total_steps', 0)}\n"
         f"  Total reward : {episode.get('total_reward', 0.0):.2f}\n"
-        f"  Final pos    : {episode['steps'][-1].get('info',{}).get('agent_pos','?')}\n"
+        f"  Final pos    : {final_pos}\n"
     )
 
     sections.append(f"STEP-BY-STEP TRAJECTORY:\n{traj_str}")
