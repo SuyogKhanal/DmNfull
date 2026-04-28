@@ -244,10 +244,25 @@ def main():
         prof_dir = suite_root / profile
         prof_dir.mkdir(parents=True, exist_ok=True)
 
+        # ------------------------------------------------------------------ #
+        # Per-profile isolated RAG bank.                                     #
+        # The shared bank in master_cfg was leaking earlier-profile          #
+        # reasoning into later profiles, contaminating the RAG ablation      #
+        # signal. Each profile now sees only entries it stored itself        #
+        # within its own run, so p4 vs p5 measures the real effect of RAG.  #
+        # ------------------------------------------------------------------ #
+        profile_rag_path = prof_dir / "rag_bank"
+        prof_cfg.setdefault("rag", {})["bank_path"] = str(profile_rag_path)
+
+        overrides = {
+            "pipeline": prof_cfg.get("pipeline", {}),
+            "rag":      prof_cfg.get("rag", {}),
+        }
+
         try:
             full_output = rerun_pipeline_only(
                 saved_run_dir=str(rollout_dir),
-                overrides={"pipeline": prof_cfg.get("pipeline", {})},
+                overrides=overrides,
                 out_run_dir=str(prof_dir),
                 master_config_path=args.config,
                 cache=cache,
@@ -255,7 +270,7 @@ def main():
         except TypeError:
             full_output = rerun_pipeline_only(
                 saved_run_dir=str(rollout_dir),
-                overrides={"pipeline": prof_cfg.get("pipeline", {})},
+                overrides=overrides,
                 out_run_dir=str(prof_dir),
                 master_config_path=args.config,
             )

@@ -27,7 +27,81 @@ import sys
 import textwrap
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+import re
+
+_FINAL_REC_RE_KF = re.compile(
+    r"<<<FINAL_REC>>>(.*?)<<<END_FINAL_REC>>>",
+    re.DOTALL,
+)
+
+_VALID_CORRIDORS_KF = {
+    "left_edge", "top_edge", "right_edge", "bottom_edge", "central_mixed",
+}
+
+
+def _extract_target_corridor(reasoning_text: str) -> Optional[str]:
+    """Pull the corridor name out of the FINAL_REC block in the analysis text.
+
+    Returns the corridor string (e.g. 'left_edge') if present and valid,
+    else None. Used to sanity-check TKF retrievals against the corridor the
+    failure analysis actually called for.
+    """
+    if not reasoning_text:
+        return None
+    m = list(_FINAL_REC_RE_KF.finditer(reasoning_text))
+    if not m:
+        return None
+    body = m[-1].group(1)
+    for line in body.splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        if k.strip().lower() == "corridor":
+            corr = v.strip().lower()
+            return corr if corr in _VALID_CORRIDORS_KF else None
+    return None
+
+
+def _verdict_with_corridor_check(
+    matches: List[Dict],
+    target_corridor: Optional[str],
+    sim_found: float,
+    sim_partial: float,
+) -> Tuple[str, List[Dict]]:
+    """Verdict logic that respects the target corridor from FINAL_REC.
+
+    Without this, CLIP returns a right_edge demo at sim=0.72 when the failure
+    analysis explicitly called for left_edge — and the TKF block then
+    contradicts the analysis downstream.
+
+    Behaviour:
+      * If target_corridor is None or 'central_mixed' (no preference), fall
+        back to plain similarity thresholds.
+      * Otherwise drop matches whose stored corridor disagrees with the target
+        before applying the verdict thresholds.
+    """
+    if not matches:
+        return "NOT_FOUND", []
+
+    if not target_corridor or target_corridor == "central_mixed":
+        filtered = matches
+    else:
+        filtered = [
+            m for m in matches
+            if (m.get("metadata", {}).get("corridor") or "").strip().lower()
+               == target_corridor
+        ]
+
+    if not filtered:
+        return "NOT_FOUND", matches  # return original list as fallback context
+
+    top = float(filtered[0].get("score", 0.0))
+    if top >= sim_found:
+        return "FOUND",   filtered
+    if top >= sim_partial:
+        return "PARTIAL", filtered
+    return "NOT_FOUND",   filtered
 
 
 ACTION_NAMES = {0: "UP", 1: "DOWN", 2: "LEFT", 3: "RIGHT"}
@@ -407,7 +481,13 @@ def _run_direct(
 ) -> Dict:
     needs = _llm_identify_needs(reasoning_text, llm_model)
     results = _query_index(index, meta, needs, clip_model, top_k)
-    verdict = _verdict(results, found_thresh, partial_thresh)
+    target_corridor = _extract_target_corridor(reasoning_text)
+    verdict, results = _verdict_with_corridor_check(
+    matches=results,
+    target_corridor=target_corridor,
+    sim_found=found_thresh,
+    sim_partial=partial_thresh,
+)
 
     if results:
         lines = [f"Verdict: {verdict}", ""]
@@ -485,7 +565,13 @@ def _run_crewai(
         args_schema: type = FAISSQueryInput
         def _run(self, needs_description: str) -> str:
             results = _query_index(index, meta, needs_description, clip_model, top_k)
-            v = _verdict(results, found_thresh, partial_thresh)
+            target_corridor = _extract_target_corridor(reasoning_text)
+            v, results = _verdict_with_corridor_check(
+                            matches=results,
+                            target_corridor=target_corridor,
+                            sim_found=found_thresh,
+                            sim_partial=partial_thresh,
+                    )
             retrieval_holder["results"] = results
             retrieval_holder["verdict"] = v
             if not results:
