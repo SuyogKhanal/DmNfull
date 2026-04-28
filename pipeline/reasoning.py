@@ -127,7 +127,6 @@ def build_analysis_prompt(
     key_states = _format_key_states(episode)
     dyn_str    = _format_dynamic_config(episode)
 
-    # Final position: prefer last step entry; fall back to graceful placeholder.
     steps = episode.get("steps") or []
     final_pos = (
         steps[-1].get("info", {}).get("agent_pos", "?")
@@ -169,12 +168,30 @@ def build_analysis_prompt(
         sections.append(rag_context)
 
     sections.append(
-        "ROOT CAUSE ANALYSIS — show your working:\n"
+        "ROOT CAUSE ANALYSIS — show your working in sections 1-5 below, then output\n"
+        "section 6 in the EXACT machine-readable format specified.\n\n"
         "1. TRAJECTORY RECONSTRUCTION\n"
         "2. FIRST WRONG DECISION\n"
         "3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)\n"
         "4. WHAT THE POLICY GOT WRONG\n"
-        "5. REGIONS / CONFIGURATIONS NEEDING DATA"
+        "5. REGIONS / CONFIGURATIONS NEEDING DATA\n\n"
+        "6. FINAL RECOMMENDATION — output this block VERBATIM at the very end of your\n"
+        "   response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.\n"
+        "   This block is parsed programmatically by downstream stages and MUST be\n"
+        "   preserved word-for-word in the prescription. Do not add bullet points,\n"
+        "   bold, or commentary inside the block. Use exactly these keys, one per line.\n\n"
+        "   - corridor MUST be one of: left_edge | top_edge | right_edge | bottom_edge | central_mixed\n"
+        "   - steps MUST be a coordinate path using arrow notation, e.g. (0,1)->(0,0)->(1,0)->(2,0)\n"
+        "   - n_demos MUST be an integer between 1 and 10\n"
+        "   - demo_variations MUST be a single line describing how the n_demos should differ\n"
+        "   - rationale MUST be a single sentence\n\n"
+        "<<<FINAL_REC>>>\n"
+        "corridor: <left_edge | top_edge | right_edge | bottom_edge | central_mixed>\n"
+        "steps: <(r,c)->(r,c)->...->(r,c)>\n"
+        "n_demos: <integer 1-10>\n"
+        "demo_variations: <one-line description>\n"
+        "rationale: <one sentence>\n"
+        "<<<END_FINAL_REC>>>"
     )
 
     return "\n\n".join(sections)
@@ -188,23 +205,36 @@ def build_prescription_prompt(
     dyn_str = _format_dynamic_config(episode)
     return (
         "You are a demonstration coach for a DAgger-style imitation learning system.\n\n"
-        "A diffusion policy failed at a maze navigation task. A human expert now needs to record "
-        "CORRECTIVE DEMONSTRATIONS to improve the policy.\n\n"
-        "IMPORTANT RULES FOR YOUR RESPONSE:\n"
-        "  - Write in plain, friendly English that anyone can understand.\n"
-        "  - Do NOT use technical terms like 'Manhattan distance', 'DAgger', 'diffusion policy', "
-        "'imitation learning', or action codes.\n"
-        "  - Do NOT give step-by-step action sequences or grid coordinates.\n"
-        "  - Instead, describe the TYPE OF SITUATION and WHERE IN THE MAZE a demonstration is needed.\n"
-        "  - Remember: the maze is RANDOMISED every episode, so prescriptions should generalise.\n\n"
-        f"ROOT CAUSE ANALYSIS:\n{analysis_text}\n\n"
+        "The reasoning LLM has already produced a structured FINAL_REC block (between\n"
+        "<<<FINAL_REC>>> and <<<END_FINAL_REC>>>) inside the analysis below. Your job is\n"
+        "to forward that block UNCHANGED and then explain it to a human demonstrator.\n\n"
+        "STRICT RULES:\n"
+        "  1. You MUST copy the FINAL_REC block VERBATIM at the top of your output, inside\n"
+        "     its <<<FINAL_REC>>> ... <<<END_FINAL_REC>>> markers. Do not edit a single\n"
+        "     character — same corridor, same steps, same n_demos, same wording.\n"
+        "  2. After the block, write a plain-English explanation organised as the four\n"
+        "     numbered questions below. You MAY use the corridor name (left_edge, top_edge,\n"
+        "     right_edge, bottom_edge, central_mixed) — that is the shared vocabulary.\n"
+        "  3. The n_demos value you state under question 4 MUST equal the n_demos value\n"
+        "     in FINAL_REC. Do not invent a different range.\n"
+        "  4. Do NOT propose a different corridor or a different step path from FINAL_REC.\n"
+        "     If the analysis already chose left_edge, you do not say 'edge corridors in\n"
+        "     general' — you say left_edge.\n"
+        "  5. If the FINAL_REC block is missing or malformed, output a single-line notice\n"
+        "     '[FINAL_REC MISSING]' at the very top instead of inventing one.\n\n"
+        f"ROOT CAUSE ANALYSIS (locate the FINAL_REC block at the bottom):\n{analysis_text}\n\n"
         f"{tkf_block}\n"
         f"EPISODE CONTEXT:\n  {dyn_str}\n\n"
-        "In plain English, answer these 4 questions:\n"
-        "1. WHERE in the maze does the AI get confused?\n"
-        "2. WHAT should a good walkthrough look like in that area?\n"
+        "Produce your output in EXACTLY this structure (no preamble before the markers):\n\n"
+        "<<<FINAL_REC>>>\n"
+        "<...verbatim copy of the FINAL_REC contents from the analysis above...>\n"
+        "<<<END_FINAL_REC>>>\n\n"
+        "PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n"
+        "1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n"
+        "2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English — you may reference the corridor name and the start/goal/fire layout)\n"
         "3. WHAT will the AI learn from seeing that walkthrough?\n"
-        "4. HOW MANY walkthroughs are needed and how should they vary?"
+        "4. HOW MANY walkthroughs are needed and how should they vary? "
+        "(state the n_demos value from FINAL_REC and reuse demo_variations)"
     )
 
 
@@ -271,9 +301,12 @@ def run_prescription(
             client, model,
             [
                 {"role": "system", "content":
-                    "You are a friendly demonstration coach. Write in plain, everyday English. "
-                    "No coordinates, no technical jargon, no action sequences. "
-                    "Describe what the human should show the AI in simple terms."},
+    "You are a demonstration coach. You preserve the FINAL_REC block VERBATIM "
+    "(corridor, steps, n_demos, demo_variations, rationale) and never invent a "
+    "different corridor, step sequence, or demo count. After the verbatim block, "
+    "you explain the recommendation in plain English. The corridor names "
+    "(left_edge, top_edge, right_edge, bottom_edge, central_mixed) are part of "
+    "the shared vocabulary and are allowed."},
                 {"role": "user", "content": prescription_prompt},
             ],
             max_tokens, effort,

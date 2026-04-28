@@ -280,6 +280,7 @@ def _build_phaseB_for_episode(
         "prescription":      prescription_text,
         "reasoning_combined":combined_text,
         "tkf_result":        tkf_result,
+        "adjusted_prescription": (tkf_result or {}).get("adjusted_prescription", ""),
         "frame_paths":       episode.get("frame_paths", {}),
     }
 

@@ -6,7 +6,7 @@ maze:
   num_fire_tiles: 3
 
 rollout:
-  n_episodes: 7
+  n_episodes: 10
   seed: 42
   checkpoint_path: checkpoints/best_model_ema.pth
   fallback_checkpoint_path: checkpoints/best_model.pth
@@ -26,6 +26,10 @@ kag:
   document_path: knowledge/kag_maze_knowledge.json
 
 rag:
+  # NOTE: scripts/run_ablation_suite.py overrides this per-profile so each
+  # ablation run gets its own isolated bank under
+  # results/ablations/<run_id>/<profile>/rag_bank. Standalone run_pipeline
+  # invocations use the path below.
   bank_path: results/rag_bank
   top_k: 3
   sim_threshold: 0.3
@@ -35,9 +39,12 @@ tkf:
   demo_dir: demos
   index_path: results/demo_knowledge_base
   clip_model: openai/clip-vit-large-patch14
-  sim_threshold_found: 0.65
-  sim_threshold_partial: 0.45
-  top_k: 3
+  # Raised from 0.65 / 0.45. At 0.65 the CLIP bank was returning right_edge
+  # demos for left_edge failures with verdict=FOUND, which contradicted the
+  # analysis. Combined with the corridor check in knowledge_fetcher.py the
+  # TKF block now agrees with FINAL_REC.
+  sim_threshold_found:   0.85
+  sim_threshold_partial: 0.70
   use_crewai: true
 
 llm:
