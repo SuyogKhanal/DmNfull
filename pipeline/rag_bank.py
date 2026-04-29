@@ -93,12 +93,28 @@ def _meta_config_key(m: Dict) -> Optional[Tuple]:
 
 class RAGBank:
 
-    def __init__(self, bank_path: str, top_k: int = 3, sim_threshold: float = 0.3, clip_model: str = "openai/clip-vit-large-patch14"):
+    def __init__(
+        self,
+        bank_path: str,
+        top_k: int = 3,
+        sim_threshold: float = 0.3,
+        clip_model: str = "openai/clip-vit-large-patch14",
+        owner_run_id: Optional[str] = None,
+    ):
+        """
+        owner_run_id: if set, retrieve() will ONLY return entries whose stored
+        `run_id` matches this value. This is the profile-level isolation guarantee
+        for the ablation suite: each profile's bank is constructed with
+        owner_run_id = <profile_dir_name>, and entries are stored with the same
+        run_id at store-time, so cross-profile retrieval is impossible even if
+        the on-disk bank directory is ever shared between profiles.
+        """
         self.bank_dir = Path(bank_path)
         self.bank_dir.mkdir(parents=True, exist_ok=True)
         self.top_k = top_k
         self.sim_threshold = sim_threshold
         self.clip_model = clip_model
+        self.owner_run_id = owner_run_id
         self.index_path = self.bank_dir / "rag_faiss.index"
         self.meta_path  = self.bank_dir / "rag_metadata.json"
         self._index = None
@@ -156,22 +172,24 @@ class RAGBank:
     ) -> str:
         """Retrieve top-k similar past failures.
 
-        Self-contamination is prevented by TWO independent filters:
+        Self-contamination is prevented by THREE independent filters
+        (defense-in-depth):
 
-          1. `exclude_episode_id` skips entries whose stored episode_id matches.
-             Sufficient within a single ablation-suite run where all profiles
-             share rollout indices.
+          1. `owner_run_id` (constructor arg) — ONLY return entries stored
+             under this run_id. In the ablation suite, owner_run_id is the
+             profile's directory name, so even if two profiles ever shared
+             a bank dir, retrieval is profile-local.
 
-          2. `exclude_episode_config` skips entries whose stored
+          2. `exclude_episode_id` skips entries whose stored episode_id matches.
+             Prevents an episode from retrieving its own previously stored
+             record within the same profile.
+
+          3. `exclude_episode_config` skips entries whose stored
              (start_pos, goal_pos, fire_positions) matches the current
-             episode's config — needed across separate suite invocations,
-             where a previous profile run (e.g. p5) may have stored the same
-             physical episode under a different run_id but with the SAME
-             dynamic config.  Without this, p6's retrieve for ep4 returns
-             p5's stored ep4 with sim≈0.95 even though episode_id-only
-             filtering passes.
+             episode's config — catches cases where the same physical episode
+             was stored under a different run_id but identical dynamic config.
 
-        Both filters are applied; an entry is skipped if EITHER matches.
+        Filters compose: an entry is skipped if ANY filter matches.
         """
         if self._index is None or self._index.ntotal == 0 or not self._meta:
             return ""
@@ -199,6 +217,10 @@ class RAGBank:
             if float(score) < self.sim_threshold:
                 continue
             m = self._meta[int(idx)]
+
+            # Profile-level isolation: skip any entry not owned by this bank.
+            if self.owner_run_id is not None and m.get("run_id") != self.owner_run_id:
+                continue
 
             if exclude_episode_id is not None and m.get("episode_id") == exclude_episode_id:
                 continue
