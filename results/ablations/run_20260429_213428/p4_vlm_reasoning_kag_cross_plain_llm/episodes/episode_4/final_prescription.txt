@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 3
+demo_variations: Top-edge corridor variants with varying lengths: a short top-edge path to the goal column (col 2) and a longer top-edge path extending to col 4 before descending to the goal.
+rationale: To teach the policy to commit to a top-edge fire-avoidant corridor across different fire placements and to expose variations in path length along the top edge for generalization.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the area where the safe, fire-avoidant path would be the top_edge corridor. In this episode, after the initial cue to move Up to (0,0) to avoid the adjacent fire at (1,1), the policy then veers off toward the left/bottom region rather than continuing along the top edge. This deviation risks exposure to the central fire cluster in column 1 (e.g., (1,1) and (2,1)) and moves away from the safer top-edge route toward the goal at (1,2).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English — you may reference the corridor name and the start/goal/fire layout)
+- A good demonstration would show following the top_edge corridor: start at (1,0), move Up to (0,0) to avoid the immediate fire to the right, then travel along the top edge by going to (0,1) and (0,2), and finally drop down to the goal at (1,2). This keeps the agent on the top boundary, staying clear of the central column fires (1,1) and (2,1) and steering toward the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the top_edge fire-avoidant corridor as a robust strategy across different fire placements. The walkthrough demonstrates that staying on the top boundary can reliably avoid central hazards and still reach the goal. It also exposes the idea that shorter and longer top-edge routes can both lead to the goal, promoting generalization rather than memorizing one fixed route.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs. They should follow the Top-edge corridor variants with varying lengths: a short top-edge path to the goal column (col 2) and a longer top-edge path extending to col 4 before descending to the goal.

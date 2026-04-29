@@ -1,0 +1,41 @@
+VISION REPORT
+Maze=multimodal Steps=76 Reward=-27.30 Success=False
+---
+--- start_frame frame step 0 ---
+1) Agent location and adjacent cells
+- Agent is at (0,1). Adjacent cells: left (0,0), right (0,2), down (1,1) are all inside the grid and currently empty; up is outside the grid (wall). Fires located at (0,3), (3,0), (3,4) are not immediate neighbors. The goal (2,0) is two rows down and one column left, not adjacent.
+
+2) Goal location and Manhattan distance
+- Goal is at (2,0). Manhattan distance from the agent: |2−0| + |0−1| = 2 + 1 = 3.
+
+3) Fire hazards relative to the agent
+- Nearest fire is at (0,3): distance 2 (two steps to the east). Other fires are at (3,0) (distance 4) and (3,4) (distance 6). No fire is currently adjacent to the agent; still, moving toward (0,2) would reduce distance to (0,3) to 1, increasing risk.
+
+4) First corrective demonstration move
+- Action: DOWN to (1,1). Justification: reduces the distance to the goal from 3 to 2, and avoids stepping toward the nearest fire while progressing toward the target.
+
+--- highest_loss_frame frame step 3 ---
+1) Agent location and adjacent cells
+- Agent at (1,0). Adjacent cells: Up (0,0) – empty (blue cell in frame), Down (2,0) – Goal, Left – off-grid (wall), Right (1,1) – empty.
+
+2) Goal location and Manhattan distance
+- Goal at (2,0). Current Manhattan distance from agent: |2-1| + |0-0| = 1.
+
+3) Fire hazards relative to the agent
+- Fires at (0,3), (3,0), (3,4). Distances from agent (1,0): to (0,3) = 4, to (3,0) = 2, to (3,4) = 6. No fire is adjacent to the agent; the nearest fire is two steps away (3,0).
+
+4) First corrective demonstration move
+- Action: DOWN (move to 2,0). Justification: Directly toward the goal, reduces distance from 1 to 0, and the target cell (2,0) is the goal and not a fire.
+
+--- end_frame frame step 76 ---
+1) Agent location and adjacent cells
+- Agent is at (3,0). Adjacent cells: left (2,0) = Goal (G) and safe; right (4,0) = empty; down (3,1) = empty; up (3,-1) is outside grid. The agent’s current cell is a fire tile per the fires list, so the agent is standing on a hazard.
+
+2) Goal location and Manhattan distance
+- Goal is at (2,0). Manhattan distance from agent to goal: |3−2| + |0−0| = 1.
+
+3) Fire hazards relative to the agent
+- Fires are at (0,3), (3,0), and (3,4). The agent currently occupies (3,0), a fire tile (hazard). Other fires are at distances 6 (to (0,3)) and 4 (to (3,4)); no fires are on adjacent cells other than the current one.
+
+4) First corrective demonstration move
+- Action: Move Left (to 2,0). Justification: directly reaches the goal in 1 step, dropping the distance from 1 to 0 and escaping the current fire tile.

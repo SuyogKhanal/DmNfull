@@ -4,55 +4,40 @@ maze:
   randomize_goal: true
   randomize_fire: true
   num_fire_tiles: 3
-
 rollout:
   n_episodes: 7
   seed: 42
   checkpoint_path: checkpoints/best_model_ema.pth
   fallback_checkpoint_path: checkpoints/best_model.pth
   render: false
-
 pipeline:
   use_vlm: true
   use_kag: true
   use_rag: true
   use_reasoning: true
   use_cross_episode_reasoning: true
-  use_tkf: true
+  use_tkf: false
   use_aggregator: true
   use_plain_llm: true
-
 kag:
   document_path: knowledge/kag_maze_knowledge.json
-
 rag:
-  # NOTE: scripts/run_ablation_suite.py overrides this per-profile so each
-  # ablation run gets its own isolated bank under
-  # results/ablations/<run_id>/<profile>/rag_bank. Standalone run_pipeline
-  # invocations use the path below.
-  bank_path: results/rag_bank
+  bank_path: /vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/p5_vlm_reasoning_kag_rag_cross_plain_llm/rag_bank
   top_k: 3
   sim_threshold: 0.3
   clip_model: openai/clip-vit-large-patch14
-
 tkf:
   demo_dir: demos
   index_path: results/demo_knowledge_base
   clip_model: openai/clip-vit-large-patch14
-  # Raised from 0.65 / 0.45. At 0.65 the CLIP bank was returning right_edge
-  # demos for left_edge failures with verdict=FOUND, which contradicted the
-  # analysis. Combined with the corridor check in knowledge_fetcher.py the
-  # TKF block now agrees with FINAL_REC.
-  sim_threshold_found:   0.80
-  sim_threshold_partial: 0.70
+  sim_threshold_found: 0.85
+  sim_threshold_partial: 0.7
   use_crewai: true
-
 llm:
   model: gpt-5-nano-2025-08-07
   vlm_model: gpt-5-nano-2025-08-07
   reasoning_effort: high
   max_output_tokens: 16384
-
 tracking:
   save_frames: true
   save_per_episode_json: true

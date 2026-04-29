@@ -1,0 +1,65 @@
+=== ROOT CAUSE ANALYSIS ===
+1. TRAJECTORY RECONSTRUCTION
+- Episode setup: Start at [1, 0] (A). Goal at [1, 2] (G). Fires at [1,1], [2,1], and [4,0]. The goal is two steps away in Manhattans if the east path were safe, but immediate east is a fire.
+- Immediate observation at step 0: The agent is at (1,0). The east cell (1,1) is fire, so a direct right move toward the goal is blocked by fire. The top-adjacent cell (0,0) is free, suggesting a top-edge detour is a sensible corrective option.
+- First corrective demonstration (per vision analysis): Move Up from (1,0) to (0,0). This aligns with avoiding the nearby fire and opening a route along the top edge toward the goal.
+- Highest-loss frame (step 1 in the provided log): The agent’s internal evaluation shows a position at (2,0) with a nearby fire at (2,1). The analysis suggests a corrective move of left to (1,0) (though the log text contains coordinate inconsistencies; the intended corrective is to retreat toward a safer, goal-facing corridor rather than diving toward the hazard cluster).
+- End frame (step 7): The agent finishes at (4,0), a bottom-left location, far from the goal. Fires remain in column 1, and the agent never reaches the goal within the episode. The final position notes mention a confusion about (4,0) being a fire tile; the dynamic config lists (4,0) as fire, so stepping there would terminate.
+- Summary of observed failure: The agent fails to utilize a safe, top-edge path to the goal and instead traverses downward along the left/bottom region, approaching the fire cluster in column 1 and ultimately not reaching the goal. The 7-step run ends in a fire-prone area, not near the target.
+
+2. FIRST WRONG DECISION
+- When starting at [1,0], the optimal corrective action (to avoid the adjacent fire at [1,1]) is to go Up to [0,0], then proceed along the top edge toward [1,2]. The log indicates the corrective demonstration (and the intended safe path) was Up to [0,0].
+- The first incorrect decision (as observed in the highest_loss_frame notes) appears to be deviating from the safe top-edge plan: moving toward the lower/central area (toward (2,0) and then back toward (1,0) in the narrative) instead of continuing the top-edge route. This derails the trajectory from a shortest safe route to the goal and increases exposure to the column-1 fire cluster.
+
+3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)
+- Fire pattern and goal placement create a narrow safe corridor: the direct east step is blocked by a fire; the next safest corridor is the top edge via (0,0) -> (0,1) -> (0,2) -> down to (1,2). The agent failed to consistently follow that corridor during the episode.
+- Local hazard avoidance vs. global goal progress: the policy prioritized avoiding immediate near-term hazard signals (e.g., the fire at (1,1)), but it did not reliably infer the globally optimal route around the hazard cluster to reach the goal. The result is a drift toward lower rows (around (2,0) -> (4,0)) where fires exist and the Manhattan distance to the goal may not be decreasing in a manner that guarantees eventual reach to (1,2).
+- Inconsistencies in the log narrative: the “highest_loss_frame” text places the agent at (2,0) and then describes a corrective move to (1,0), which would be aligned with retreating toward start rather than pushing along a safe top-edge route. The actual step log is not fully available, but the final frame at (4,0) indicates the policy never completed the safe top-edge traversal.
+- The dynamic config has fires in a vertical cluster (1,1) and (2,1), with a bottom-left fire at (4,0). This clustering requires deliberate path planning to avoid column 1 entirely and to use the top edge; the policy did not reliably plan around this hazard distribution in this episode.
+
+4. WHAT THE POLICY GOT WRONG
+- Over-reliance on near-term hazard avoidance: The policy appears to have overemphasized preventing stepping into the east fire at (1,1) but did not robustly leverage a safe long-horizon plan that uses the top edge to bypass the hazard cluster.
+- Insufficient exploitation of top-edge corridor: The safe path (1,0) -> Up to (0,0) -> (0,1) -> (0,2) -> (1,2) was not consistently chosen; the final trajectory instead encroached toward the bottom-left region where the agent encounters multiple hazards and never reaches the goal.
+- Data/coverage gaps: The demonstrated failure shows a need for corrective demonstrations that cover top-edge routing from the start to the goal in this hazard layout, ensuring the diffusion policy learns to prefer top-edge traversal when the direct route is blocked by fires.
+- Ambiguities in the logs: The step-by-step trajectory is not fully logged; the highest_loss_frame narrative conflicts with the start-frame corrective and with the final frame, making it harder for the policy to infer a clear corrective precedent. This suggests data quality issues and a need for consistent, step-wise recordings during demonstrations.
+
+5. REGIONS / CONFIGURATIONS NEEDING DATA
+- Need corrective demonstrations that explicitly show top-edge routing from any start-to-goal pair when a vertical hazard cluster blocks the direct path (as in this episode). Specifically:
+  - Demonstrations that start at [1,0] and demonstrate the top-edge route to [1,2] (via [0,0] -> [0,1] -> [0,2] -> [1,2]).
+  - Alternative demonstrations that vary the intermediate top-edge positions (e.g., using [0,1], [0,2] in different sequences) to test generalization of the top-edge corridor preference.
+  - Additional episodes with the same hazard distribution to confirm the policy learns to avoid column 1 entirely and not drift toward bottom rows.
+- Data quality improvement: ensure step-by-step logs are complete and accurate so that the analysis and the corrective demonstrations align precisely with the agent’s observed actions.
+
+6. FINAL RECOMMENDATION — output this block VERBATIM at the very end of your response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.
+   This block is parsed programmatically by downstream stages and MUST be preserved word-for-word in the prescription. Do not add bullet points, bold, or commentary inside the block. Use exactly these keys, one per line.
+
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 1
+demo_variations: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.
+rationale: This demonstrates a safe, fire-free top-edge route to the goal, guiding the policy to prefer top-edge planning when the direct path is blocked by fire hazards.
+<<<END_FINAL_REC>>>
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 1
+demo_variations: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.
+rationale: This demonstrates a safe, fire-free top-edge route to the goal, guiding the policy to prefer top-edge planning when the direct path is blocked by fire hazards.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   The AI gets confused in the top_edge corridor scenario. It tends to drift away from the safe top-edge path and instead moves toward lower rows where the fire cluster in column 1 creates a hazard, preventing it from reaching the goal through the intended top-edge route.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English — you may reference the corridor name and the start/goal/fire layout)
+   A good walkthrough starts at [1,0], goes Up to [0,0], then moves right along the top row to [0,2], and finally steps down to [1,2]. This uses the top_edge corridor to bypass the fires at (1,1) and (2,1) and reach the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+   The AI will learn to prefer the top-edge corridor when the direct east path is blocked by hazards. It will associate safety with traveling along the top edge to avoid the clustered fires and reach the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)
+   1 demonstration. Variation: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.
