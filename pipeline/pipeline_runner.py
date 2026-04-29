@@ -214,8 +214,12 @@ def _build_phaseB_for_episode(
             save_tkf_result({"verdict": "DISABLED"}, episode_dir)
 
     # ------------------------------------------------------------------ #
-    # PASS 3: Prescription — receives analysis_text + tkf_block (no cache)#
-    # This is where reasoning flows into the final prescription.          #
+    # PASS 3: Prescription — DERIVES FINAL_REC from analysis + KAG + RAG  #
+    # + TKF (no cache). Analysis no longer emits FINAL_REC, so toggling   #
+    # use_kag / use_rag / use_tkf actually changes the structured output, #
+    # not just the prose around it. KAG and RAG context are passed in     #
+    # explicitly so the grounding rules in build_prescription_prompt can  #
+    # cite them by name and rank.                                         #
     # ------------------------------------------------------------------ #
     prescription_text = ""
     combined_text = ""
@@ -226,6 +230,8 @@ def _build_phaseB_for_episode(
             analysis_text=analysis_text,
             tkf_block=tkf_block,
             llm_cfg=llm_cfg,
+            kag_context=kag_ctx_for_ep if use_kag else "",
+            rag_context=rag_ctx if use_rag else "",
         )
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
