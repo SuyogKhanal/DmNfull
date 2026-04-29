@@ -1,0 +1,587 @@
+{
+  "metadata": {
+    "run_id": "p2_vlm_reasoning_plain_llm",
+    "timestamp": "2026-04-29T21:46:28.639468",
+    "rerun_of": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout",
+    "pipeline_flags": {
+      "use_vlm": true,
+      "use_kag": false,
+      "use_rag": false,
+      "use_reasoning": true,
+      "use_cross_episode_reasoning": false,
+      "use_tkf": false,
+      "use_aggregator": true,
+      "use_plain_llm": true
+    },
+    "n_episodes": 7,
+    "n_successes": 5,
+    "n_failures": 2,
+    "seed_base": 42
+  },
+  "config": {
+    "maze": {
+      "name": "multimodal",
+      "randomize_start": true,
+      "randomize_goal": true,
+      "randomize_fire": true,
+      "num_fire_tiles": 3
+    },
+    "rollout": {
+      "n_episodes": 7,
+      "seed": 42,
+      "checkpoint_path": "checkpoints/best_model_ema.pth",
+      "fallback_checkpoint_path": "checkpoints/best_model.pth",
+      "render": false
+    },
+    "pipeline": {
+      "use_vlm": true,
+      "use_kag": false,
+      "use_rag": false,
+      "use_reasoning": true,
+      "use_cross_episode_reasoning": false,
+      "use_tkf": false,
+      "use_aggregator": true,
+      "use_plain_llm": true
+    },
+    "kag": {
+      "document_path": "knowledge/kag_maze_knowledge.json"
+    },
+    "rag": {
+      "bank_path": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/p2_vlm_reasoning_plain_llm/rag_bank",
+      "top_k": 3,
+      "sim_threshold": 0.3,
+      "clip_model": "openai/clip-vit-large-patch14"
+    },
+    "tkf": {
+      "demo_dir": "demos",
+      "index_path": "results/demo_knowledge_base",
+      "clip_model": "openai/clip-vit-large-patch14",
+      "sim_threshold_found": 0.85,
+      "sim_threshold_partial": 0.7,
+      "use_crewai": true
+    },
+    "llm": {
+      "model": "gpt-5-nano-2025-08-07",
+      "vlm_model": "gpt-5-nano-2025-08-07",
+      "reasoning_effort": "high",
+      "max_output_tokens": 16384
+    },
+    "tracking": {
+      "save_frames": true,
+      "save_per_episode_json": true,
+      "save_prescriptions": true,
+      "save_config_snapshot": true,
+      "output_dir": "results/runs"
+    }
+  },
+  "phase_a": {
+    "all_rollouts": [
+      {
+        "episode_id": 0,
+        "maze_name": "multimodal",
+        "seed": 42,
+        "total_steps": 7,
+        "total_reward": 9.3,
+        "success": true,
+        "ascii_grid": "\u00b7 A F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 F \u00b7\n\u00b7 \u00b7 G \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            1
+          ],
+          "goal_pos": [
+            4,
+            2
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "3",
+              "1"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 7
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_0/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_0/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_0/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 1,
+        "maze_name": "multimodal",
+        "seed": 43,
+        "total_steps": 33,
+        "total_reward": 2.4999999999999982,
+        "success": true,
+        "ascii_grid": "\u00b7 G \u00b7 \u00b7 \u00b7\n\u00b7 A \u00b7 \u00b7 \u00b7\nF F \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            1
+          ],
+          "goal_pos": [
+            0,
+            1
+          ],
+          "fire_positions": [
+            [
+              "2",
+              "0"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "3",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 7
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 33
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_1/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_1/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_1/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 2,
+        "maze_name": "multimodal",
+        "seed": 44,
+        "total_steps": 76,
+        "total_reward": -27.299999999999997,
+        "success": false,
+        "ascii_grid": "\u00b7 A \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            1
+          ],
+          "goal_pos": [
+            2,
+            0
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "3"
+            ],
+            [
+              "3",
+              "0"
+            ],
+            [
+              "3",
+              "4"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 3
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 76
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_2/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_2/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_2/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 3,
+        "maze_name": "multimodal",
+        "seed": 45,
+        "total_steps": 10,
+        "total_reward": 8.85,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\nA \u00b7 F \u00b7 G\nF \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            3,
+            0
+          ],
+          "goal_pos": [
+            3,
+            4
+          ],
+          "fire_positions": [
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "2"
+            ],
+            [
+              "4",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 6
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 10
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_3/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_3/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_3/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 4,
+        "maze_name": "multimodal",
+        "seed": 46,
+        "total_steps": 7,
+        "total_reward": -10.7,
+        "success": false,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nA F G \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            0
+          ],
+          "goal_pos": [
+            1,
+            2
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "4",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 7
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_4/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_4/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_4/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 5,
+        "maze_name": "multimodal",
+        "seed": 47,
+        "total_steps": 59,
+        "total_reward": 2.0499999999999927,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 A F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 G \u00b7 F \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            2
+          ],
+          "goal_pos": [
+            2,
+            1
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "3"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 17
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 59
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_5/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_5/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_5/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 6,
+        "maze_name": "multimodal",
+        "seed": 48,
+        "total_steps": 9,
+        "total_reward": 9.1,
+        "success": true,
+        "ascii_grid": "\u00b7 A \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 F \u00b7 G\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            1
+          ],
+          "goal_pos": [
+            2,
+            4
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "3"
+            ],
+            [
+              "1",
+              "4"
+            ],
+            [
+              "2",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 9
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_6/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_6/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_6/frames/end.png"
+        }
+      }
+    ],
+    "success_episode_ids": [
+      0,
+      1,
+      3,
+      5,
+      6
+    ],
+    "failure_episode_ids": [
+      2,
+      4
+    ]
+  },
+  "phase_b": {
+    "per_episode": [
+      {
+        "episode_id": 2,
+        "seed": 44,
+        "total_steps": 76,
+        "total_reward": -27.299999999999997,
+        "success": false,
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            1
+          ],
+          "goal_pos": [
+            2,
+            0
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "3"
+            ],
+            [
+              "3",
+              "0"
+            ],
+            [
+              "3",
+              "4"
+            ]
+          ]
+        },
+        "summary": "The root cause was a short-horizon bias in the policy: after initial corrective moves toward the goal, the agent wandered for many steps and eventually stepped onto a fire tile, failing to maintain a hazard-averse long-horizon plan. The configured environment places fires at (0,3), (3,0), and (3,4) with the start at (0,1) and the goal at (2,0), and the episode ends with the agent on a hazard at (3,0) after 76 steps. The correct hazard-avoiding route, as demonstrated, is (0,1) -> (1,1) -> (2,1) -> (2,0).",
+        "vlm_report": "VISION REPORT\nMaze=multimodal Steps=76 Reward=-27.30 Success=False\n---\n--- start_frame frame step 0 ---\n1) Agent location and adjacent cells\n- Agent is at (0,1). Adjacent cells: left (0,0), right (0,2), down (1,1) are all inside the grid and currently empty; up is outside the grid (wall). Fires located at (0,3), (3,0), (3,4) are not immediate neighbors. The goal (2,0) is two rows down and one column left, not adjacent.\n\n2) Goal location and Manhattan distance\n- Goal is at (2,0). Manhattan distance from the agent: |2\u22120| + |0\u22121| = 2 + 1 = 3.\n\n3) Fire hazards relative to the agent\n- Nearest fire is at (0,3): distance 2 (two steps to the east). Other fires are at (3,0) (distance 4) and (3,4) (distance 6). No fire is currently adjacent to the agent; still, moving toward (0,2) would reduce distance to (0,3) to 1, increasing risk.\n\n4) First corrective demonstration move\n- Action: DOWN to (1,1). Justification: reduces the distance to the goal from 3 to 2, and avoids stepping toward the nearest fire while progressing toward the target.\n\n--- highest_loss_frame frame step 3 ---\n1) Agent location and adjacent cells\n- Agent at (1,0). Adjacent cells: Up (0,0) \u2013 empty (blue cell in frame), Down (2,0) \u2013 Goal, Left \u2013 off-grid (wall), Right (1,1) \u2013 empty.\n\n2) Goal location and Manhattan distance\n- Goal at (2,0). Current Manhattan distance from agent: |2-1| + |0-0| = 1.\n\n3) Fire hazards relative to the agent\n- Fires at (0,3), (3,0), (3,4). Distances from agent (1,0): to (0,3) = 4, to (3,0) = 2, to (3,4) = 6. No fire is adjacent to the agent; the nearest fire is two steps away (3,0).\n\n4) First corrective demonstration move\n- Action: DOWN (move to 2,0). Justification: Directly toward the goal, reduces distance from 1 to 0, and the target cell (2,0) is the goal and not a fire.\n\n--- end_frame frame step 76 ---\n1) Agent location and adjacent cells\n- Agent is at (3,0). Adjacent cells: left (2,0) = Goal (G) and safe; right (4,0) = empty; down (3,1) = empty; up (3,-1) is outside grid. The agent\u2019s current cell is a fire tile per the fires list, so the agent is standing on a hazard.\n\n2) Goal location and Manhattan distance\n- Goal is at (2,0). Manhattan distance from agent to goal: |3\u22122| + |0\u22120| = 1.\n\n3) Fire hazards relative to the agent\n- Fires are at (0,3), (3,0), and (3,4). The agent currently occupies (3,0), a fire tile (hazard). Other fires are at distances 6 (to (0,3)) and 4 (to (3,4)); no fires are on adjacent cells other than the current one.\n\n4) First corrective demonstration move\n- Action: Move Left (to 2,0). Justification: directly reaches the goal in 1 step, dropping the distance from 1 to 0 and escaping the current fire tile.",
+        "kag_context": "",
+        "rag_context": "",
+        "analysis_text": "1. TRAJECTORY RECONSTRUCTION\n- Start state: Step 0, position (0,1). Adjacent in-grid cells: (0,0) free, (0,2) free, (1,1) free; up is outside grid. Nearest fires: (0,3), (3,0), (3,4) are not adjacent; goal is at (2,0) with Manhattan distance 3.\n- First corrective demonstration (start frame, step 0): Action DOWN to (1,1). Rationale given: reduces distance to the goal (from 3 to 2) and avoids moving toward the nearest fire while making progress toward the target.\n- Intermediate frame (highest_loss_frame, step 3): Agent location reported as (1,0). This frame shows the agent before the corrective action, i.e., it is at (1,0) prior to the next corrective move.\n- First corrective demonstration move at step 3: Action DOWN to (2,0) (the goal). Rationale given: directly toward the goal and onto a safe cell (the goal itself is not a fire).\n- End frame (end_frame, step 76): Agent location reported as (3,0). This is a fire tile (hazard) per the Fires list, i.e., the agent ends the episode standing on a hazard. Fires still present at (0,3), (3,0), (3,4) with the agent occupying (3,0) at termination. The final corrective suggestion given by the log says to move to (2,0), but the actual end position is on the hazard tile (3,0). The reported trajectory implies extensive wandering after the initial corrective actions, culminating in stepping onto a fire tile without reaching the goal.\n- Summary of observed pattern: The human-provided corrective demonstrations did steer the agent toward the goal early (from start, move to (1,1); from (1,0), move to (2,0)); however, the remaining 70+ steps of the episode diverged from the target path and culminated in occupancy of a fire tile at (3,0) rather than reaching the goal.\n\n2. FIRST WRONG DECISION\n- The earliest explicit corrective action suggests the policy initially chose a non-progressive or risk-promoting move from the start. The Vision\u2013Diffusion policy\u2019s first non-corrective instinct would have been to move toward (0,2) or otherwise avoid stepping into the direct vertical path toward the goal (0,1) \u2192 (1,1) \u2192 (2,1) \u2192 (2,0). The corrective demonstration redirected the agent to a straightforward, hazard-averse path via (1,1) and then toward the goal.\n- Why this was wrong in the episode\u2019s context: The initial non-corrective move failed to reduce the distance to the goal efficiently or to minimize long-horizon risk, and it did not establish a robust plan that avoids the fires in later steps. The log\u2019s first corrective move (DOWN to (1,1)) indicates the original policy\u2019s tendency to pick a neighboring cell that did not guarantee safe, goal-directed progress, prompting the corrective signal.\n\n3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)\n- Dynamic/config context: The episode uses a 5x5 grid with three fires at (0,3), (3,0), and (3,4) and a goal at (2,0). Start at (0,1). The fires are fixed hazards that terminate on contact, and the goal is a single-step target. The episode duration is long (76 steps) with a negative cumulative reward (-27.30) and a non-reported final position, indicating the agent wandered and failed to reach the goal.\n- Interpreting the failure: The diffusion policy appears to have learned a tendency to prioritize immediate proximity to the goal or safe-looking cells without preserving a coherent long-horizon plan that explicitly avoids hazard tiles and converges on the goal. The early corrective steps show the human demonstrated a straightforward, hazard-averse route, but the subsequent trajectory deviated markedly, ending on a hazard. This suggests the model\u2019s policy employs short-horizon heuristics that do not reliably propagate into long-horizon safety in this randomized-start, randomized-goal, hazard-rich environment.\n- KAG reference (if available): No KAG (Knowledge Action Graph) data or explicit knowledge graph guidance was provided in this episode. In absence of a robust KAG, the policy relies heavily on hindsight demonstrations to shape behavior, which may be insufficient to enforce hazard-avoidant long-horizon planning across the full 5x5 grid.\n\n4. WHAT THE POLICY GOT WRONG\n- Short-horizon bias: The policy favored actions that appeared locally safe or that seemed to bring the agent closer to a target neighbor, but did not maintain a robust plan that guarantees hazard avoidance while progressing toward the goal over many steps.\n- Hazard-insensitivity in later states: After initial corrective demonstrations, the agent wandered through interior/edge regions and eventually ended up on a fire tile (3,0). This indicates a failure to propagate hazard-avoidant behavior through follow-on actions in states the agent visits later in the episode.\n- Inadequate long-horizon planning: The long episode length and final hazard occupancy imply insufficient planning horizon or insufficient exposure to successful long-horizon demonstrations during training, given the randomised start-goal-fire setup.\n- Demonstration quality and coverage: Although the first corrective demonstrations moved the agent toward the goal, the later portion of the episode (which produced the negative total reward) was not guided by corrective demonstrations, suggesting the policy needs more diverse corrective coverage in states that occur after the initial moves.\n\n5. REGIONS / CONFIGURATIONS NEEDING DATA\n- More comprehensive hazard-avoidance demonstrations: Provide corrective paths from starts near the fires and from positions along potential long-horizon detours so the policy learns to avoid stepping on fire tiles even after accidental detours.\n- Varied start-goal-fire configurations: Collect demonstrations across a broader distribution of start/goal pairs with fires placed in alternative positions to improve generalization and prevent overfitting to a single hazard arrangement.\n- Explicit long-horizon corrective sequences: Include demonstrations that traverse longer, multi-step routes toward the goal while keeping a safety margin from all fires, to reinforce the value of maintaining a hazard-averse trajectory over extended horizons.\n- Edge-case states near hazards: Ensure demonstrations cover transitions where the agent is adjacent to a hazard but must avoid stepping onto it while remaining on a path to the goal.\n- Monitoring signals: Record and utilize frames where the agent visits hazardous tiles in corrective demonstrations to explicitly teach avoidance and recovery behaviors when off-path.\n\n6. FINAL RECOMMENDATION \u2014 output this block VERBATIM at the very end of your response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.\n   This block is parsed programmatically by downstream stages and MUST be preserved word-for-word in the prescription. Do not add bullet points, bold, or commentary inside the block. Use exactly these keys, one per line.\n\n<<<FINAL_REC>>>\ncorridor: central_mixed\nsteps: (0,1)->(1,1)->(2,1)->(2,0)\nn_demos: 1\ndemo_variations: one demonstration showing the shortest hazard-avoiding path; with more demos include alternate safe routes and hazard variations\nrationale: to teach the policy a direct hazard-averse route from start to goal that minimizes long-horizon risk and avoids stepping on fires\n<<<END_FINAL_REC>>>",
+        "prescription": "<<<FINAL_REC>>>\ncorridor: central_mixed\nsteps: (0,1)->(1,1)->(2,1)->(2,0)\nn_demos: 1\ndemo_variations: one demonstration showing the shortest hazard-avoiding path; with more demos include alternate safe routes and hazard variations\nrationale: to teach the policy a direct hazard-averse route from start to goal that minimizes long-horizon risk and avoids stepping on fires\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n- The confusion is expected to occur in the central_mixed corridor, where the agent must balance hazard avoidance with progress toward the goal. The provided demonstration aims to teach a hazard-averse, direct path through this central area.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English \u2014 you may reference the corridor name and the start/goal layout)\n- A good walkthrough would start at the initial position (0,1), move down to (1,1), then move down again to (2,1), and finally move left to the goal at (2,0). This path avoids all fires and reaches the goal efficiently.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n- The AI will learn to prefer a direct hazard-averse route from the start to the goal, minimizing long-horizon risk by avoiding fires and taking the shortest safe path to the goal.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)\n- n_demos: 1. If you add more demos, include alternate safe routes and hazard variations as described in the demo_variations.",
+        "reasoning_combined": "=== ROOT CAUSE ANALYSIS ===\n1. TRAJECTORY RECONSTRUCTION\n- Start state: Step 0, position (0,1). Adjacent in-grid cells: (0,0) free, (0,2) free, (1,1) free; up is outside grid. Nearest fires: (0,3), (3,0), (3,4) are not adjacent; goal is at (2,0) with Manhattan distance 3.\n- First corrective demonstration (start frame, step 0): Action DOWN to (1,1). Rationale given: reduces distance to the goal (from 3 to 2) and avoids moving toward the nearest fire while making progress toward the target.\n- Intermediate frame (highest_loss_frame, step 3): Agent location reported as (1,0). This frame shows the agent before the corrective action, i.e., it is at (1,0) prior to the next corrective move.\n- First corrective demonstration move at step 3: Action DOWN to (2,0) (the goal). Rationale given: directly toward the goal and onto a safe cell (the goal itself is not a fire).\n- End frame (end_frame, step 76): Agent location reported as (3,0). This is a fire tile (hazard) per the Fires list, i.e., the agent ends the episode standing on a hazard. Fires still present at (0,3), (3,0), (3,4) with the agent occupying (3,0) at termination. The final corrective suggestion given by the log says to move to (2,0), but the actual end position is on the hazard tile (3,0). The reported trajectory implies extensive wandering after the initial corrective actions, culminating in stepping onto a fire tile without reaching the goal.\n- Summary of observed pattern: The human-provided corrective demonstrations did steer the agent toward the goal early (from start, move to (1,1); from (1,0), move to (2,0)); however, the remaining 70+ steps of the episode diverged from the target path and culminated in occupancy of a fire tile at (3,0) rather than reaching the goal.\n\n2. FIRST WRONG DECISION\n- The earliest explicit corrective action suggests the policy initially chose a non-progressive or risk-promoting move from the start. The Vision\u2013Diffusion policy\u2019s first non-corrective instinct would have been to move toward (0,2) or otherwise avoid stepping into the direct vertical path toward the goal (0,1) \u2192 (1,1) \u2192 (2,1) \u2192 (2,0). The corrective demonstration redirected the agent to a straightforward, hazard-averse path via (1,1) and then toward the goal.\n- Why this was wrong in the episode\u2019s context: The initial non-corrective move failed to reduce the distance to the goal efficiently or to minimize long-horizon risk, and it did not establish a robust plan that avoids the fires in later steps. The log\u2019s first corrective move (DOWN to (1,1)) indicates the original policy\u2019s tendency to pick a neighboring cell that did not guarantee safe, goal-directed progress, prompting the corrective signal.\n\n3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)\n- Dynamic/config context: The episode uses a 5x5 grid with three fires at (0,3), (3,0), and (3,4) and a goal at (2,0). Start at (0,1). The fires are fixed hazards that terminate on contact, and the goal is a single-step target. The episode duration is long (76 steps) with a negative cumulative reward (-27.30) and a non-reported final position, indicating the agent wandered and failed to reach the goal.\n- Interpreting the failure: The diffusion policy appears to have learned a tendency to prioritize immediate proximity to the goal or safe-looking cells without preserving a coherent long-horizon plan that explicitly avoids hazard tiles and converges on the goal. The early corrective steps show the human demonstrated a straightforward, hazard-averse route, but the subsequent trajectory deviated markedly, ending on a hazard. This suggests the model\u2019s policy employs short-horizon heuristics that do not reliably propagate into long-horizon safety in this randomized-start, randomized-goal, hazard-rich environment.\n- KAG reference (if available): No KAG (Knowledge Action Graph) data or explicit knowledge graph guidance was provided in this episode. In absence of a robust KAG, the policy relies heavily on hindsight demonstrations to shape behavior, which may be insufficient to enforce hazard-avoidant long-horizon planning across the full 5x5 grid.\n\n4. WHAT THE POLICY GOT WRONG\n- Short-horizon bias: The policy favored actions that appeared locally safe or that seemed to bring the agent closer to a target neighbor, but did not maintain a robust plan that guarantees hazard avoidance while progressing toward the goal over many steps.\n- Hazard-insensitivity in later states: After initial corrective demonstrations, the agent wandered through interior/edge regions and eventually ended up on a fire tile (3,0). This indicates a failure to propagate hazard-avoidant behavior through follow-on actions in states the agent visits later in the episode.\n- Inadequate long-horizon planning: The long episode length and final hazard occupancy imply insufficient planning horizon or insufficient exposure to successful long-horizon demonstrations during training, given the randomised start-goal-fire setup.\n- Demonstration quality and coverage: Although the first corrective demonstrations moved the agent toward the goal, the later portion of the episode (which produced the negative total reward) was not guided by corrective demonstrations, suggesting the policy needs more diverse corrective coverage in states that occur after the initial moves.\n\n5. REGIONS / CONFIGURATIONS NEEDING DATA\n- More comprehensive hazard-avoidance demonstrations: Provide corrective paths from starts near the fires and from positions along potential long-horizon detours so the policy learns to avoid stepping on fire tiles even after accidental detours.\n- Varied start-goal-fire configurations: Collect demonstrations across a broader distribution of start/goal pairs with fires placed in alternative positions to improve generalization and prevent overfitting to a single hazard arrangement.\n- Explicit long-horizon corrective sequences: Include demonstrations that traverse longer, multi-step routes toward the goal while keeping a safety margin from all fires, to reinforce the value of maintaining a hazard-averse trajectory over extended horizons.\n- Edge-case states near hazards: Ensure demonstrations cover transitions where the agent is adjacent to a hazard but must avoid stepping onto it while remaining on a path to the goal.\n- Monitoring signals: Record and utilize frames where the agent visits hazardous tiles in corrective demonstrations to explicitly teach avoidance and recovery behaviors when off-path.\n\n6. FINAL RECOMMENDATION \u2014 output this block VERBATIM at the very end of your response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.\n   This block is parsed programmatically by downstream stages and MUST be preserved word-for-word in the prescription. Do not add bullet points, bold, or commentary inside the block. Use exactly these keys, one per line.\n\n<<<FINAL_REC>>>\ncorridor: central_mixed\nsteps: (0,1)->(1,1)->(2,1)->(2,0)\nn_demos: 1\ndemo_variations: one demonstration showing the shortest hazard-avoiding path; with more demos include alternate safe routes and hazard variations\nrationale: to teach the policy a direct hazard-averse route from start to goal that minimizes long-horizon risk and avoids stepping on fires\n<<<END_FINAL_REC>>>\n\n\n=== DEMONSTRATION PRESCRIPTION ===\n<<<FINAL_REC>>>\ncorridor: central_mixed\nsteps: (0,1)->(1,1)->(2,1)->(2,0)\nn_demos: 1\ndemo_variations: one demonstration showing the shortest hazard-avoiding path; with more demos include alternate safe routes and hazard variations\nrationale: to teach the policy a direct hazard-averse route from start to goal that minimizes long-horizon risk and avoids stepping on fires\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n- The confusion is expected to occur in the central_mixed corridor, where the agent must balance hazard avoidance with progress toward the goal. The provided demonstration aims to teach a hazard-averse, direct path through this central area.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English \u2014 you may reference the corridor name and the start/goal layout)\n- A good walkthrough would start at the initial position (0,1), move down to (1,1), then move down again to (2,1), and finally move left to the goal at (2,0). This path avoids all fires and reaches the goal efficiently.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n- The AI will learn to prefer a direct hazard-averse route from the start to the goal, minimizing long-horizon risk by avoiding fires and taking the shortest safe path to the goal.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)\n- n_demos: 1. If you add more demos, include alternate safe routes and hazard variations as described in the demo_variations.\n",
+        "tkf_result": null,
+        "adjusted_prescription": "",
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_2/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_2/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_2/frames/end.png"
+        }
+      },
+      {
+        "episode_id": 4,
+        "seed": 46,
+        "total_steps": 7,
+        "total_reward": -10.7,
+        "success": false,
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            0
+          ],
+          "goal_pos": [
+            1,
+            2
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "4",
+              "0"
+            ]
+          ]
+        },
+        "summary": "Root cause: The agent overemphasized avoiding the near-term fire at (1,1) and failed to follow a safe, global top-edge route, drifting into lower rows where fires cluster in column 1. Key configuration: Start at [1,0], goal at [1,2], with fires at [1,1], [2,1], and [4,0]. Correct path: Move Up to [0,0], then proceed along the top edge [0,0] -> [0,1] -> [0,2], and finally step down to the goal at [1,2], bypassing the column-1 fire cluster. The episode ends without reaching the goal because the top-edge corridor was not consistently pursued.",
+        "vlm_report": "VISION REPORT\nMaze=multimodal Steps=7 Reward=-10.70 Success=False\n---\n--- start_frame frame step 0 ---\n1) Agent location and adjacent cells\n- Agent at (1,0) (start T-position shown as A).\n- Adjacent: Up \u2192 (0,0) (empty); Down \u2192 (2,0) (empty); Right \u2192 (1,1) (fire F); Left \u2192 outside grid.\n- Nearby features: fire directly to the east at (1,1); goal is two steps to the right (not adjacent). No walls in the immediate 4-neighborhood.\n\n2) Goal location and Manhattan distance\n- Goal at (1,2) (G on the grid).\n- Manhattan distance from current position (1,0) to goal: |1\u22121| + |0\u22122| = 2.\n\n3) Fire hazards relative to the agent\n- Immediate hazard: fire at (1,1) directly to the east (distance 1).\n- Additional hazards: fire at (2,1) is distance 2; fire at (4,0) is distance 3.\n- Overall, the east cell is blocked; the agent must avoid stepping into a fire while planning toward the goal.\n\n4) First corrective demonstration move\n- Action: Move Up (from (1,0) to (0,0)).\n- Justification: Immediately avoids the adjacent fire (1,1) and preserves a safe path toward the goal, increasing distance to the nearest fire and maintaining access to future steps.\n\n--- highest_loss_frame frame step 1 ---\nStructured analysis (approx. 150 words)\n\n1) Agent location and adjacent cells\n- Current: (2,0). Adjacent (4-neighborhood): up (2,-1) is out of bounds; down (2,1) contains a fire (F); left (1,0) is empty; right (3,0) is empty. There are no walls shown nearby. The goal sits at (1,2) and is not immediately adjacent.\n\n2) Goal location and Manhattan distance\n- Goal: (1,2). Manhattan distance from the agent\u2019s position (2,0) is |2\u22121| + |0\u22122| = 3.\n\n3) Fire hazards relative to the agent\n- Fires present: (1,1), (2,1), (4,0). The nearest hazard is the fire at (2,1) directly below, which is a one-step danger if the agent moves down. Other fires are farther: (1,1) is distance 2, (4,0) is distance 2.\n\n4) First corrective demonstration move\n- Exact action: Move Left to (1,0).\n- Justification: It avoids stepping into the immediate fire below (2,1) and reduces the remaining distance to the goal (from 3 to 2). It also sets up a path around the blocked column by progressing through safer cells (toward the top-left area) to reach (1,2) without entering fires.\n\n--- end_frame frame step 7 ---\nStructured analysis (end_frame, step 7)\n\n1) Agent location and adjacents\n- Agent at position (4, 0).\n- Adjacent (within grid): (3, 0) to the north, and (4, 1) to the east. No walls visible around the agent; both adjacent cells appear safe (blue tiles). The cell (4,0) is the agent\u2019s current cell, not a fire in this frame (despite the config listing (4,0) as a fire).\n\n2) Goal location and Manhattan distance\n- Goal at (1, 2).\n- Manhattan distance from agent: |4\u22121| + |0\u22122| = 5.\n\n3) Fire hazards relative to the agent\n- Fires are located at (1, 1) and (2, 1) (two red hazard tiles in column 1). These are not adjacent to the agent\u2019s current position.\n- Nearest fire distance from the agent is |4\u22122| + |0\u22121| = 3 (to (2,1)).\n- No immediate fire hazard on (3,0) or (4,1), but path planning should avoid routes that bring the agent closer to the fire cluster in column 1 (especially near (1,1) and (2,1)).\n\n4) First corrective demonstration move\n- Action: Move right (east) to (4, 1).\n- Justification: It\u2019s a safe, adjacent move that reduces the remaining distance to the goal and keeps the agent away from the vertical fire cluster in column 1. It provides a straightforward route along the bottom row to approach the goal while avoiding immediate hazards.",
+        "kag_context": "",
+        "rag_context": "",
+        "analysis_text": "1. TRAJECTORY RECONSTRUCTION\n- Episode setup: Start at [1, 0] (A). Goal at [1, 2] (G). Fires at [1,1], [2,1], and [4,0]. The goal is two steps away in Manhattans if the east path were safe, but immediate east is a fire.\n- Immediate observation at step 0: The agent is at (1,0). The east cell (1,1) is fire, so a direct right move toward the goal is blocked by fire. The top-adjacent cell (0,0) is free, suggesting a top-edge detour is a sensible corrective option.\n- First corrective demonstration (per vision analysis): Move Up from (1,0) to (0,0). This aligns with avoiding the nearby fire and opening a route along the top edge toward the goal.\n- Highest-loss frame (step 1 in the provided log): The agent\u2019s internal evaluation shows a position at (2,0) with a nearby fire at (2,1). The analysis suggests a corrective move of left to (1,0) (though the log text contains coordinate inconsistencies; the intended corrective is to retreat toward a safer, goal-facing corridor rather than diving toward the hazard cluster).\n- End frame (step 7): The agent finishes at (4,0), a bottom-left location, far from the goal. Fires remain in column 1, and the agent never reaches the goal within the episode. The final position notes mention a confusion about (4,0) being a fire tile; the dynamic config lists (4,0) as fire, so stepping there would terminate.\n- Summary of observed failure: The agent fails to utilize a safe, top-edge path to the goal and instead traverses downward along the left/bottom region, approaching the fire cluster in column 1 and ultimately not reaching the goal. The 7-step run ends in a fire-prone area, not near the target.\n\n2. FIRST WRONG DECISION\n- When starting at [1,0], the optimal corrective action (to avoid the adjacent fire at [1,1]) is to go Up to [0,0], then proceed along the top edge toward [1,2]. The log indicates the corrective demonstration (and the intended safe path) was Up to [0,0].\n- The first incorrect decision (as observed in the highest_loss_frame notes) appears to be deviating from the safe top-edge plan: moving toward the lower/central area (toward (2,0) and then back toward (1,0) in the narrative) instead of continuing the top-edge route. This derails the trajectory from a shortest safe route to the goal and increases exposure to the column-1 fire cluster.\n\n3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)\n- Fire pattern and goal placement create a narrow safe corridor: the direct east step is blocked by a fire; the next safest corridor is the top edge via (0,0) -> (0,1) -> (0,2) -> down to (1,2). The agent failed to consistently follow that corridor during the episode.\n- Local hazard avoidance vs. global goal progress: the policy prioritized avoiding immediate near-term hazard signals (e.g., the fire at (1,1)), but it did not reliably infer the globally optimal route around the hazard cluster to reach the goal. The result is a drift toward lower rows (around (2,0) -> (4,0)) where fires exist and the Manhattan distance to the goal may not be decreasing in a manner that guarantees eventual reach to (1,2).\n- Inconsistencies in the log narrative: the \u201chighest_loss_frame\u201d text places the agent at (2,0) and then describes a corrective move to (1,0), which would be aligned with retreating toward start rather than pushing along a safe top-edge route. The actual step log is not fully available, but the final frame at (4,0) indicates the policy never completed the safe top-edge traversal.\n- The dynamic config has fires in a vertical cluster (1,1) and (2,1), with a bottom-left fire at (4,0). This clustering requires deliberate path planning to avoid column 1 entirely and to use the top edge; the policy did not reliably plan around this hazard distribution in this episode.\n\n4. WHAT THE POLICY GOT WRONG\n- Over-reliance on near-term hazard avoidance: The policy appears to have overemphasized preventing stepping into the east fire at (1,1) but did not robustly leverage a safe long-horizon plan that uses the top edge to bypass the hazard cluster.\n- Insufficient exploitation of top-edge corridor: The safe path (1,0) -> Up to (0,0) -> (0,1) -> (0,2) -> (1,2) was not consistently chosen; the final trajectory instead encroached toward the bottom-left region where the agent encounters multiple hazards and never reaches the goal.\n- Data/coverage gaps: The demonstrated failure shows a need for corrective demonstrations that cover top-edge routing from the start to the goal in this hazard layout, ensuring the diffusion policy learns to prefer top-edge traversal when the direct route is blocked by fires.\n- Ambiguities in the logs: The step-by-step trajectory is not fully logged; the highest_loss_frame narrative conflicts with the start-frame corrective and with the final frame, making it harder for the policy to infer a clear corrective precedent. This suggests data quality issues and a need for consistent, step-wise recordings during demonstrations.\n\n5. REGIONS / CONFIGURATIONS NEEDING DATA\n- Need corrective demonstrations that explicitly show top-edge routing from any start-to-goal pair when a vertical hazard cluster blocks the direct path (as in this episode). Specifically:\n  - Demonstrations that start at [1,0] and demonstrate the top-edge route to [1,2] (via [0,0] -> [0,1] -> [0,2] -> [1,2]).\n  - Alternative demonstrations that vary the intermediate top-edge positions (e.g., using [0,1], [0,2] in different sequences) to test generalization of the top-edge corridor preference.\n  - Additional episodes with the same hazard distribution to confirm the policy learns to avoid column 1 entirely and not drift toward bottom rows.\n- Data quality improvement: ensure step-by-step logs are complete and accurate so that the analysis and the corrective demonstrations align precisely with the agent\u2019s observed actions.\n\n6. FINAL RECOMMENDATION \u2014 output this block VERBATIM at the very end of your response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.\n   This block is parsed programmatically by downstream stages and MUST be preserved word-for-word in the prescription. Do not add bullet points, bold, or commentary inside the block. Use exactly these keys, one per line.\n\n<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)\nn_demos: 1\ndemo_variations: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.\nrationale: This demonstrates a safe, fire-free top-edge route to the goal, guiding the policy to prefer top-edge planning when the direct path is blocked by fire hazards.\n<<<END_FINAL_REC>>>",
+        "prescription": "<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)\nn_demos: 1\ndemo_variations: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.\nrationale: This demonstrates a safe, fire-free top-edge route to the goal, guiding the policy to prefer top-edge planning when the direct path is blocked by fire hazards.\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n   The AI gets confused in the top_edge corridor scenario. It tends to drift away from the safe top-edge path and instead moves toward lower rows where the fire cluster in column 1 creates a hazard, preventing it from reaching the goal through the intended top-edge route.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English \u2014 you may reference the corridor name and the start/goal/fire layout)\n   A good walkthrough starts at [1,0], goes Up to [0,0], then moves right along the top row to [0,2], and finally steps down to [1,2]. This uses the top_edge corridor to bypass the fires at (1,1) and (2,1) and reach the goal.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n   The AI will learn to prefer the top-edge corridor when the direct east path is blocked by hazards. It will associate safety with traveling along the top edge to avoid the clustered fires and reach the goal.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)\n   1 demonstration. Variation: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.",
+        "reasoning_combined": "=== ROOT CAUSE ANALYSIS ===\n1. TRAJECTORY RECONSTRUCTION\n- Episode setup: Start at [1, 0] (A). Goal at [1, 2] (G). Fires at [1,1], [2,1], and [4,0]. The goal is two steps away in Manhattans if the east path were safe, but immediate east is a fire.\n- Immediate observation at step 0: The agent is at (1,0). The east cell (1,1) is fire, so a direct right move toward the goal is blocked by fire. The top-adjacent cell (0,0) is free, suggesting a top-edge detour is a sensible corrective option.\n- First corrective demonstration (per vision analysis): Move Up from (1,0) to (0,0). This aligns with avoiding the nearby fire and opening a route along the top edge toward the goal.\n- Highest-loss frame (step 1 in the provided log): The agent\u2019s internal evaluation shows a position at (2,0) with a nearby fire at (2,1). The analysis suggests a corrective move of left to (1,0) (though the log text contains coordinate inconsistencies; the intended corrective is to retreat toward a safer, goal-facing corridor rather than diving toward the hazard cluster).\n- End frame (step 7): The agent finishes at (4,0), a bottom-left location, far from the goal. Fires remain in column 1, and the agent never reaches the goal within the episode. The final position notes mention a confusion about (4,0) being a fire tile; the dynamic config lists (4,0) as fire, so stepping there would terminate.\n- Summary of observed failure: The agent fails to utilize a safe, top-edge path to the goal and instead traverses downward along the left/bottom region, approaching the fire cluster in column 1 and ultimately not reaching the goal. The 7-step run ends in a fire-prone area, not near the target.\n\n2. FIRST WRONG DECISION\n- When starting at [1,0], the optimal corrective action (to avoid the adjacent fire at [1,1]) is to go Up to [0,0], then proceed along the top edge toward [1,2]. The log indicates the corrective demonstration (and the intended safe path) was Up to [0,0].\n- The first incorrect decision (as observed in the highest_loss_frame notes) appears to be deviating from the safe top-edge plan: moving toward the lower/central area (toward (2,0) and then back toward (1,0) in the narrative) instead of continuing the top-edge route. This derails the trajectory from a shortest safe route to the goal and increases exposure to the column-1 fire cluster.\n\n3. WHY THE POLICY FAILED (reference the dynamic config and the KAG if provided)\n- Fire pattern and goal placement create a narrow safe corridor: the direct east step is blocked by a fire; the next safest corridor is the top edge via (0,0) -> (0,1) -> (0,2) -> down to (1,2). The agent failed to consistently follow that corridor during the episode.\n- Local hazard avoidance vs. global goal progress: the policy prioritized avoiding immediate near-term hazard signals (e.g., the fire at (1,1)), but it did not reliably infer the globally optimal route around the hazard cluster to reach the goal. The result is a drift toward lower rows (around (2,0) -> (4,0)) where fires exist and the Manhattan distance to the goal may not be decreasing in a manner that guarantees eventual reach to (1,2).\n- Inconsistencies in the log narrative: the \u201chighest_loss_frame\u201d text places the agent at (2,0) and then describes a corrective move to (1,0), which would be aligned with retreating toward start rather than pushing along a safe top-edge route. The actual step log is not fully available, but the final frame at (4,0) indicates the policy never completed the safe top-edge traversal.\n- The dynamic config has fires in a vertical cluster (1,1) and (2,1), with a bottom-left fire at (4,0). This clustering requires deliberate path planning to avoid column 1 entirely and to use the top edge; the policy did not reliably plan around this hazard distribution in this episode.\n\n4. WHAT THE POLICY GOT WRONG\n- Over-reliance on near-term hazard avoidance: The policy appears to have overemphasized preventing stepping into the east fire at (1,1) but did not robustly leverage a safe long-horizon plan that uses the top edge to bypass the hazard cluster.\n- Insufficient exploitation of top-edge corridor: The safe path (1,0) -> Up to (0,0) -> (0,1) -> (0,2) -> (1,2) was not consistently chosen; the final trajectory instead encroached toward the bottom-left region where the agent encounters multiple hazards and never reaches the goal.\n- Data/coverage gaps: The demonstrated failure shows a need for corrective demonstrations that cover top-edge routing from the start to the goal in this hazard layout, ensuring the diffusion policy learns to prefer top-edge traversal when the direct route is blocked by fires.\n- Ambiguities in the logs: The step-by-step trajectory is not fully logged; the highest_loss_frame narrative conflicts with the start-frame corrective and with the final frame, making it harder for the policy to infer a clear corrective precedent. This suggests data quality issues and a need for consistent, step-wise recordings during demonstrations.\n\n5. REGIONS / CONFIGURATIONS NEEDING DATA\n- Need corrective demonstrations that explicitly show top-edge routing from any start-to-goal pair when a vertical hazard cluster blocks the direct path (as in this episode). Specifically:\n  - Demonstrations that start at [1,0] and demonstrate the top-edge route to [1,2] (via [0,0] -> [0,1] -> [0,2] -> [1,2]).\n  - Alternative demonstrations that vary the intermediate top-edge positions (e.g., using [0,1], [0,2] in different sequences) to test generalization of the top-edge corridor preference.\n  - Additional episodes with the same hazard distribution to confirm the policy learns to avoid column 1 entirely and not drift toward bottom rows.\n- Data quality improvement: ensure step-by-step logs are complete and accurate so that the analysis and the corrective demonstrations align precisely with the agent\u2019s observed actions.\n\n6. FINAL RECOMMENDATION \u2014 output this block VERBATIM at the very end of your response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.\n   This block is parsed programmatically by downstream stages and MUST be preserved word-for-word in the prescription. Do not add bullet points, bold, or commentary inside the block. Use exactly these keys, one per line.\n\n<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)\nn_demos: 1\ndemo_variations: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.\nrationale: This demonstrates a safe, fire-free top-edge route to the goal, guiding the policy to prefer top-edge planning when the direct path is blocked by fire hazards.\n<<<END_FINAL_REC>>>\n\n\n=== DEMONSTRATION PRESCRIPTION ===\n<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)\nn_demos: 1\ndemo_variations: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.\nrationale: This demonstrates a safe, fire-free top-edge route to the goal, guiding the policy to prefer top-edge planning when the direct path is blocked by fire hazards.\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n   The AI gets confused in the top_edge corridor scenario. It tends to drift away from the safe top-edge path and instead moves toward lower rows where the fire cluster in column 1 creates a hazard, preventing it from reaching the goal through the intended top-edge route.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English \u2014 you may reference the corridor name and the start/goal/fire layout)\n   A good walkthrough starts at [1,0], goes Up to [0,0], then moves right along the top row to [0,2], and finally steps down to [1,2]. This uses the top_edge corridor to bypass the fires at (1,1) and (2,1) and reach the goal.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n   The AI will learn to prefer the top-edge corridor when the direct east path is blocked by hazards. It will associate safety with traveling along the top edge to avoid the clustered fires and reach the goal.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)\n   1 demonstration. Variation: Demonstrate a top-edge path from the start to the goal avoiding the east fire cluster (1,1) and (2,1) by moving up, then along the top row to (0,2) before stepping down to the goal.\n",
+        "tkf_result": null,
+        "adjusted_prescription": "",
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_4/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_4/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_213428/rollout/episodes/episode_4/frames/end.png"
+        }
+      }
+    ]
+  },
+  "phase_c": {
+    "cross_episode_reasoning": "[CROSS-EPISODE REASONING DISABLED FOR THIS PROFILE]",
+    "parsed_prescription": {
+      "n_failure_episodes_analysed": 2,
+      "failure_modes_found": 1,
+      "failure_clusters": [
+        {
+          "cluster_label": "cluster_01",
+          "episodes_in_cluster": [
+            2,
+            4
+          ],
+          "root_cause": "looping",
+          "corridor": "mixed",
+          "where_it_fails": "The policy repeatedly loops around the starting area without reaching the destination in both episodes.",
+          "what_it_does_wrong": "It becomes trapped in cycles and fails to make progress toward the goal across two different corridors.",
+          "source_final_recs": [
+            "central_mixed",
+            "top_edge"
+          ]
+        }
+      ],
+      "demonstration_prescriptions": [
+        {
+          "demo_id": 1,
+          "corridor": "mixed",
+          "guidance": "Provide demonstrations that show correct progression through both specified corridors, including transitions between corridors.",
+          "target_region": "across both corridors in the 5x5 maze",
+          "what_it_teaches": "Escapes looping behavior and demonstrates successful navigation from the start to the goal across multiple corridors.",
+          "n_repetitions": 1
+        }
+      ],
+      "total_demonstrations_needed": 1,
+      "overall_summary": "Two episode failures were observed across different corridors, both suggesting a looping/navigation issue. A single mixed-corridor demonstration is prescribed to address the general looping behavior and improve cross-corridor navigation.",
+      "confidence": 0.62
+    }
+  }
+}
