@@ -1,0 +1,120 @@
+=== ROOT CAUSE ANALYSIS ===
+1. TRAJECTORY RECONSTRUCTION — step-by-step tracegrounded in the evidence
+
+- Episode setup (from the prompt):
+  - Start: [1, 0] (second row, first column) labeled A.
+  - Goal: [1, 2].
+  - Fires: [(1,1), (2,1), (4,0)].
+  - Total steps: 3; Episode ends on a non-goal tile (fire) with reward -10.30.
+  - Fires create a direct hazard to the east of the start and a secondary cluster around (2,1).
+
+- Step 0 (start_frame, step 0) – location [1, 0]:
+  - Agent location: (1,0).
+  - Adjacent cells: North (0,0) empty, East (1,1) fire, South (2,0) empty, West off-grid.
+  - Vision-grounded note: A top-row path exists that bypasses the eastern fire (1,1). The immediate hazard to the east is the biggest nearby risk.
+  - First corrective demonstration move (from start_frame): Up to (0,0) to begin a safe top-row path.
+  - Agent’s actual action (as inferred by the subsequent frame 1 position): Down to (2,0) (this is not the corrective action; it is the action implied by the step 1 position [2,0]).
+
+- Step 1 (highest_loss_frame, step 1) – location [2, 0]:
+  - Agent location: (2,0).
+  - Adjacent cells: Up (1,0) empty/safe; Right (2,1) fire; Down (3,0) empty/safe; Left out-of-bounds.
+  - Goal distance: Manhattan distance to (1,2) is 3 from (2,0).
+  - Fire hazards near agent: immediate fire at (2,1); other fires at (1,1) and (4,0).
+  - First corrective demonstration move (from highest_loss_frame): Up to (1,0) to begin a safer route away from the immediate east-fire.
+  - Agent’s actual action (inferred from the trajectory): Likely Down to (3,0) if we follow the 3-step downward path, or otherwise the policy chose to progress; the summary shows the agent nonetheless sits at (2,0) for step 1, with the corrective move suggested to go Up to (1,0).
+
+- Step 2 (inferred intermediate state, not explicitly logged separately in the prompt):
+  - From the end_frame description, the trajectory continues toward the bottom-left area: the next moves trend downward along the left column toward (4,0).
+  - Inference: The agent likely moved Down again, from (2,0) to (3,0), continuing toward (4,0) over the remaining step(s).
+
+- Step 3 (end_frame, step 3) – location [4, 0]:
+  - Agent location: (4,0) (this is a fire tile per the fires list; stepping here terminates the episode).
+  - Adjacent cells: Up (3,0) safe, Right (4,1) safe; Down/Left out-of-bounds.
+  - Fires: (1,1), (2,1), (4,0) (agent is on a fire tile at this frame).
+  - First corrective demonstration move (from end_frame): Up to (3,0) as a corrective path suggestion.
+  - Outcome: The agent ends the episode on a fire tile after 3 steps; no valid goal reached.
+
+- Summary of the observed path (consistent with the 3-step limit and the end-frame data):
+  - Start at (1,0); first actual action (inferred from the 3-step run) appears to be Down to (2,0).
+  - Second action: Down to (3,0) (inferred; aligns with continuing downward progression).
+  - Third action: Down to (4,0) (onto a fire tile; episode terminates).
+  - Final: Episode ends with a non-goal position on a fire tile; total steps = 3; reward -10.30.
+
+2. FIRST WRONG DECISION — earliest diverging step, with concrete coordinates and actions
+
+- Earliest wrong decision: Step 0.
+  - Where: From start at [1,0] to [2,0] (action: DOWN, code 1).
+  - What happened vs what should have happened
+    - Action taken by the policy: DOWN to (2,0).
+    - Correct corrective action (as suggested by the first corrective demonstration at start_frame): UP to (0,0).
+  - Why this is the first wrong decision
+    - The corrective demonstration explicitly recommended a top-row route to bypass the immediate east fire at (1,1). The agent selecting DOWN directly violates that corrective cue and commits to a path toward the fire cluster rather than toward the safe corridor.
+  - Grounding in evidence
+    - Start_frame’s recommended move: Up to (0,0) (to head along the top row).
+    - Actual trajectory data shows the agent progressed to (2,0) by step 1, implying a DOWN action at step 0.
+
+3. WHY THE POLICY FAILED — root-cause grounded in the episode evidence (no KAG)
+
+- Core failure mode (plain-language, no KAG):
+  - The policy repeatedly chose a downward path toward the lower/left region instead of exploiting the safe top-row corridor that bypasses the eastern fire cluster. The earliest corrective cue advocated moving into the top row (Up to 0,0), but the agent followed a downward path (to 2,0) that increases exposure to the fire at (4,0) later on.
+- Underlying contributors from the episode data:
+  - Hazard topology: Immediate east fire at (1,1) and a second fire at (2,1) constrain direct progress toward the goal along the middle row. The safe corridor exists in the top row (row 0), which would allow a direct safe approach to the goal by routing around the hazard cluster.
+  - Demonstration guidance gap: The provided corrective demonstrations (start_frame: Up to 0,0; highest_loss_frame: Up to 1,0; end_frame: Up to 3,0) show intended safe corrections, but the agent’s actual actions follow a downward descent despite these cues. There is evidence of corrective demonstrations, but the policy did not internalize them to override the instinct to progress toward the goal via the lower-left route.
+  - Absence of robust hazard-avoiding strategy: The policy did not consistently capitalize on known safe corridors (top edge) in this episode, suggesting either insufficient coverage of corrective demonstrations for hazard-avoiding transitions or misalignment between the corrective cues and the policy’s learned priors (e.g., “minimize distance to goal” without explicit hazard-aware hedges).
+- Conclusion: The failure traces to a hazard-aware planning deficit in the diffusion policy when confronted with an immediately adjacent fire (1,1) and a nearby fire cluster (2,1). The corrective guidance points toward a safe corridor, but the policy did not follow them, causing a chain of downward moves culminating in stepping onto a fire tile at (4,0).
+
+4. RAG CROSS-EPISODE EVIDENCE — per-rank verdicts (no retrieved cases)
+
+- No RAG (retrieval-augmented) evidence available for this episode.
+- Statement: No retrieved cases. The ground-truth corrective trajectory is not anchored to a stored precedent in the available cross-episode knowledge base, so corrective plan must be designed de novo from this episode’s signals.
+
+5. CORRIDOR & PATH PROPOSAL — corridor name, concrete corrective path, and justification
+
+- Corridor name (grounded from the maze data, no KAG): top-edge corridor (the open top row, i.e., row 0).
+- Concrete corrective path (start -> goal) avoiding all fires:
+  - Start: (1,0)
+  - Up to: (0,0)
+  - Right to: (0,1)
+  - Right to: (0,2)
+  - Down to: (1,2)  (Goal)
+  - Action sequence (codes): Up (0), Right (3), Right (3), Down (1)
+  - This path avoids both eastern fire hazards at (1,1) and (2,1), using the safe top-row corridor and then stepping down to the goal.
+- One-sentence justification (grounded in section 3):
+  - The top-edge corridor provides a hazard-free route to the goal by bypassing the immediate fire at (1,1) and the adjacent cluster around (2,1), aligning with the corrective demonstrations that favored moving into the safe top row before heading to the goal.
+
+- Corridors and demo plan to fix the policy
+  - Corridor: top-edge corridor (row 0) is the safe transit channel to bypass the hazard cluster.
+  - Concrete corrective demonstration (one primary example):
+    - Demonstrate the top-corridor path: (1,0) Up to (0,0) → Right to (0,1) → Right to (0,2) → Down to (1,2) (goal).
+  - n_demos: 1
+  - demo_variations:
+    - Variation A: Shorter top-row demonstration illustrating only the essential bypass (1,0) Up to (0,0) → (0,0) Down? Not advisable; better to keep the same full corridor to show the safe route: Up to (0,0) → (0,1) → (0,2) → (1,2).
+    - Variation B: Alternative safe path that still bypasses the hazard, e.g., (1,0) Up to (0,0) → (0,0) Right to (0,1) → Down to (1,1)? Not allowed (fire). So Variation B would be identical to Variation A in this environment; thus a second variation would be a slightly different demonstration order but still using the top corridor (e.g., Up to (0,0) → Right to (0,1) → Right to (0,2) → Down to (1,2)).
+  - Rationale for choices (grounded in section 3 and 4):
+    - Section 3 shows the top-corridor path is the correct hazard-avoidant route. Given no cross-episode RAG evidence (section 4), a single corrective demonstration that clearly demonstrates the top-corridor route is the most direct fix to teach the agent to avoid stepping into the east-safe hazard cluster and to reach the goal safely.
+    - The corridor plan aligns with the corrective moves suggested at start_frame (0,0) and the highest_loss_frame (1,0) and end_frame (3,0) by anchoring the policy to a safe, consistent top-row route.
+
+Notes for downstream prescription system
+- The proposed corrective path emphasizes hazard avoidance over naive goal-seeking. The agent should learn to respect the immediate hazards (1,1) and (2,1) by choosing the top-row corridor before heading toward the goal.
+- The corrective plan uses a single, explicit demonstration for the primary safe corridor; if more demonstrations are desired to improve robustness, variations can reuse the same corridor with minor sequencing differences to reduce overfitting to a single demonstration.
+
+If you want me to format this into a FINAL_REC payload (corridor, path, n_demos, demo_variations, rationale) for downstream processing, tell me and I’ll provide the structured block accordingly.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(1,0)->(0,0)->(0,1)->(0,2)->(1,2)>
+n_demos: 1
+demo_variations: Primary top-edge corridor path: (1,0)->(0,0)->(0,1)->(0,2)->(1,2); natural timing offsets along the top-edge corridor are allowed.
+rationale: Top_edge is hazard-avoidant and bypasses the fires at (1,1) and (2,1), matching the section-5 corridor guidance.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tries to go downward from the start into the left/lower area instead of using the hazard-avoidant top-edge corridor (top_edge).
+
+2. WHAT should a good walkthrough look like in that area? A safe demonstration would start at (1,0), move Up to (0,0), then go Right along the top row to (0,1) and (0,2), and finally Down to the goal at (1,2).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer hazard-avoidant routing that uses the top-edge corridor to bypass nearby fires while still reaching the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? 1 demonstration is provided; variations can include minor timing offsets or delays while staying on the top-edge corridor to illustrate timing differences, but the corridor itself remains the same.

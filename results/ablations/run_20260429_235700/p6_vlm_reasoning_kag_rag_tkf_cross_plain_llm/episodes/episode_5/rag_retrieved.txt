@@ -1,0 +1,14 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.964 run=p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm ep=2 ---
+  Dynamic config: start=[0, 1] goal=[2, 0] fires=[['0', '3'], ['3', '0'], ['3', '4']]
+  Summary:        Root cause: The agent failed due to fire_collision, stepping onto a fire tile (3,0) before reaching the goal, after diverging from a safe corridor.
+
+Key configuration: Start at (0,1); goal at (2,0); fire hazards at (0,3), (3,0), (3,4); episode ended at step 18 with the agent on (3,0).
+
+Correct path: Use the top-edge corridor: (0,1) -> (0,0) -> (1,0) -> (2,0), reaching the goal without stepping on any fire tile.
+  Root cause:     pending
+
+--- rank=2 sim=0.944 run=p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm ep=4 ---
+  Dynamic config: start=[1, 0] goal=[1, 2] fires=[['1', '1'], ['2', '1'], ['4', '0']]
+  Summary:        The failure is due to the policy committing to a left-edge, vertical path and colliding with a fire at (4,0) instead of following a safe corridor. The episode configuration has start (1,0), goal (1,2), with fires at (1,1), (2,1), and (4,0). The correct safe path is the top-edge corridor: (1,0) -> (0,0) -> (0,1) -> (0,2) -> (1,2) (UP, RIGHT, RIGHT, DOWN), which avoids the central fires. This path routes along the top row to bypass central hazards before descending to the goal.
+  Root cause:     pending
