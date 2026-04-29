@@ -1,0 +1,86 @@
+=== ROOT CAUSE ANALYSIS ===
+1. TRAJECTORY RECONSTRUCTION
+- Episode context: 5x5 grid, dynamic randomization of Start, Goal, and Fires per episode. Fires are hazards that terminate the episode on contact with a large negative reward; Goal terminates with a large positive reward. The agent’s policy is vision-conditioned and uses a diffusion-based action sequence with action execution being the first in the denoised sequence.
+- Environment facts (from KAG):
+  - Start: [0, 1]; Goal: [2, 0]; Fires: [(0,3), (3,0), (3,4)]
+  - Nearest fire to the start is at (0,3) (distance 2 in grid steps), other fires at (3,0) and (3,4).
+  - Allowed moves: UP (−1,0), DOWN (1,0), LEFT (0,−1), RIGHT (0,1).
+  - Forbidden cells are walls (impassable); stepping into WALL yields a -0.5 penalty but the agent remains in place.
+  - FIRE tiles (like (0,3), (3,0), (3,4)) are enterable and terminate the episode on entry with −10.0 penalty.
+  - GOAL tile at (2,0) is enterable and ends the episode with +10.0 reward.
+- Step 0 (start frame): Agent at (0,1). Adjacent cells: (0,0) free, (0,2) free, (1,1) free. Fires located at (0,3), (3,0), (3,4) are not adjacent. Goal at (2,0) is two rows down and one column left (distance 3 to goal). A proximal fire risk exists if the agent starts moving toward the right; moving toward (0,2) would reduce distance to the fire at (0,3) from 2 to 1, increasing risk. The first corrective demonstration move proposed by the human viewer is DOWN to (1,1), which reduces distance to the goal (3 → 2) while not approaching the nearest fire.
+- Step 3 (highest_loss_frame): At step 3 the agent is at (1,0). Adjacent cells: Up (0,0) free, Down (2,0) Goal, Left off-grid, Right (1,1) free. Current Manhattan distance to the goal is 1. Fires are still not adjacent; nearest is (3,0) at distance 2. The corrective demonstration move proposed here is DOWN to (2,0), which directly reaches the goal and terminates positively if followed.
+- End frame (step 76): The agent is at (3,0) — a FIRE tile. Other fires are at (0,3) and (3,4). The final proposed corrective move is LEFT to (2,0) to reach the goal in one step and escape the current hazard tile. According to the KAG, entering a FIRE tile terminates the episode; stepping from a FIRE tile to the GOAL would be permitted, but the episode already shows termination on contact if the agent actually entered (3,0) earlier. The episode outcome is failure (not reaching GOAL) with 76 total steps and total reward −27.30.
+- Key observation: The corrective demonstration sequence presented by the analyst suggests a left-edge corridor strategy that would have kept the agent away from central fires and allowed a safe, direct approach to the goal along the column 0 path, i.e., (0,1) -> (0,0) -> (1,0) -> (2,0). However, the agent ended on a FIRE tile and did not reach the GOAL.
+
+2. FIRST WRONG DECISION
+- The earliest implied wrong decision appears to be a deviation from a left-edge corridor plan toward actions that could bring the agent into proximity with a central fire (notably around the top-middle region). The analyst’s advocated corrective demonstrations emphasize staying on or near the left edge (column 0) to avoid central fires, then proceeding to the GOAL along column 0. The lack of adherence to this corridor, especially given the start at (0,1) and the known fire placements, is the first indicator of suboptimal planning/rollout by the diffusion policy in this episode.
+
+3. WHY THE POLICY FAILED (reference the dynamic config and the KAG)
+- Fire generalization gap (fm_fire_collision): The agent frequently enters or sits on a FIRE tile due to insufficient generalization across start/goal/fire configurations. The KAG notes that fires are randomised per episode and that fire avoidance must generalize beyond seen demonstrations. Because the fires are randomised and the goal can appear in various places, a strategy that ignores a standard safe corridor (left_edge/top_edge/right_edge) may fail when the particular fire layout blocks other paths.
+- Corridor usage under dynamic randomness: The left-edge corridor and other corridor policies are designed to provide safe heuristics when fires are placed in central rows. In this episode, the GOAL at (2,0) lies on the left edge column, and the left-edge corridor is the most efficient safe path. The agent’s failure to consistently exploit such corridors indicates insufficient imitation of corridor-following behavior in the face of random fire placements.
+- Min-start–goal distance constraint (min_start_goal_manhattan = 4): The episode’s start/goal configuration ([0,1], [2,0]) yields a Manhattan distance of 3, which violates the stated minimum of 4. This suggests either an occasional deviation from the constraint in this particular demonstration or a need to ensure demonstrations cover configurations that respect the constraint. The policy must generalize to layouts that meet or exceed the minimum distance, as well as those that don’t, since randomization may produce near-boundary cases.
+- Observation/prediction horizons and state encoding: The policy uses a 4-step observation horizon and a 3-step prediction horizon, with a 14-dim state_vector; local-neighborhood cues are critical for hazard avoidance. If demonstrations underrepresent the combinations where the 3x3 neighborhood surrounding the agent encodes a fire hazard in the near future (e.g., (0,3) or (3,0) looming threats), the model may fail to preemptively route toward a corridor.
+- Deterministic action selection within a stochastic DDPM: The policy uses stochastic DDPM inference with multiple diffusion steps per inference; observed determinism of action ordering can still result in variability. However, the failure here is not purely stochasticity but a systemic lack of hazard-avoidance generalization and corridor-following in the presence of randomized fires.
+
+4. WHAT THE POLICY GOT WRONG
+- Fire avoidance generalization: The policy did not reliably avoid stepping onto or staying on FIRE tiles across randomised start/goal/fire configurations. This is the primary failure mode (fm_fire_collision) in this episode.
+- Underutilization of safe corridors: The left-edge corridor (and other corridors) are designed to shield the agent from central fires. The trajectory shows drift away from a corridor-led plan toward more aggressive or non- corridor-adherent paths, increasing exposure to hazards and reducing reliability of goal-reaching within the allowed steps.
+- Insufficient coverage of edge-case configurations: The episode configuration conflicts with the min_start_goal_manhattan constraint, highlighting the need for demonstrations that cover edge-case geometries (e.g., endpoints near the grid boundary with fires near corridors). The policy must learn from a distribution that includes the full range of randomized configurations, including those that approach the constraint threshold.
+- End-state hazard occupancy: Ending the episode on a FIRE tile indicates a breakdown in the learned hazard-avoidance policy, not simply a misstep in a single frame. The agent did not sustain a hazard-avoidant trajectory as it progressed, culminating in a contact that terminated the episode.
+
+5. REGIONS / CONFIGURATIONS NEEDING DATA
+- More demonstrations in left-edge corridor regimes: Collect demonstrations where the start is near the top-left, with varying fire placements, but where the left-edge corridor is clearly optimal (e.g., hazards placed in central rows but not blocking (0,0)-(2,0) path).
+- More demonstrations with GOAL along left edge: Enrich data where GOAL sits on the left column (like (2,0)) to encourage the agent to reach the GOAL by staying on column 0 as long as possible, then finishing the approach.
+- Fire-placement variance around critical corridor crossings: Include configurations where a central fire is placed just off the corridor line, requiring the policy to anticipate and preemptively adjust to avoid stepping into the corridor before it becomes unsafe.
+- Enforce min_start_goal_manhattan = 4 in demonstrations: Ensure demonstrations respect the distance constraint, or explicitly train variants with distance 3 to study generalization limits and adjust curriculum accordingly.
+
+6. FINAL RECOMMENDATION — output this block VERBATIM at the very end of your
+   response, between the markers <<<FINAL_REC>>> and <<<END_FINAL_REC>>>.
+   This block is parsed programmatically by downstream stages and MUST be
+   preserved word-for-word in the prescription. Do not add bullet points,
+   bold, or commentary inside the block. Use exactly these keys, one per line.
+
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 3
+demo_variations: left_edge corridor demonstrations across 3 variants of start/goal/hazard placements within the top-left quadrant ensuring a direct left-edge approach to the GOAL
+rationale: to teach the policy reliable hazard-avoidant traversal along the left-edge corridor when the GOAL lies on the left column and fires are placed in non-blocking positions
+<<<END_FINAL_REC>>>
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: NOT_FOUND
+
+[NOTE: No demo met the confidence threshold. The 2 closest matches (with sim scores) were shown to the reasoning model — see 'fallback_block' in tkf_result.json for details.]
+What was found in existing training demos:
+Verdict: NOT_FOUND
+
+  Match 1 (similarity=0.652): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(1, 0), (2, 3), (3, 1)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 2 (similarity=0.651): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(1, 2), (3, 0), (4, 1)]. The run was using the right column as the main route, moderately close to fire (2 steps away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 3 (similarity=0.647): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(2, 1), (2, 2)]. The run was staying near the top row before descending, moderately close to fire (2 steps away). The demo took 8 steps with actions: 4x RIGHT, 4x DOWN. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]
+  Match 4 (similarity=0.638): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(2, 1), (2, 2)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 8 steps with actions: 4x RIGHT, 4x DOWN. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]
+  Match 5 (similarity=0.636): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(1, 1), (3, 2), (3, 4)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 8 steps with actions: 4x DOWN, 4x RIGHT. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+Adjusted guidance: The demonstrations did not include any examples of successfully navigating along the left edge corridor, which is crucial when the goal is located in the left column and fires are positioned in non-blocking spots. The available demonstrations mainly show paths along the right column, top row, or bottom row, with successful hazard avoidance on those routes. To improve the policy’s reliability, it is important to provide clear examples of moves specifically down the left edge, carefully avoiding fires placed near but not blocking that path. This focused guidance ensures that the agent learns to take the safest and most direct route when the goal requires traveling along the left edge. Therefore, additional demonstrations tailored to the left-edge corridor with hazard avoidance are necessary to teach this behavior effectively.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 3
+demo_variations: left_edge corridor demonstrations across 3 variants of start/goal/hazard placements within the top-left quadrant ensuring a direct left-edge approach to the GOAL
+rationale: to teach the policy reliable hazard-avoidant traversal along the left-edge corridor when the GOAL lies on the left column and fires are placed in non-blocking positions
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion occurs in the left_edge corridor region. Specifically, starting from the initial position near the left side (start at (0,1)) the agent should hug the left edge to reach the Goal on the left column, but the policy would benefit from consistently following the left-edge path rather than veering into more central routes or taking risky shortcuts.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies, in plain English — you may reference the corridor name and the start/goal/fire layout)
+- A good walkthrough along the left_edge corridor would be: begin at the start position (0,1), move left to (0,0), then move down to (1,0), and finally move down to (2,0) to reach the GOAL located at (2,0). This path stays on the leftmost column (the left_edge corridor) and avoids the hazards placed to the center and bottom, ensuring a direct, safe approach to the GOAL.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to reliably follow the left_edge corridor when the GOAL is on the left column and fires are placed in non-blocking positions. The demonstration teaches hazard-avoidant behavior that keeps the agent on the left edge, enabling a direct approach to the GOAL while avoiding central fires.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state the n_demos value from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs. Variations should mirror the described demo_variations: left_edge corridor demonstrations across 3 variants of start/goal/hazard placements within the top-left quadrant ensuring a direct left-edge approach to the GOAL.
