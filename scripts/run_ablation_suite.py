@@ -245,13 +245,32 @@ def main():
         prof_dir.mkdir(parents=True, exist_ok=True)
 
         # ------------------------------------------------------------------ #
-        # Per-profile isolated RAG bank.                                     #
-        # The shared bank in master_cfg was leaking earlier-profile          #
-        # reasoning into later profiles, contaminating the RAG ablation      #
-        # signal. Each profile now sees only entries it stored itself        #
-        # within its own run, so p4 vs p5 measures the real effect of RAG.  #
+        # Per-profile isolated RAG bank — profile-level locality.            #
+        #                                                                    #
+        # Requirement: profile N must NEVER retrieve entries stored by       #
+        # profile M (M != N). e.g. profile 5 retrieving for episode 2 must  #
+        # NOT see profile 4's stored episode 2 — those are separate runs    #
+        # and the ablation signal collapses if they leak into each other.   #
+        #                                                                    #
+        # Two layers enforce this:                                           #
+        #                                                                    #
+        #   1. On-disk isolation: each profile gets its own bank directory   #
+        #      under suite_root/<profile>/rag_bank, freshly created for      #
+        #      this run. No two profiles ever read the same FAISS index.    #
+        #                                                                    #
+        #   2. Owner-id filter (defense-in-depth): RAGBank is constructed    #
+        #      in pipeline_runner with owner_run_id = profile dir name, and #
+        #      retrieve() drops any entry whose stored run_id != owner.     #
+        #      Even if (1) somehow regresses, (2) keeps retrieval profile-   #
+        #      local.                                                        #
         # ------------------------------------------------------------------ #
         profile_rag_path = prof_dir / "rag_bank"
+        # Ensure the per-profile bank starts empty for this suite run, so a   #
+        # stale bank from a previous suite invocation cannot leak in.        #
+        if profile_rag_path.exists():
+            shutil.rmtree(profile_rag_path)
+        profile_rag_path.mkdir(parents=True, exist_ok=True)
+
         prof_cfg.setdefault("rag", {})["bank_path"] = str(profile_rag_path)
 
         overrides = {

@@ -314,6 +314,7 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
                 top_k=int(rag_cfg.get("top_k", 3)),
                 sim_threshold=float(rag_cfg.get("sim_threshold", 0.3)),
                 clip_model=rag_cfg.get("clip_model", "openai/clip-vit-large-patch14"),
+                owner_run_id=run_id,
             )
         except Exception as e:
             print(f"[PipelineRunner] RAG init failed: {e}")
@@ -491,11 +492,17 @@ def rerun_pipeline_only(
     if config.get("pipeline", {}).get("use_rag", True):
         try:
             rag_cfg = config.get("rag", {})
+            # owner_run_id MUST equal the run_id passed to rag_bank.store() below
+            # (out_dir.name) so that retrieve() returns only entries from THIS
+            # profile. In the ablation suite out_dir.name is the profile name
+            # (e.g. "p5_vlm_reasoning_kag_rag_cross_plain_llm"), so each profile
+            # is fully isolated from every other profile.
             rag_bank = RAGBank(
                 bank_path=rag_cfg.get("bank_path", "results/rag_bank"),
                 top_k=int(rag_cfg.get("top_k", 3)),
                 sim_threshold=float(rag_cfg.get("sim_threshold", 0.3)),
                 clip_model=rag_cfg.get("clip_model", "openai/clip-vit-large-patch14"),
+                owner_run_id=out_dir.name,
             )
         except Exception as e:
             print(f"[Rerun] RAG init failed: {e}")
