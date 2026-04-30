@@ -444,6 +444,89 @@ def run_prescription(
     return prescription_text, combined
 
 
+def run_plain_prescription(
+    episode: Dict,
+    vision_report: str,
+    llm_cfg: Dict,
+) -> Tuple[str, str]:
+    """P1-style prescription: a plain LLM reads ONLY the VLM report and emits a
+    FINAL_REC + plain-English explanation. No reasoning chain, no KAG, no RAG,
+    no TKF. This makes profile P1 (`use_reasoning=false`, `use_plain_llm=true`)
+    actually produce a FINAL_REC the aggregator can cluster, instead of an
+    empty `[REASONING DISABLED]` placeholder.
+
+    Returns (prescription_text, combined_text).
+    """
+    model = str(llm_cfg.get("model", "gpt-5-nano-2025-08-07"))
+    max_tokens = int(llm_cfg.get("max_output_tokens", 16384))
+
+    dyn_str = _format_dynamic_config(episode)
+    ascii_grid = episode.get("ascii_grid", "")
+    success     = episode.get("success", False)
+    total_steps = episode.get("total_steps", 0)
+    total_reward = episode.get("total_reward", 0.0)
+
+    user_prompt = (
+        "You are a demonstration coach for a DAgger-style imitation learning system.\n"
+        "You have ONLY the VLM (vision) report of a failed maze episode — no reasoning,\n"
+        "no knowledge graph, no retrieved cases, no demo-coverage check. Produce the\n"
+        "FINAL_REC structured block from the VLM report alone, then a short plain-English\n"
+        "explanation. This is the P1 baseline.\n\n"
+        f"MAZE LAYOUT:\n{ascii_grid}\n\n"
+        f"EPISODE DYNAMIC CONFIG:\n  {dyn_str}\n\n"
+        f"EPISODE OUTCOME:\n"
+        f"  Success      : {success}\n"
+        f"  Total steps  : {total_steps}\n"
+        f"  Total reward : {float(total_reward):.2f}\n\n"
+        f"VISION ANALYSIS FROM VLM:\n{vision_report or '(no VLM report)'}\n\n"
+        "RULES:\n"
+        "  - corridor MUST be one of: left_edge | top_edge | right_edge | bottom_edge | central_mixed\n"
+        "  - steps MUST be a coordinate path using arrow notation, e.g. (0,1)->(0,0)->(1,0)\n"
+        "  - n_demos MUST be an integer between 1 and 10\n"
+        "  - demo_variations MUST be a single line\n"
+        "  - rationale MUST be a single sentence and reference what the VLM observed\n\n"
+        "OUTPUT FORMAT — produce EXACTLY this structure (no preamble before the markers):\n\n"
+        "<<<FINAL_REC>>>\n"
+        "corridor: <left_edge | top_edge | right_edge | bottom_edge | central_mixed>\n"
+        "steps: <(r,c)->(r,c)->...->(r,c)>\n"
+        "n_demos: <integer 1-10>\n"
+        "demo_variations: <one-line description>\n"
+        "rationale: <one sentence grounded in the VLM report>\n"
+        "<<<END_FINAL_REC>>>\n\n"
+        "PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n"
+        "1. WHERE in the maze does the AI get confused? (use the corridor named in FINAL_REC)\n"
+        "2. WHAT should a good walkthrough look like? (describe the path FINAL_REC specifies)\n"
+        "3. WHAT will the AI learn from seeing that walkthrough?\n"
+        "4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos and demo_variations)"
+    )
+
+    client = _oai_client()
+    prescription_text = ""
+    try:
+        prescription_text = _chat_plain(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a demonstration coach producing a FINAL_REC block from a "
+                    "VLM report only. Be specific (corridor, coordinate path, n_demos), "
+                    "ground every field in something the VLM actually said, and never "
+                    "invent KAG / RAG / TKF references — those signals are not available "
+                    "in this profile."},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        prescription_text = f"[PRESCRIPTION ERROR: {e}]"
+
+    combined = (
+        "=== VLM-ONLY PLAIN LLM PRESCRIPTION (P1 baseline) ===\n"
+        f"{prescription_text}\n"
+    )
+    return prescription_text, combined
+
+
 def run_reasoning(
     episode: Dict,
     vision_report: str,
