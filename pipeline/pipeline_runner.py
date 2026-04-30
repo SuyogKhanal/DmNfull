@@ -15,7 +15,13 @@ from pipeline.rollout import run_rollouts
 from pipeline.vlm_analyser import analyse_failure, save_vlm_report
 from pipeline.kag_loader import load_and_format, save_kag_context
 from pipeline.rag_bank import RAGBank, save_rag_retrieved
-from pipeline.reasoning import run_analysis, run_prescription, summarise_episode, save_reasoning
+from pipeline.reasoning import (
+    run_analysis,
+    run_prescription,
+    run_plain_prescription,
+    summarise_episode,
+    save_reasoning,
+)
 from pipeline.knowledge_fetcher import run_knowledge_check, format_tkf_block, save_tkf_result
 from pipeline.aggregator import (
     run_aggregator,
@@ -223,6 +229,7 @@ def _build_phaseB_for_episode(
     # ------------------------------------------------------------------ #
     prescription_text = ""
     combined_text = ""
+    used_plain_only = False
     if use_reasoning:
         print(f"  [Phase B][ep {episode_id}] Reasoning — prescription pass...")
         prescription_text, combined_text = run_prescription(
@@ -235,6 +242,20 @@ def _build_phaseB_for_episode(
         )
         if track_cfg.get("save_prescriptions", True):
             save_reasoning(combined_text, episode_dir)
+    elif use_vlm and use_plain_llm:
+        # P1 baseline: no reasoning chain, but a plain LLM still reads the VLM
+        # report and emits a FINAL_REC + plain-English explanation. Without
+        # this, P1's per-episode prescription is empty and the aggregator has
+        # nothing to cluster — so P1 produces no actionable demos.
+        print(f"  [Phase B][ep {episode_id}] Plain LLM prescription (P1 baseline)...")
+        prescription_text, combined_text = run_plain_prescription(
+            episode=episode,
+            vision_report=vlm_report if use_vlm else "",
+            llm_cfg=llm_cfg,
+        )
+        used_plain_only = True
+        if track_cfg.get("save_prescriptions", True):
+            save_reasoning(combined_text, episode_dir)
     else:
         combined_text = "[REASONING DISABLED]\n" + tkf_block
         if track_cfg.get("save_prescriptions", True):
@@ -242,6 +263,10 @@ def _build_phaseB_for_episode(
 
     # ------------------------------------------------------------------ #
     # PASS 4: Plain LLM summariser (per-episode, no cache)                #
+    # The summariser takes the prescription text and condenses it into a  #
+    # 3-5 sentence summary used by the aggregator. P1 (used_plain_only)   #
+    # already produced a compact LLM output, so we pass that summary text #
+    # through directly rather than burning another LLM call.              #
     # ------------------------------------------------------------------ #
     if use_reasoning and use_plain_llm:
         summary = summarise_episode(
@@ -249,6 +274,8 @@ def _build_phaseB_for_episode(
         )
     elif use_reasoning:
         summary = combined_text
+    elif used_plain_only:
+        summary = prescription_text or combined_text
     else:
         summary = (
             f"Reasoning disabled. Failure at episode {episode_id} "
