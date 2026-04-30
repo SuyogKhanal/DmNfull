@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 from PIL import Image
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -271,9 +272,12 @@ def run_rollouts(config: Dict, run_dir: Path) -> Dict:
     episodes_dir.mkdir(parents=True, exist_ok=True)
 
     all_episodes: List[Dict] = []
-    for ep_idx in range(n_episodes):
+    rollout_t0 = time.time()
+    n_succ_so_far = 0
+    pbar = tqdm(range(n_episodes), desc="rollout", unit="ep", dynamic_ncols=True)
+    for ep_idx in pbar:
         seed = base_seed + ep_idx
-        print(f"\n[Rollout] Episode {ep_idx+1}/{n_episodes}  seed={seed}")
+        ep_t0 = time.time()
         ed = _run_single_episode(
             policy=policy,
             maze_cfg=maze_cfg,
@@ -282,7 +286,22 @@ def run_rollouts(config: Dict, run_dir: Path) -> Dict:
             obs_horizon=obs_horizon,
             use_vision=use_vision,
         )
-        print(f"[Rollout]  → steps={ed['total_steps']} reward={ed['total_reward']:.2f} success={ed['success']}")
+        if ed["success"]:
+            n_succ_so_far += 1
+        sr_so_far = n_succ_so_far / (ep_idx + 1)
+        pbar.set_postfix(
+            seed=seed,
+            steps=ed["total_steps"],
+            reward=f"{ed['total_reward']:.2f}",
+            ok=ed["success"],
+            sr=f"{sr_so_far:.2f}",
+        )
+        tqdm.write(
+            f"[Rollout] ep {ep_idx+1}/{n_episodes} seed={seed} "
+            f"steps={ed['total_steps']} reward={ed['total_reward']:.2f} "
+            f"success={ed['success']} sr_running={sr_so_far:.2f} "
+            f"({time.time()-ep_t0:.1f}s)"
+        )
         episode_dir = episodes_dir / f"episode_{ep_idx}"
         if bool(track_cfg.get("save_frames", True)):
             ed["frame_paths"] = _save_key_frames(ed["steps"], ed["key_frames"], episode_dir)
@@ -298,7 +317,15 @@ def run_rollouts(config: Dict, run_dir: Path) -> Dict:
 
     successes = [e for e in all_episodes if e["success"]]
     failures  = [e for e in all_episodes if not e["success"]]
-    print(f"\n[Rollout] Summary: {len(successes)}/{len(all_episodes)} succeeded, {len(failures)} failed")
+    elapsed = time.time() - rollout_t0
+    print(
+        f"\n[Rollout] DONE in {elapsed:.1f}s | "
+        f"{len(successes)}/{len(all_episodes)} succeeded | "
+        f"{len(failures)} failed | "
+        f"sr={len(successes)/max(1,len(all_episodes)):.2f}"
+    )
+    if failures:
+        print(f"[Rollout] Failed episode ids: {[e['episode_id'] for e in failures]}")
 
     return {
         "meta":         meta,
