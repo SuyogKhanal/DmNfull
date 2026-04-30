@@ -378,6 +378,7 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
             llm_cfg=config.get("llm", {}),
             pipeline_flags=config.get("pipeline", {}),
             cache=cache,
+            kag_context=kag_context,
         )
 
     full_output = {
