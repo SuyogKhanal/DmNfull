@@ -52,8 +52,55 @@ def parse_args():
     p.add_argument("--layout_id", type=str, default=None,
                    help="Tag included in saved demo filenames (e.g. 'p3_round2_demo1').")
     p.add_argument("--single_episode", action="store_true",
-                   help="Quit pygame after the first saved demo (used by active_loop).")
+                   help="Quit pygame after the first saved demo.")
+    p.add_argument("--layouts-from", type=str, default=None, dest="layouts_from",
+                   help="Path to a recommended_layouts.json (or any JSON with a top-level "
+                        "'layouts' list). When set, play_maze walks through every layout in "
+                        "the file: load layout -> user records and presses S -> auto-advance "
+                        "to next layout. After the last layout, pygame exits. While in this "
+                        "mode press N to skip the current layout without saving, R to retry "
+                        "the SAME layout (same start/goal/fires), or Q to abort.")
     return p.parse_args()
+
+
+def _load_layouts_from_file(path: str) -> List[dict]:
+    """Load and validate the flat layouts list written by active_loop /
+    run_round into recommended_layouts.json.
+
+    Accepts:
+      {"layouts": [ {start_pos, goal_pos, fire_positions, ...}, ... ]}
+      or a bare list of layouts.
+
+    Each layout MUST contain start_pos, goal_pos, fire_positions. Optional:
+    n_repetitions, repetition, layout_index, parent_demo_id, corridor,
+    rationale — these are surfaced in the on-screen status and the
+    auto-generated layout_id so demos are traceable.
+    """
+    with open(path, "r") as f:
+        data = json.load(f)
+    layouts = data.get("layouts") if isinstance(data, dict) else data
+    if not isinstance(layouts, list) or not layouts:
+        raise ValueError(f"{path}: no 'layouts' list found")
+    out = []
+    for i, l in enumerate(layouts):
+        if not all(k in l for k in ("start_pos", "goal_pos", "fire_positions")):
+            print(f"[play_maze] WARNING: layout #{i} missing required fields; skipping.")
+            continue
+        out.append(l)
+    if not out:
+        raise ValueError(f"{path}: no usable layouts after validation")
+    return out
+
+
+def _layout_id_for(layout: dict, idx: int, total: int) -> str:
+    """Build a stable, descriptive filename tag from a layout entry."""
+    if layout.get("parent_demo_id") is not None and layout.get("layout_index") is not None:
+        return (
+            f"demo{layout['parent_demo_id']}"
+            f"_layout{layout['layout_index']}"
+            f"_rep{layout.get('repetition','1')}"
+        )
+    return f"layout{idx+1}of{total}"
 
 
 def create_env(
@@ -259,32 +306,88 @@ def step_and_log(env, action, obs_seq, action_seq, reward_seq):
     return terminated, truncated
 
 
+def _layout_to_forced(layout: dict):
+    """Return (forced_start, forced_goal, forced_fires) tuples for create_env."""
+    return (
+        tuple(layout["start_pos"]),
+        tuple(layout["goal_pos"]),
+        [tuple(f) for f in layout["fire_positions"]],
+    )
+
+
+def _print_layout_banner(layout: dict, idx: int, total: int):
+    print()
+    print("-" * 72)
+    print(f"[play_maze] LAYOUT {idx+1}/{total}")
+    print(f"  start={layout['start_pos']}  goal={layout['goal_pos']}  fires={layout['fire_positions']}")
+    if layout.get("corridor"):
+        print(f"  corridor   : {layout['corridor']}")
+    if layout.get("repetition") and layout.get("n_repetitions"):
+        print(f"  repetition : {layout['repetition']}/{layout['n_repetitions']}")
+    if layout.get("guidance"):
+        print(f"  guidance   : {layout['guidance']}")
+    if layout.get("rationale"):
+        print(f"  rationale  : {layout['rationale']}")
+    print("  [S]ave -> next layout   [N] skip   [R] retry same layout   [Q] quit")
+    print("-" * 72)
+
+
 def main():
-    """Entry point: runs the interactive human play loop with dynamic maze support."""
+    """Entry point: runs the interactive human play loop.
+
+    Three modes:
+      1. Free-roam (no flags): random layouts each episode (legacy behaviour).
+      2. Single forced layout (--start/--goal/--fires): one layout, optional
+         --single_episode to close after one save.
+      3. Layout queue (--layouts-from <json>): walks every layout in the file,
+         auto-advances on save, supports skip / retry / abort.
+    """
     global FIRE_MODE
     args = parse_args()
 
     demo_dir = args.demo_dir
     os.makedirs(demo_dir, exist_ok=True)
 
+    # ------------------------------------------------------------------ #
+    # Resolve the layout source for this session.                         #
+    # When --layouts-from is set we ignore --start/--goal/--fires and run #
+    # through the whole queue. The first layout's spec becomes the active #
+    # forced_start/forced_goal/forced_fires for create_env().             #
+    # ------------------------------------------------------------------ #
+    layouts_queue: List[dict] = []
+    layout_idx = 0
+    if args.layouts_from:
+        layouts_queue = _load_layouts_from_file(args.layouts_from)
+        print(f"[play_maze] Loaded {len(layouts_queue)} layouts from {args.layouts_from}")
+        first = layouts_queue[0]
+        forced_start, forced_goal, forced_fires = _layout_to_forced(first)
+        active_layout_id = args.layout_id or _layout_id_for(first, 0, len(layouts_queue))
+    else:
+        forced_start = args.start
+        forced_goal  = args.goal
+        forced_fires = args.fires
+        active_layout_id = args.layout_id
+
     demos_at_start = count_saved_demos(demo_dir)
     print(f"Maze Nav — {MAZE_NAME}")
     print(f"Demos already in {demo_dir}: {demos_at_start}")
-    if args.start or args.goal or args.fires:
-        print(f"FORCED LAYOUT: start={args.start} goal={args.goal} fires={args.fires}")
-        if args.layout_id:
-            print(f"Layout id: {args.layout_id}")
-    if args.single_episode:
+    if forced_start or forced_goal or forced_fires:
+        print(f"FORCED LAYOUT: start={forced_start} goal={forced_goal} fires={forced_fires}")
+    if active_layout_id:
+        print(f"Layout id: {active_layout_id}")
+    if args.single_episode and not layouts_queue:
         print("SINGLE EPISODE MODE: pygame will close after one save.")
+    if layouts_queue:
+        _print_layout_banner(layouts_queue[0], 0, len(layouts_queue))
     print("Drag or arrow keys to move | R=reset | S=save | F=toggle fire mode | Q=quit\n")
 
     episode = 1
     env, obs_seq, action_seq, reward_seq = reset_episode(
         FIRE_MODE, episode,
         demo_dir=demo_dir,
-        forced_start=args.start,
-        forced_goal=args.goal,
-        forced_fires=args.fires,
+        forced_start=forced_start,
+        forced_goal=forced_goal,
+        forced_fires=forced_fires,
     )
 
     drag_active      = False
@@ -344,14 +447,40 @@ def main():
                     print(f"Fire mode → {FIRE_MODE.upper()} (takes effect on next reset)")
 
                 elif event.key == pygame.K_r:
+                    # Reset to the SAME layout (queue mode keeps current layout;
+                    # free-roam re-rolls because forced_* are all None).
                     env.close()
                     episode += 1
                     env, obs_seq, action_seq, reward_seq = reset_episode(
                         FIRE_MODE, episode,
                         demo_dir=demo_dir,
-                        forced_start=args.start,
-                        forced_goal=args.goal,
-                        forced_fires=args.fires,
+                        forced_start=forced_start,
+                        forced_goal=forced_goal,
+                        forced_fires=forced_fires,
+                    )
+                    drag_active      = False
+                    drag_start_pixel = None
+
+                elif event.key == pygame.K_n and layouts_queue:
+                    # Skip to next layout in the queue without saving.
+                    print(f"[play_maze] Skipping layout {layout_idx+1}/{len(layouts_queue)} (no save).")
+                    layout_idx += 1
+                    if layout_idx >= len(layouts_queue):
+                        print("[play_maze] Skipped past last layout; closing pygame.")
+                        running = False
+                        break
+                    nxt = layouts_queue[layout_idx]
+                    forced_start, forced_goal, forced_fires = _layout_to_forced(nxt)
+                    active_layout_id = _layout_id_for(nxt, layout_idx, len(layouts_queue))
+                    _print_layout_banner(nxt, layout_idx, len(layouts_queue))
+                    env.close()
+                    episode += 1
+                    env, obs_seq, action_seq, reward_seq = reset_episode(
+                        FIRE_MODE, episode, attempt=episode,
+                        demo_dir=demo_dir,
+                        forced_start=forced_start,
+                        forced_goal=forced_goal,
+                        forced_fires=forced_fires,
                     )
                     drag_active      = False
                     drag_start_pixel = None
@@ -360,25 +489,50 @@ def main():
                     if action_seq:
                         saved_traj = env.get_trajectory()
                         save_demo(env, obs_seq, action_seq, reward_seq,
-                                  demo_dir=demo_dir, layout_id=args.layout_id)
+                                  demo_dir=demo_dir, layout_id=active_layout_id)
                         draw_trajectory_overlay(env, saved_traj)
                         pygame.time.wait(1500)
-                        if args.single_episode:
+
+                        # Decide what to do AFTER the save based on which mode we're in.
+                        if layouts_queue:
+                            layout_idx += 1
+                            if layout_idx >= len(layouts_queue):
+                                print(f"[play_maze] All {len(layouts_queue)} layouts recorded. Closing pygame.")
+                                running = False
+                                break
+                            nxt = layouts_queue[layout_idx]
+                            forced_start, forced_goal, forced_fires = _layout_to_forced(nxt)
+                            active_layout_id = _layout_id_for(nxt, layout_idx, len(layouts_queue))
+                            _print_layout_banner(nxt, layout_idx, len(layouts_queue))
+                            env.close()
+                            episode += 1
+                            env, obs_seq, action_seq, reward_seq = reset_episode(
+                                FIRE_MODE, episode, attempt=episode,
+                                demo_dir=demo_dir,
+                                forced_start=forced_start,
+                                forced_goal=forced_goal,
+                                forced_fires=forced_fires,
+                            )
+                            drag_active      = False
+                            drag_start_pixel = None
+                            print(f"Auto-advanced to layout {layout_idx+1}/{len(layouts_queue)}.")
+                        elif args.single_episode:
                             print("[play_maze] --single_episode set; closing pygame.")
                             running = False
                             break
-                        env.close()
-                        episode += 1
-                        env, obs_seq, action_seq, reward_seq = reset_episode(
-                            FIRE_MODE, episode, attempt=episode,
-                            demo_dir=demo_dir,
-                            forced_start=args.start,
-                            forced_goal=args.goal,
-                            forced_fires=args.fires,
-                        )
-                        drag_active      = False
-                        drag_start_pixel = None
-                        print("Auto-reset. Ready for next demo!")
+                        else:
+                            env.close()
+                            episode += 1
+                            env, obs_seq, action_seq, reward_seq = reset_episode(
+                                FIRE_MODE, episode, attempt=episode,
+                                demo_dir=demo_dir,
+                                forced_start=forced_start,
+                                forced_goal=forced_goal,
+                                forced_fires=forced_fires,
+                            )
+                            drag_active      = False
+                            drag_start_pixel = None
+                            print("Auto-reset. Ready for next demo!")
                     else:
                         print("No actions recorded yet.")
 
