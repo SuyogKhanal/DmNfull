@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from tqdm.auto import tqdm
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -355,9 +357,16 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     failures = [e for e in rollout_result["all_episodes"] if not e["success"]]
     failure_ids = [e["episode_id"] for e in failures]
     print(f"\n{'='*70}\n[PipelineRunner] PHASE B — {len(failures)} failures\n{'='*70}")
+    if failures:
+        print(f"[PipelineRunner] failure_ids={failure_ids}")
 
+    phase_b_t0 = time.time()
     per_episode: List[Dict] = []
-    for ed in failures:
+    pbar = tqdm(failures, desc="phase B", unit="ep", dynamic_ncols=True) if failures else failures
+    for ed in pbar:
+        ep_t0 = time.time()
+        if hasattr(pbar, "set_postfix"):
+            pbar.set_postfix(ep=ed["episode_id"])
         episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
         per_episode.append(
             _build_phaseB_for_episode(
@@ -365,11 +374,15 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
                 run_id, cache=cache, rollout_id=run_id,
             )
         )
+        tqdm.write(f"[PipelineRunner] Phase B ep {ed['episode_id']} done in {time.time()-ep_t0:.1f}s")
+    if failures:
+        print(f"[PipelineRunner] Phase B total: {time.time()-phase_b_t0:.1f}s for {len(failures)} failures")
 
     cross_text = ""
     structured: Dict = {}
     if config.get("pipeline", {}).get("use_aggregator", True) and failures:
         print(f"\n{'='*70}\n[PipelineRunner] PHASE C — aggregator\n{'='*70}")
+        phase_c_t0 = time.time()
         maze_ascii = failures[0].get("ascii_grid", "")
         cross_text, _raw, structured = run_aggregator(
             failure_summaries=per_episode,
@@ -379,6 +392,15 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
             pipeline_flags=config.get("pipeline", {}),
             cache=cache,
             kag_context=kag_context,
+        )
+        n_clusters = len((structured or {}).get("failure_clusters", []) or [])
+        n_pres     = len((structured or {}).get("demonstration_prescriptions", []) or [])
+        n_layouts  = sum(len(p.get("recommended_layouts", []) or []) for p in (structured or {}).get("demonstration_prescriptions", []) or [])
+        total_demos = (structured or {}).get("total_demonstrations_needed", "?")
+        print(
+            f"[PipelineRunner] Phase C done in {time.time()-phase_c_t0:.1f}s | "
+            f"clusters={n_clusters} | prescriptions={n_pres} | layouts={n_layouts} | "
+            f"total_demos_needed={total_demos}"
         )
 
     full_output = {
@@ -541,8 +563,17 @@ def rerun_pipeline_only(
         except Exception as e:
             print(f"[Rerun] RAG init failed: {e}")
 
+    print(f"\n{'='*70}\n[Rerun] PHASE B — {len(failures)} failures\n{'='*70}")
+    if failures:
+        print(f"[Rerun] failure_ids={[f['episode_id'] for f in failures]}")
+
     per_episode = []
-    for ed in failures:
+    phase_b_t0 = time.time()
+    pbar = tqdm(failures, desc="phase B (rerun)", unit="ep", dynamic_ncols=True) if failures else failures
+    for ed in pbar:
+        ep_t0 = time.time()
+        if hasattr(pbar, "set_postfix"):
+            pbar.set_postfix(ep=ed["episode_id"])
         episode_dir = out_dir / "episodes" / f"episode_{ed['episode_id']}"
         per_episode.append(
             _build_phaseB_for_episode(
@@ -550,10 +581,15 @@ def rerun_pipeline_only(
                 out_dir.name, cache=cache, rollout_id=rollout_id,
             )
         )
+        tqdm.write(f"[Rerun] Phase B ep {ed['episode_id']} done in {time.time()-ep_t0:.1f}s")
+    if failures:
+        print(f"[Rerun] Phase B total: {time.time()-phase_b_t0:.1f}s for {len(failures)} failures")
 
     cross_text = ""
     structured: Dict = {}
     if config.get("pipeline", {}).get("use_aggregator", True) and failures:
+        print(f"\n{'='*70}\n[Rerun] PHASE C — aggregator\n{'='*70}")
+        phase_c_t0 = time.time()
         maze_ascii = failures[0].get("ascii_grid", "")
         cross_text, _raw, structured = run_aggregator(
             failure_summaries=per_episode,
@@ -562,6 +598,16 @@ def rerun_pipeline_only(
             llm_cfg=config.get("llm", {}),
             pipeline_flags=config.get("pipeline", {}),
             cache=cache,
+            kag_context=kag_context,
+        )
+        n_clusters = len((structured or {}).get("failure_clusters", []) or [])
+        n_pres     = len((structured or {}).get("demonstration_prescriptions", []) or [])
+        n_layouts  = sum(len(p.get("recommended_layouts", []) or []) for p in (structured or {}).get("demonstration_prescriptions", []) or [])
+        total_demos = (structured or {}).get("total_demonstrations_needed", "?")
+        print(
+            f"[Rerun] Phase C done in {time.time()-phase_c_t0:.1f}s | "
+            f"clusters={n_clusters} | prescriptions={n_pres} | layouts={n_layouts} | "
+            f"total_demos_needed={total_demos}"
         )
 
     full_output = {

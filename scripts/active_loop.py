@@ -74,6 +74,8 @@ from pathlib import Path
 from statistics import mean, pstdev
 from typing import Dict, List, Optional, Tuple
 
+from tqdm.auto import tqdm
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS   = REPO_ROOT / "scripts"
 RESULTS   = REPO_ROOT / "results"
@@ -86,6 +88,22 @@ BASELINE_CKPT_DEFAULT = CHECKPOINT_DIR / "baseline.pth"
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+# ---------------------------------------------------------------------------
+# Logging helpers.
+# ---------------------------------------------------------------------------
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _section(title: str, char: str = "=", width: int = 80):
+    bar = char * width
+    print(f"\n{bar}\n[{_ts()}] [active_loop] {title}\n{bar}")
+
+
+def _info(msg: str):
+    print(f"[{_ts()}] [active_loop] {msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -173,15 +191,20 @@ def run_train(resume: bool, demo_paths: Optional[str] = None) -> str:
     (baseline demos UNION this profile's accumulated active-loop demos),
     which is what defends against catastrophic forgetting between rounds.
     """
-    cmd = [sys.executable, str(SCRIPTS / "train_diffusion.py")]
+    cmd = [sys.executable, "-u", str(SCRIPTS / "train_diffusion.py")]  # -u: unbuffered so tqdm streams live
     if resume:
         cmd.append("--resume")
     if demo_paths:
         cmd += ["--demo_paths", demo_paths]
-    print(f"\n[active_loop] Training: {' '.join(cmd)}")
+    _section(f"TRAIN — resume={resume}", char="-")
+    _info(f"command: {' '.join(cmd)}")
+    if demo_paths:
+        _info(f"demo globs: {demo_paths}")
+    t0 = time.time()
     rc, out = _stream_subprocess(cmd)
     if rc != 0:
         raise RuntimeError(f"train_diffusion.py exited with code {rc}")
+    _info(f"TRAIN done in {(time.time()-t0)/60:.1f}m")
     return out
 
 
@@ -232,8 +255,13 @@ def run_eval(
 
     # Pin the pipeline output directory so we don't have to scrape RUNS_DIR.
     round_dir.mkdir(parents=True, exist_ok=True)
+    _section(f"EVAL — in-process pipeline → {round_dir.name}", char="-")
+    _info(f"profile yaml : {profile_yaml}")
+    _info(f"base config  : {base_config}")
+    _info(f"n_episodes   : {cfg.get('rollout',{}).get('n_episodes')}  seed={cfg.get('rollout',{}).get('seed')}")
+    _info(f"pipeline flags: {cfg.get('pipeline',{})}")
+    _info(f"rag bank dir : {rag_path}")
     started_at = time.time()
-    print(f"\n[active_loop] Eval (in-process) → {round_dir}")
     run_pipeline(cfg, run_dir=round_dir)
     full_output_path = round_dir / "full_output.json"
     if not full_output_path.exists():
@@ -241,6 +269,7 @@ def run_eval(
             f"Pipeline finished but {full_output_path} was not written "
             f"(elapsed={time.time()-started_at:.1f}s)."
         )
+    _info(f"EVAL done in {time.time()-started_at:.1f}s → {full_output_path}")
     return full_output_path
 
 
@@ -607,19 +636,31 @@ def run_demo_collection_for_round(
         }, f, indent=2, default=str)
 
     if not layouts:
-        print("\n[active_loop] No recommended layouts this round.")
+        _info("No recommended layouts this round.")
         if not no_prompt:
             input("→ Press ENTER to continue to the next round.\n")
         return layouts
 
-    print(f"\n[active_loop] {len(layouts)} layout-driven demo session(s) queued.")
-    print(f"[active_loop] Demos will save to: {profile_demo_dir_for_round}")
+    _section(f"DEMO COLLECTION — {len(layouts)} layout(s) queued", char="-")
+    _info(f"demos will save to: {profile_demo_dir_for_round}")
+    _info(f"profile={profile_name}  loop={loop_id}  round={rnd}")
+    if no_pygame:
+        _info("--no-pygame set; layouts will be recorded to recommended_layouts.json only.")
 
-    for i, layout in enumerate(layouts, 1):
+    pbar = tqdm(layouts, desc=f"layouts r{rnd}", unit="demo", dynamic_ncols=True)
+    for i, layout in enumerate(pbar, 1):
+        pbar.set_postfix(
+            corridor=layout["corridor"],
+            start=layout["start_pos"],
+            goal=layout["goal_pos"],
+            rep=f"{layout['repetition']}/{layout['n_repetitions']}",
+        )
         launch_play_maze_for_layout(
             layout, profile_name, loop_id, rnd, i,
             demo_dir=profile_demo_dir_for_round, no_pygame=no_pygame,
         )
+        n_collected = count_demos_in(profile_demo_dir_for_round)
+        _info(f"after layout {i}/{len(layouts)}: demos in this round dir = {n_collected}")
 
     if not no_prompt:
         input(
@@ -721,31 +762,43 @@ def main():
     with open(loop_root / "loop_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2, default=str)
 
-    print(f"\n{'='*80}")
-    print(f"[active_loop] Profile          : {profile_name}")
-    print(f"[active_loop] YAML             : {profile_yaml}")
-    print(f"[active_loop] Loop dir         : {loop_root}")
-    print(f"[active_loop] Profile demos    : {profile_demo_dir}")
-    print(f"[active_loop] Training globs   : {demo_paths_arg}")
-    print(f"[active_loop] Baseline demos   : {baseline_demos}")
-    print(f"[active_loop] Target SR / max  : {args.target_sr:.2f} / {args.rounds} rounds")
-    print(f"{'='*80}\n")
+    _section(f"ACTIVE LOOP START — profile={profile_name}", char="=")
+    _info(f"profile          : {profile_name}")
+    _info(f"yaml             : {profile_yaml}")
+    _info(f"loop dir         : {loop_root}")
+    _info(f"profile demos    : {profile_demo_dir}")
+    _info(f"training globs   : {demo_paths_arg}")
+    _info(f"baseline demos   : {baseline_demos}")
+    _info(f"baseline ckpt    : {baseline_path} (restored={not args.skip_baseline_restore})")
+    _info(f"target SR / max  : {args.target_sr:.2f} / {args.rounds} rounds")
+    _info(f"pygame launches  : {'OFF (--no-pygame)' if args.no_pygame else 'ON'}")
+    _info(f"prompts          : {'OFF (--no-demo-prompt)' if args.no_demo_prompt else 'ON'}")
 
     print_table_header()
     cumulative_regret = 0.0
     rounds_to_target: Optional[int] = None
     last_metrics: Optional[Dict] = None
     rounds_completed = 0
+    loop_t0 = time.time()
 
-    for rnd in range(1, args.rounds + 1):
+    rounds_pbar = tqdm(
+        range(1, args.rounds + 1),
+        desc=f"loop {profile_name}",
+        unit="round",
+        dynamic_ncols=True,
+    )
+    for rnd in rounds_pbar:
         rounds_completed = rnd
-        print(f"\n{'='*80}\n[active_loop] Round {rnd}/{args.rounds}  profile={profile_name}\n{'='*80}")
+        round_t0 = time.time()
+        _section(f"ROUND {rnd}/{args.rounds} — profile={profile_name}", char="=")
+        _info(f"loop_id={loop_id}  loop_elapsed={(time.time()-loop_t0)/60:.1f}m")
         round_start_demos = count_demos_in(profile_demo_dir)
+        _info(f"profile demos so far: {round_start_demos}")
         round_dir = loop_root / f"round_{rnd}"
         round_dir.mkdir(parents=True, exist_ok=True)
 
         if rnd == 1 and args.skip_train_first_round:
-            print("[active_loop] Skipping training before round 1 (using restored baseline weights).")
+            _info("Skipping training before round 1 (using restored baseline weights).")
             train_loss = float("nan")
         else:
             # Always train on the FULL aggregated dataset for this profile —
@@ -753,6 +806,7 @@ def main():
             # catastrophic-forgetting defense the user explicitly asked for.
             train_stdout = run_train(resume=(rnd > 1), demo_paths=demo_paths_arg)
             train_loss = parse_train_loss(train_stdout)
+            _info(f"parsed train_loss = {train_loss}")
 
         full_output_path = run_eval(
             profile_yaml=profile_yaml,
@@ -771,6 +825,18 @@ def main():
 
         save_round_artefacts(round_dir, metrics, full_output_path)
         print_table_row(rnd, metrics)
+        _info(
+            f"round {rnd} took {time.time()-round_t0:.1f}s | "
+            f"SR={metrics['success_rate']:.2f} | "
+            f"failures={metrics['n_failures']} | "
+            f"profile_demos={metrics['total_profile_demos']} (+{metrics['demos_added']})"
+        )
+        rounds_pbar.set_postfix(
+            sr=f"{metrics['success_rate']:.2f}",
+            target=f"{args.target_sr:.2f}",
+            demos=metrics["total_profile_demos"],
+            cum_regret=f"{metrics['cumulative_regret']:.2f}",
+        )
 
         record = {
             "round":     rnd,
@@ -785,9 +851,9 @@ def main():
 
         if metrics["success_rate"] >= args.target_sr:
             rounds_to_target = rnd
-            print(
-                f"\n[active_loop] Target {args.target_sr:.2f} reached at round {rnd} "
-                f"(SR={metrics['success_rate']:.2f}). Stopping."
+            _section(
+                f"TARGET REACHED — SR={metrics['success_rate']:.2f} ≥ {args.target_sr:.2f} "
+                f"at round {rnd}", char="*",
             )
             break
 
@@ -826,12 +892,13 @@ def main():
     with open(loop_root / "loop_summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=str)
 
-    print(f"\n{'='*80}\n[active_loop] LOOP SUMMARY\n{'='*80}")
+    _section("LOOP SUMMARY", char="=")
     for k, v in summary.items():
         print(f"  {k:<28}: {v}")
-    print(f"\n[active_loop] Per-round artefacts: {loop_root}")
-    print(f"[active_loop] Per-profile log:     {profile_log_path}")
-    print(f"[active_loop] Learning curve:      {learning_curve}")
+    _info(f"total wall time: {(time.time()-loop_t0)/60:.1f}m")
+    _info(f"per-round artefacts: {loop_root}")
+    _info(f"per-profile log:     {profile_log_path}")
+    _info(f"learning curve:      {learning_curve}")
 
 
 if __name__ == "__main__":
