@@ -35,7 +35,7 @@ module purge
 module load Anaconda3
 source /home/s226137394/.bashrc
 source activate
-conda activate train
+conda activate maze
 
 PROJECT_ROOT="${PROJECT_ROOT:-/vast/s226137394/DmN/DmNfull}"
 cd "$PROJECT_ROOT"
