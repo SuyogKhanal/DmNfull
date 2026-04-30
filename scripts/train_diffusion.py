@@ -3,12 +3,14 @@ import sys
 import json
 import glob
 import copy
+import time
 import argparse
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from tqdm.auto import tqdm
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -128,8 +130,10 @@ class MazeDemoDataset(Dataset):
         if not demo_files:
             src = demo_paths if demo_paths else demo_dir
             raise FileNotFoundError(f"No demo JSON files found for: {src}")
+        print(f"[train] Demo files resolved: {len(demo_files)} (loading + 3x rotation augment...)")
+        demo_iter = tqdm(demo_files, desc="demos", unit="file", dynamic_ncols=True, leave=False)
 
-        for fpath in demo_files:
+        for fpath in demo_iter:
             with open(fpath, "r") as f:
                 demo = json.load(f)
 
@@ -156,7 +160,7 @@ class MazeDemoDataset(Dataset):
                 rot_act = rotate_actions(act_arr, angle)
                 self.samples.extend(make_windows(rot_obs, rot_img, rot_act, obs_horizon, pred_horizon))
 
-        print(f"Loaded {len(demo_files)} demos → {len(self.samples)} training windows "
+        print(f"[train] Loaded {len(demo_files)} demos → {len(self.samples)} training windows "
               f"(1 original + 3 rotations × sliding windows per demo)")
 
     def __len__(self):
@@ -209,19 +213,36 @@ def main():
     args = parse_args()
     os.makedirs(args.checkpoint_dir, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print("=" * 72)
+    print("[train] Starting diffusion-policy training")
+    print("=" * 72)
+    print(f"[train] checkpoint_dir : {args.checkpoint_dir}")
+    print(f"[train] resume         : {args.resume}")
+    print(f"[train] epochs         : {args.epochs}")
+    print(f"[train] batch_size     : {args.batch_size}")
+    print(f"[train] lr             : {args.lr}")
+    if args.demo_paths:
+        print(f"[train] demo_paths     : {args.demo_paths}")
+    else:
+        print(f"[train] demo_dir       : {args.demo_dir}")
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[train] device         : {device}")
+
+    print("[train] Loading demo dataset...")
+    t0 = time.time()
     dataset = MazeDemoDataset(
         demo_dir=args.demo_dir,
         obs_horizon=OBS_HORIZON,
         pred_horizon=PRED_HORIZON,
         demo_paths=args.demo_paths,
     )
+    print(f"[train] Dataset ready in {time.time()-t0:.1f}s | windows={len(dataset)}")
     loader = DataLoader(
         dataset, batch_size=args.batch_size,
         shuffle=True, num_workers=0, drop_last=True,
     )
+    print(f"[train] Batches/epoch  : {len(loader)}")
 
     policy = MazeDiffusionPolicy(
         obs_dim=OBS_DIM,
@@ -258,13 +279,21 @@ def main():
     for p in ema_model.parameters():
         p.requires_grad = False
 
-    print(f"Trainable params: {sum(p.numel() for p in trainable_params):,}")
-    print(f"Dataset size: {len(dataset)} | Batches/epoch: {len(loader)}")
+    print(f"[train] Trainable params: {sum(p.numel() for p in trainable_params):,}")
+    print(f"[train] Dataset size: {len(dataset)} | Batches/epoch: {len(loader)}")
+    print("[train] Starting epoch loop ↓ (best_loss tracked, EMA on, cosine LR with warmup)\n")
 
     best_loss  = float("inf")
     loss_curve = []
+    train_t0 = time.time()
 
-    for epoch in range(args.epochs):
+    epoch_pbar = tqdm(
+        range(args.epochs),
+        desc="train",
+        unit="epoch",
+        dynamic_ncols=True,
+    )
+    for epoch in epoch_pbar:
         lr_now = warmup_cosine_lr(epoch, WARMUP_EPOCHS, args.epochs, args.lr)
         for g in optimizer.param_groups:
             g["lr"] = lr_now
@@ -273,7 +302,14 @@ def main():
         epoch_loss = 0.0
         n_batches  = 0
 
-        for obs_seq, img_seq, action_seq in loader:
+        batch_pbar = tqdm(
+            loader,
+            desc=f"epoch {epoch+1}/{args.epochs}",
+            unit="batch",
+            leave=False,
+            dynamic_ncols=True,
+        )
+        for obs_seq, img_seq, action_seq in batch_pbar:
             obs_seq    = obs_seq.to(device)
             img_seq    = img_seq.to(device)
             action_seq = action_seq.to(device)
@@ -297,14 +333,27 @@ def main():
 
             epoch_loss += loss.item()
             n_batches  += 1
+            batch_pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{lr_now:.2e}")
 
         avg_loss = epoch_loss / max(1, n_batches)
         loss_curve.append(avg_loss)
 
+        improved = avg_loss < best_loss
+        epoch_pbar.set_postfix(
+            loss=f"{avg_loss:.6f}",
+            best=f"{min(best_loss, avg_loss):.6f}",
+            lr=f"{lr_now:.2e}",
+            improved="*" if improved else " ",
+        )
         if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"Epoch {epoch+1}/{args.epochs} | loss={avg_loss:.6f} | lr={lr_now:.2e}")
+            elapsed = time.time() - train_t0
+            tqdm.write(
+                f"[train] epoch {epoch+1}/{args.epochs} | "
+                f"loss={avg_loss:.6f} | best={min(best_loss, avg_loss):.6f} | "
+                f"lr={lr_now:.2e} | elapsed={elapsed/60:.1f}m"
+            )
 
-        if avg_loss < best_loss:
+        if improved:
             best_loss = avg_loss
             policy.save(os.path.join(args.checkpoint_dir, "best_model.pth"))
 
@@ -346,7 +395,12 @@ def main():
     with open(os.path.join(args.checkpoint_dir, "training_log.json"), "w") as f:
         json.dump(log, f, indent=2)
 
-    print(f"Training complete. Best loss: {best_loss:.6f}")
+    elapsed = time.time() - train_t0
+    print(
+        f"\n[train] DONE in {elapsed/60:.1f}m | "
+        f"best_loss={best_loss:.6f} | final_loss={loss_curve[-1] if loss_curve else float('nan'):.6f} | "
+        f"checkpoints={args.checkpoint_dir}"
+    )
 
 
 if __name__ == "__main__":
