@@ -2,10 +2,10 @@
 #SBATCH --job-name=dmn_round
 #SBATCH --partition=gpu
 #SBATCH --qos=batch-short
-#SBATCH --gpus=1
-#SBATCH --mem=40G
+#SBATCH --gpus=4
+#SBATCH --mem=80G
 #SBATCH --cpus-per-gpu=8
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=s226137394@deakin.edu.au
 #SBATCH --output=slurm_logs/%x_%j.out
@@ -29,7 +29,7 @@
 # the next round. run_round.py auto-detects the next round number under that
 # loop directory.
 
-set -euo pipefail
+set -eo pipefail
 
 module purge
 module load Anaconda3
