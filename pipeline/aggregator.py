@@ -133,6 +133,7 @@ def cross_episode_reasoning(
     maze_ascii: str,
     llm_cfg: Dict,
     cache=None,
+    kag_context: str = "",
 ) -> str:
     # Update 3: cross-episode reasoning is NEVER cached so it always reflects
     # the freshly generated (uncached) per-episode reasoning_combined texts.
@@ -144,6 +145,16 @@ def cross_episode_reasoning(
     summary_block = _build_summary_block(failure_summaries, failure_ids)
     valid_ids_str = ", ".join(str(i) for i in sorted(failure_ids))
 
+    kag_block = ""
+    if kag_context and kag_context.strip():
+        kag_block = (
+            "ENVIRONMENT KNOWLEDGE GRAPH (KAG) — HIGH PRIORITY. The corridor names\n"
+            "and failure-mode taxonomy below are the ONLY allowed vocabulary for\n"
+            "your clusters. When you describe a cluster's region or failure mode,\n"
+            "you must ground it in the KAG facts.\n"
+            f"{kag_context}\n\n"
+        )
+
     try:
         text = _chat_reasoning(
             client, model,
@@ -151,11 +162,14 @@ def cross_episode_reasoning(
                 {"role": "system", "content":
                     "You are a cross-episode failure analyst for imitation learning in a "
                     "RANDOMISED 5x5 maze (start, goal, and fire placements all vary per episode). "
-                    "Identify patterns across failures and prescribe demonstrations. "
+                    "Identify patterns across failures and prescribe demonstrations. The KAG "
+                    "corridor / failure-mode vocabulary, when provided, is HIGH PRIORITY and "
+                    "your clusters MUST use those exact corridor names. "
                     "IMPORTANT: Only use the episode IDs listed in CONFIRMED FAILURE EPISODES. "
                     "Do NOT invent or include any other episode IDs."},
                 {"role": "user", "content":
     f"Below are summaries from {n} FAILED episodes in a 5x5 dynamic maze.\n\n"
+    f"{kag_block}"
     f"REPRESENTATIVE MAZE ASCII (one episode):\n{maze_ascii}\n\n"
     f"CONFIRMED FAILURE EPISODE IDs (ONLY these are failures): [{valid_ids_str}]\n"
     f"Do NOT include any episode ID outside this list in failure_clusters.\n\n"
@@ -163,11 +177,21 @@ def cross_episode_reasoning(
     f"are authoritative for that episode and you must not contradict them):\n"
     f"{summary_block}\n\n"
     "Answer:\n"
-    "1. FAILURE CLUSTERING: Group failures by corridor (from FINAL_REC) and by failure mode.\n"
-    "2. WHERE DOES THE POLICY STRUGGLE? Refer to regions / corridors, not fixed cells.\n"
-    "3. WHAT DEMONSTRATIONS ARE NEEDED? For each cluster, name the corridor (from FINAL_REC) "
+    "1. FAILURE CLUSTERING: Group failures by corridor (from FINAL_REC; corridor names\n"
+    "   must come from the KAG when KAG is provided) and by failure mode.\n"
+    "2. WHERE DOES THE POLICY STRUGGLE? Refer to regions / corridors using KAG names.\n"
+    "3. WHAT DEMONSTRATIONS ARE NEEDED? For each cluster, name the corridor (from FINAL_REC)\n"
     "   and aggregate the n_demos values (median rounded up) for that cluster.\n"
-    "4. HOW MANY AND HOW DIVERSE? Total should reflect the sum across clusters."},
+    "4. WHAT LAYOUTS COVER EACH CLUSTER? For each cluster, propose 1-3 concrete maze\n"
+    "   layouts (start_pos, goal_pos, fire_positions) within the 5x5 grid that exercise\n"
+    "   the failure mode. The layouts must lie inside the cluster's corridor where\n"
+    "   possible, place fires that block the failed direct path, and respect:\n"
+    "     - all positions in [0..4] x [0..4]\n"
+    "     - start_pos != goal_pos and Manhattan(start, goal) >= 4\n"
+    "     - fire_positions disjoint from start_pos and goal_pos\n"
+    "     - exactly 3 fire cells per layout\n"
+    "5. HOW MANY AND HOW DIVERSE? Total n_demos should reflect the sum across clusters.\n"
+    "   Each recommended layout should be demonstrated 1-3 times to cover variation."},
             ],
             max_tokens, effort,
         )
@@ -178,12 +202,51 @@ def cross_episode_reasoning(
     return text
 
 
+def _validate_layout(layout: Dict, grid_size: int = 5, n_fires: int = 3) -> Tuple[bool, str]:
+    """Return (ok, reason). A valid layout has 5x5-bounded start/goal/fires,
+    Manhattan(start, goal) >= 4, 3 fire cells, no overlap between start/goal/fires."""
+    def _coerce_pair(p):
+        try:
+            r, c = int(p[0]), int(p[1])
+            return (r, c)
+        except Exception:
+            return None
+    sp = _coerce_pair(layout.get("start_pos") or [])
+    gp = _coerce_pair(layout.get("goal_pos") or [])
+    fp_raw = layout.get("fire_positions") or []
+    if sp is None or gp is None:
+        return False, "missing start_pos or goal_pos"
+    for r, c in (sp, gp):
+        if not (0 <= r < grid_size and 0 <= c < grid_size):
+            return False, f"position out of grid: {(r,c)}"
+    if sp == gp:
+        return False, "start equals goal"
+    if (abs(sp[0] - gp[0]) + abs(sp[1] - gp[1])) < 4:
+        return False, "Manhattan(start, goal) < 4"
+    fires = []
+    for f in fp_raw:
+        cf = _coerce_pair(f)
+        if cf is None:
+            return False, f"malformed fire entry: {f}"
+        if not (0 <= cf[0] < grid_size and 0 <= cf[1] < grid_size):
+            return False, f"fire out of grid: {cf}"
+        fires.append(cf)
+    if len(set(fires)) != len(fires):
+        return False, "duplicate fire positions"
+    if len(fires) != n_fires:
+        return False, f"expected {n_fires} fires, got {len(fires)}"
+    if sp in fires or gp in fires:
+        return False, "fire overlaps start or goal"
+    return True, "ok"
+
+
 def final_structured_prescription(
     cross_reasoning: str,
     failure_summaries: List[Dict],
     failure_ids: List[int],
     llm_cfg: Dict,
     cache=None,
+    kag_context: str = "",
 ) -> Tuple[str, Dict]:
     """Convert cross-episode reasoning + per-episode FINAL_RECs into structured JSON.
 
@@ -214,6 +277,15 @@ def final_structured_prescription(
     )
     aggregated_n = _aggregate_n_demos(per_ep_recs)
 
+    kag_block = ""
+    if kag_context and kag_context.strip():
+        kag_block = (
+            "ENVIRONMENT KNOWLEDGE GRAPH (KAG) — HIGH PRIORITY. Use these corridor\n"
+            "names verbatim and respect the failure-mode taxonomy. Layouts you\n"
+            "recommend should fall inside the corridor regions defined here:\n"
+            f"{kag_context}\n\n"
+        )
+
     try:
         raw = _chat_plain(
             client, model,
@@ -223,9 +295,11 @@ def final_structured_prescription(
                     "Output ONLY valid JSON — no fences, no preamble. "
                     "Every field must be derived from the cross-episode reasoning AND the "
                     "per-episode FINAL_REC table. Do not invent a different corridor, "
-                    "different n_demos, or different episode IDs."},
+                    "different n_demos, or different episode IDs. "
+                    "When a KAG block is provided, corridor names MUST come from it."},
                 {"role": "user", "content":
                     f"A diffusion policy failed across {n} episodes in a RANDOMISED 5x5 maze.\n\n"
+                    f"{kag_block}"
                     f"CROSS-EPISODE REASONING (primary source):\n{cross_reasoning}\n\n"
                     f"PER-EPISODE FINAL_REC TABLE (authoritative, do not contradict):\n{rec_table}\n\n"
                     f"AGGREGATED n_demos (median rounded up across the FINAL_RECs above): {aggregated_n}\n\n"
@@ -240,6 +314,15 @@ def final_structured_prescription(
                     "  - demonstration_prescriptions[].n_repetitions MUST be derived from FINAL_REC "
                     "n_demos values for the episodes in the matching cluster (use the cluster median, "
                     "rounded up; never less than 1).\n"
+                    "  - demonstration_prescriptions[].recommended_layouts is REQUIRED and is a list\n"
+                    "    of 1-3 concrete layouts the human should record. Each layout MUST satisfy:\n"
+                    "      * start_pos and goal_pos are integer [r, c] with 0<=r,c<=4\n"
+                    "      * Manhattan(start_pos, goal_pos) >= 4\n"
+                    "      * fire_positions is exactly 3 distinct [r,c] cells, none equal to start or goal\n"
+                    "      * the layout exercises the cluster's failure mode in the named corridor\n"
+                    "    Each layout has its own n_repetitions (1-3) describing how many demos to\n"
+                    "    record on that exact layout. The sum of layout n_repetitions across a\n"
+                    "    prescription's recommended_layouts MUST equal that prescription's n_repetitions.\n"
                     "  - total_demonstrations_needed MUST equal the sum of all "
                     "demonstration_prescriptions[].n_repetitions and SHOULD be close to "
                     f"the aggregated_n value above ({aggregated_n}); deviate only if you split "
@@ -266,7 +349,16 @@ def final_structured_prescription(
                     '      "guidance": "<plain English>",\n'
                     '      "target_region": "<plain English>",\n'
                     '      "what_it_teaches": "<plain English>",\n'
-                    '      "n_repetitions": <integer derived from FINAL_REC n_demos>\n'
+                    '      "n_repetitions": <integer derived from FINAL_REC n_demos>,\n'
+                    '      "recommended_layouts": [\n'
+                    '        {\n'
+                    '          "start_pos": [<int 0-4>, <int 0-4>],\n'
+                    '          "goal_pos":  [<int 0-4>, <int 0-4>],\n'
+                    '          "fire_positions": [[<int>,<int>], [<int>,<int>], [<int>,<int>]],\n'
+                    '          "n_repetitions": <int 1-3>,\n'
+                    '          "rationale": "<one sentence tying this layout to the cluster failure>"\n'
+                    '        }\n'
+                    '      ]\n'
                     '    }\n'
                     '  ],\n'
                     '  "total_demonstrations_needed": <int>,\n'
@@ -321,6 +413,37 @@ def final_structured_prescription(
             )
             parsed["total_demonstrations_needed"] = total_calc
 
+        # Validate recommended_layouts on each prescription. Drop invalid ones,
+        # warn so the run log shows which were filtered. The active loop only
+        # launches play_maze for layouts that pass validation, so an invalid
+        # layout cannot crash the demo-collection step.
+        for pres in prescriptions:
+            kept_layouts: List[Dict] = []
+            raw_layouts = pres.get("recommended_layouts", []) or []
+            for li, layout in enumerate(raw_layouts):
+                ok, reason = _validate_layout(layout)
+                if not ok:
+                    print(
+                        f"[Aggregator] WARNING demo_id={pres.get('demo_id','?')} "
+                        f"layout #{li}: dropped ({reason}) — {layout}"
+                    )
+                    continue
+                # Coerce types so downstream consumers (play_maze CLI) get clean ints.
+                layout["start_pos"]      = [int(layout["start_pos"][0]), int(layout["start_pos"][1])]
+                layout["goal_pos"]       = [int(layout["goal_pos"][0]),  int(layout["goal_pos"][1])]
+                layout["fire_positions"] = [[int(r), int(c)] for r, c in layout["fire_positions"]]
+                try:
+                    layout["n_repetitions"] = max(1, int(layout.get("n_repetitions", 1) or 1))
+                except Exception:
+                    layout["n_repetitions"] = 1
+                kept_layouts.append(layout)
+            pres["recommended_layouts"] = kept_layouts
+            if not kept_layouts:
+                print(
+                    f"[Aggregator] WARNING demo_id={pres.get('demo_id','?')} has no "
+                    f"valid recommended_layouts after filtering."
+                )
+
     return raw, parsed
 
 
@@ -331,31 +454,32 @@ def run_aggregator(
     llm_cfg: Dict,
     pipeline_flags: Optional[Dict] = None,
     cache=None,
+    kag_context: str = "",
 ) -> Tuple[str, str, Dict]:
     """
     Phase C wrapper.  Returns (cross_text, raw_structured, parsed_structured).
 
-    If pipeline_flags["use_cross_episode_reasoning"] is False, the expensive
-    cross-episode reasoning LLM call is skipped and the aggregator goes
-    straight to final_structured_prescription with an empty cross_text.
-
-    Update 3: cache parameter is intentionally ignored for all aggregator
-    calls — both cross_episode_reasoning and final_structured_prescription
-    are always freshly generated so the output reflects the current run's
-    per-episode reasoning (which is itself no longer cached).
+    kag_context, when non-empty, is injected into both the cross-episode
+    reasoning prompt and the structured-prescription prompt with HIGH
+    priority — corridor names must come from the KAG and recommended
+    layouts must lie inside the KAG corridor regions.
     """
     flags = pipeline_flags or {}
     use_cer = bool(flags.get("use_cross_episode_reasoning", True))
+    use_kag = bool(flags.get("use_kag", True))
+    kag_for_aggregator = kag_context if use_kag else ""
 
     if use_cer:
         cross_text = cross_episode_reasoning(
-            failure_summaries, failure_ids, maze_ascii, llm_cfg, cache=None  # never cached
+            failure_summaries, failure_ids, maze_ascii, llm_cfg,
+            cache=None, kag_context=kag_for_aggregator,
         )
     else:
         cross_text = "[CROSS-EPISODE REASONING DISABLED FOR THIS PROFILE]"
 
     raw, parsed = final_structured_prescription(
-        cross_text, failure_summaries, failure_ids, llm_cfg, cache=None  # never cached
+        cross_text, failure_summaries, failure_ids, llm_cfg,
+        cache=None, kag_context=kag_for_aggregator,
     )
     return cross_text, raw, parsed
 

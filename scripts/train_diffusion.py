@@ -89,16 +89,45 @@ def make_windows(obs_arr, img_arr, act_arr, obs_horizon, pred_horizon):
     return samples
 
 
+def _resolve_demo_files(demo_dir, demo_paths):
+    """Resolve the list of demo JSON files to use for training.
+
+    Resolution order:
+      1. If demo_paths is set (comma-separated globs), expand each glob
+         (recursive when '**' is in the pattern) and union the results.
+         This is what active_loop uses to combine baseline demos with the
+         per-profile collected demos.
+      2. Else, fall back to demo_dir/*.json (legacy behaviour).
+
+    Files are de-duplicated and sorted for deterministic ordering.
+    """
+    files = []
+    if demo_paths:
+        patterns = [p.strip() for p in demo_paths.split(",") if p.strip()]
+        for pat in patterns:
+            recursive = "**" in pat
+            matched = glob.glob(pat, recursive=recursive)
+            if not matched:
+                print(f"[train] WARNING: glob '{pat}' matched no files.")
+            files.extend(matched)
+    else:
+        files = glob.glob(os.path.join(demo_dir, "*.json"))
+
+    files = sorted({os.path.abspath(f) for f in files})
+    return files
+
+
 class MazeDemoDataset(Dataset):
 
-    def __init__(self, demo_dir, obs_horizon, pred_horizon):
+    def __init__(self, demo_dir, obs_horizon, pred_horizon, demo_paths=None):
         self.obs_horizon  = obs_horizon
         self.pred_horizon = pred_horizon
         self.samples      = []
 
-        demo_files = sorted(glob.glob(os.path.join(demo_dir, "*.json")))
+        demo_files = _resolve_demo_files(demo_dir, demo_paths)
         if not demo_files:
-            raise FileNotFoundError(f"No demo JSON files found in {demo_dir}")
+            src = demo_paths if demo_paths else demo_dir
+            raise FileNotFoundError(f"No demo JSON files found for: {src}")
 
         for fpath in demo_files:
             with open(fpath, "r") as f:
@@ -164,6 +193,10 @@ def warmup_cosine_lr(epoch: int, warmup: int, total: int, base_lr: float) -> flo
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--demo_dir",        type=str,   default=DEMO_DIR)
+    p.add_argument("--demo_paths",      type=str,   default=None,
+                   help="Comma-separated glob patterns for demo JSON files. When set, "
+                        "this OVERRIDES --demo_dir. Use '**' in a pattern to recurse "
+                        "(e.g. 'demos/*.json,demos/active_loop/p3/**/*.json').")
     p.add_argument("--checkpoint_dir",  type=str,   default=CHECKPOINT_DIR)
     p.add_argument("--epochs",          type=int,   default=EPOCHS)
     p.add_argument("--batch_size",      type=int,   default=BATCH_SIZE)
@@ -183,6 +216,7 @@ def main():
         demo_dir=args.demo_dir,
         obs_horizon=OBS_HORIZON,
         pred_horizon=PRED_HORIZON,
+        demo_paths=args.demo_paths,
     )
     loader = DataLoader(
         dataset, batch_size=args.batch_size,
