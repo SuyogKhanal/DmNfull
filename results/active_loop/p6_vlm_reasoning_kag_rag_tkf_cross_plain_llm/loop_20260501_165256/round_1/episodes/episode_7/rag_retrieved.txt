@@ -1,0 +1,21 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.962 run=round_1 ep=5 ---
+  Dynamic config: start=[0, 2] goal=[2, 1] fires=[[np.int64(0), np.int64(3)], [np.int64(2), np.int64(3)], [np.int64(3), np.int64(2)]]
+  Summary:        Root cause: The episode wandered into the central area near hazards instead of following the safer top-edge corridor, leading to failure under fire proximity.
+
+Key configuration: Start at (0,2), goal at (2,1), with fires placed to incentivize avoiding the central area (central hazards near the intended route).
+
+Correct path: Stay along the top edge, then descend along the second column: (0,2) -> (0,1) -> (1,1) -> (2,1).
+
+Summary of the safe route: Follow the top-edge corridor to the target column and then move down to the goal, avoiding central fire-prone regions.
+  Root cause:     pending
+
+--- rank=2 sim=0.962 run=round_1 ep=2 ---
+  Dynamic config: start=[0, 1] goal=[2, 0] fires=[[np.int64(0), np.int64(3)], [np.int64(3), np.int64(0)], [np.int64(3), np.int64(4)]]
+  Summary:        The root cause was an early incorrect decision at Step 3: from [1,0] the agent chose LEFT to [1,-1], hitting a wall and getting penalized, which derailed progress and led to repeated wall-hits near the left edge. The episode configuration had Start [0,1], Goal [2,0], and Fires at [0,3], [3,0], and [3,4], with the final observed position ending at [3,0] after 76 steps and no success. The correct path should have followed the Top-edge corridor: (0,1) -> (0,0) -> (1,0) -> (2,0), staying along the top row to the goal while avoiding walls and fires. This path avoids the fire tiles and reaches the goal in 3 moves from the start, preventing the wall-thrashing behavior seen in the log.
+  Root cause:     pending
+
+--- rank=3 sim=0.924 run=round_1 ep=4 ---
+  Dynamic config: start=[1, 0] goal=[1, 2] fires=[[np.int64(1), np.int64(1)], [np.int64(2), np.int64(1)], [np.int64(4), np.int64(0)]]
+  Summary:        The failure was due to following a central-route that passes near active fires, causing the agent to end on a fire at [4,0] before reaching the goal. Key configuration: start at [1,0], goal at [1,2], fires at [1,1], [2,1], and [4,0]. The correct path should avoid the central hazards by staying along the top edge: e.g., (1,0) -> (0,0) -> (0,1) -> (0,2) -> (1,2), with a variant that also covers a longer top-edge traversal. This corridor-based route keeps the agent away from fires and leads to the goal safely.
+  Root cause:     pending

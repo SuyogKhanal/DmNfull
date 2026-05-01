@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 2
+demo_variations: covers rag rank=1 top_edge corridor variant: two demonstrations – a short top-edge path (1,0)->(0,0)->(0,1)->(0,2)->(1,2) and a longer top-edge path (1,0)->(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(1,3)->(1,2)
+rationale: Corridor chosen = top_edge; 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+Plain-English Explanation for the Human Demonstrator:
+1. WHERE in the maze does the AI get confused? The model tends to drift away from the top edge and into the central area when fires are placed in central columns; the chosen corridor to study is the top_edge corridor.
+2. WHAT should a good walkthrough look like in that area? A safe, top-edge route: start at [1,0], move Up to [0,0], traverse right along the top row to [0,2], then drop down to the goal at [1,2].
+3. WHAT will the AI learn from seeing that walkthrough? The RAG retrieval (rank=1) shows that staying on the top edge is a safer corridor when fires occupy central rows, so the agent can learn a corridor-based avoidance pattern that keeps actions away from hazard zones.
+4. HOW MANY walkthroughs are needed and how should they vary? The final rec provides 2 variations to cover small and longer top-edge traversals, ensuring the corridor is demonstrated under different top-row extents while keeping the path safe and goal-oriented.

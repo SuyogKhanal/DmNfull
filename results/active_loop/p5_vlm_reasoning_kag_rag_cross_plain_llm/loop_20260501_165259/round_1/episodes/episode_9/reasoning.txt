@@ -1,0 +1,118 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (as given): 5x5 grid, start at [1,2], goal at [1,1], fires at [1,4], [4,1], [4,2]. The agent never reaches the goal; episode ends after 200 steps with total reward -29.10; final position [0,1]. The path shows repeated wandering and backtracking rather than committing to a concise corridor toward the goal.
+
+- Start state (step 0): at [1,2], goal [1,1], Manhattan distance 1. Immediate neighborhood has open tiles up, left, right, and down; no adjacent fire; you could directly go left to the goal tile with a single step if not blocked by policy decisions.
+
+- Early trajectory (highlights from steps 1–10):
+  - Step 1: UP to [0,2]
+  - Step 2: LEFT to [0,1]
+  - Step 3: LEFT to [0,0]
+  - Step 4: DOWN to [1,0]
+  - Step 5: DOWN to [2,0]
+  - Step 6: RIGHT to [2,1]
+  - Step 7: RIGHT to [2,2]
+  - Step 8: RIGHT to [2,3]
+  - Step 9: UP to [1,3]
+  - Step 10: UP to [0,3]
+
+- Mid trajectory (selected turns illustrating non-progress toward the goal):
+  - Step 11: LEFT to [0,2]
+  - Step 12: LEFT to [0,1]  (returns toward goal column)
+  - Step 13: RIGHT to [0,2]
+  - Step 14–16: DOWN to [1,2] → [2,2] → [3,2]
+  - Step 17–18: LEFT to [3,1] → [3,0]
+  - Step 19–21: UP to [2,0] → [1,0] → [0,0]
+  - Step 22–24: RIGHT to [0,1] → [0,2] → [0,3]
+  - Step 25–27: DOWN to [1,3] → [2,3] → [3,3]
+  - Step 28–30: LEFT to [3,2] → [3,1] → [3,0]
+  - Step 31–33: UP to [2,0] → [1,0] → [0,0]
+  - Step 34–36: RIGHT to [0,1] → [0,2] → [0,3]
+  - Step 37–39: DOWN to [1,3] → [2,3] → [3,3]
+  - Step 40–46: left/right shuffles around [3,2]–[3,4], then to [4,4]
+  - Step 47–60: wandering through [4,4] → [3,4] → [3,3] → [3,2] → [3,1] → [3,2] → [2,2] → [1,2] → [0,2] (and repeats)
+  - Final phase (toward step 200): the agent remains caught in looping detours among the top row (0,x) and the middle rows, never committing to a direct route toward the goal; final position at step 200 is [0,1].
+
+- Key observation from the trajectory: the agent repeatedly cycles between a small set of Free tiles near the top and central columns, with no durable commitment to the short path to the goal. No visit to the fire tiles occurs in this excerpt, so the episode ends by timeout rather than immediate fire collision. The end-state is near the goal but the episode hits the 200-step cap, yielding a timeout failure rather than a fire-collision failure.
+
+2) FIRST WRONG DECISION
+
+- The earliest divergence from a sensible, corridor-guided path occurs at step 3.
+  - Current state at step 2: [0,1].
+  - Actual action at step 3: LEFT to [0,0].
+  - What should have happened (given a top-edge corridor plan): from [0,1], descend along column 1 to the goal, i.e., DOWN to [1,1] (the GOAL tile) as the next move in a row-0 corridor that leads directly to the goal column and then down to the goal.
+  - Why this is better: it preserves the top-edge corridor strategy (row 0 traversal to the goal column, then descent) and yields immediate progress to the GOAL tile in one more step, minimizing exposure to central/ bottom hazards and avoiding unnecessary detours.
+
+- In short: Step 3 (0,1) -> LEFT to (0,0) was the first wrong decision; the safer choice would have been DOWN to reach the goal tile via the top-edge corridor path (0,1) -> (1,1).
+
+3) WHY THE POLICY FAILED
+
+- Failure mode observed: timeout (fm_timeout). The episode reached the MAX_STEPS per episode (200) without reaching the GOAL.
+
+- Root cause grounded in environment and policy design:
+  - DynamicConfig and randomization: The environment randomizes start, goal, and fire placements each episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The policy must generalize fire avoidance and corridor selection across configurations. The current episode reveals that, despite a near-term possibility to reach the GOAL via the top-edge corridor, the policy did not commit to the safe corridor path and instead pursued repeated detours that wasted steps and culminated in timeout.
+  - Corridor adherence and generalization: The actual trajectory shows frequent deviations from a coherent corridor strategy. The KAG defines three corridors, with the top-edge corridor explicitly described as a safe pattern when fires occupy the middle rows. The failure indicates insufficient generalization of fire-avoidance and corridor-following behavior in the diffusion policy, particularly under randomized start/goal/fire placements.
+  - Observational-horizon constraints: The policy uses an observation window of horizons (obs_horizon=4, pred_horizon=3) and executes the first action of a 3-step plan per step. The stepwise indecision and repeated back-and-forth moves suggest the model struggled to commit to a single corridor path within the given horizon, causing oscillations rather than decisive progress toward the GOAL.
+  - Visual encoder and environment geometry: The CellAlignedEncoder is designed to avoid cross-cell bleed and give per-cell locality signals. However, despite this architecture, the agent fails to exploit local-neighborhood cues to progress along a safe corridor, instead alternating among nearby cells with no durable progression.
+
+- In short: the timeout arose because the policy failed to consistently select the top-edge corridor when appropriate, and its short-horizon iteration produced oscillations rather than a committed, fire-avoidant route to the goal under randomized configurations.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- Rank=1 sim=0.951 run=round_1 ep=2
+  - Verdict: APPLIES
+  - Rationale: This past episode demonstrates that the top-edge corridor is a viable, generally safe route when fires are not in the top rows and the start/goal configuration aligns. The suggested corridor path for that scenario is the top-edge corridor, which directly supports our chosen corrective corridor for this episode.
+
+- Rank=2 sim=0.946 run=round_1 ep=8
+  - Verdict: APPLIES
+  - Rationale: In this episode, a top-edge corridor path (avoid central fires by staying on the top row and then descending) successfully reaches the goal for a start near the top or mid region with central/bottom fires. This reinforces Top-edge Corridor as a robust corrective path for configurations similar to ours (start near upper/mid rows, fires not blocking the top edge).
+
+- Rank=3 sim=0.939 run=round_1 ep=7
+  - Verdict: DOES NOT APPLY
+  - Rationale: This episode reports infeasibility of any corridor path that avoids all fires while staying within the corridor constraints for the given start/goal/fires. It indicates no safe corridor path exists for that specific configuration, and thus the top-edge corridor would not be applicable here. However, note that this configuration differs from ours: in our episode, a top-edge corridor path is indeed feasible.
+
+- Summary of RAG verdicts: Rank 1 and Rank 2_support top-edge corridor as a generally applicable corrective path; Rank 3 presents an edge case where no corridor path exists, but that scenario does not match our current configuration (start [1,2], goal [1,1], fires at [1,4], [4,1], [4,2]), where a top-edge corridor path is feasible.
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor choice: Top-edge corridor
+- Verbatim KAG quote (corridor fact) to justify the pick:
+  - 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+- Concrete corrective path (starting from this episode's actual start [1,2], avoiding all fires):
+  - Path: [1,2] -> [0,2] (UP) -> [0,1] (LEFT) -> [1,1] (DOWN to GOAL)
+  - Step-by-step actions: UP, LEFT, DOWN
+  - Notes on safety: All tiles on this path are FREE (0) or the GOAL tile (3). Fire tiles are at (1,4), (4,1), and (4,2); none are on this short corridor path. This path uses the top edge (row 0) to approach the goal column, then descends to the GOAL tile, aligning with the corridor strategy and avoiding the central/bottom fire cluster.
+
+- One-sentence justification (grounded in sections 3 and 4):
+  - Given the timeout failure and the demonstrated generalizability of the top-edge corridor in Rank 1 and Rank 2 analogous episodes (and the infeasibility caveat in Rank 3 which does not apply to this episode), adopting the Top-edge corridor as the corrective path directly addresses the need to commit to a fire-avoidant corridor under randomized configurations, delivering a direct, minimal-step route to the GOAL while avoiding the known fire hazards.
+
+Notes for the prescription system (FINAL_REC derivation):
+- Corridor: Top-edge corridor
+- Path: [1,2] -> [0,2] -> [0,1] -> [1,1]
+- n_demos: Recommend one corrective demonstration, optionally with variations (see below)
+- demo_variations: To improve generalization, include variants that start from nearby top-edge-adjacent positions (e.g., [1,3] or [0,2]) and demonstrate the same top-edge corridor strategy, ensuring the policy learns to transition from near-top rows into the top-edge corridor without backtracking.
+- rationale: A top-edge corridor-based corrective demonstration aligns with Section 5's chosen corridor and Section 4’s RAG evidence showing the top-edge corridor is effective across similar configurations, while Section 3's timeout failure is mitigated by committing to a single, safe corridor path that avoids fires.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,1)->(1,1)
+n_demos: 2
+demo_variations: rag rank=1 top-edge corridor variant; rag rank=2 top-edge corridor variant
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens in the Top-edge corridor area. The policy tends to wander rather than commit to a safe, fire-avoiding top-edge path when the goal is nearby.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A concise top-edge corridor walk: from the start [1,2], move up to the top row at [0,2], then move left along the top edge to [0,1], and finally descend to the goal [1,1]. This path stays mostly on the top row (the top_edge corridor) and avoids the fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to commit to the top-edge corridor when it’s safe, as demonstrated by the two RAG-retrieved cases that support using the top-edge corridor as a robust path under similar fire placements (rank=1 and rank=2). Those examples show that staying on the top row and then descending can reach the goal without hitting fires.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Two variations are provided (n_demos = 2): one corresponding to rag rank=1 and one to rag rank=2. They both reinforce the same top-edge corridor strategy under different but related configurations, helping the policy generalize beyond a single exact start/goal setup.

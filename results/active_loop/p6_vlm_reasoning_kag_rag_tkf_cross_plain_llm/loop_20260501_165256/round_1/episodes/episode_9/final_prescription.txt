@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,1)->(1,1)
+n_demos: 2
+demo_variations: covers rag rank=1 top-edge corridor variant and rag rank=3 top-edge corridor variant; rag rank=2 not applicable to current start/goal; TKF PARTIAL coverage indicates existing demos do not fully cover the top-edge corridor
+rationale: Chosen corridor top_edge is justified by KAG fact 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the top-edge corridor area: it tends to wander away from the top-edge corridor and ends up taking detours that risk central fire zones rather than committing to the top-edge path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough following the TOP_EDGE corridor would start at [1,2], move Up to [0,2], then move Left to [0,1], and finally Descend to the goal at [1,1].
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- It will learn to commit early to the top-edge corridor to avoid central hazards and reach the goal efficiently. The RAG results show two top-edge corridor demonstrations (rank=1 and rank=3) as useful exemplars, supporting the idea that staying on the top edge reduces fire risk and guides progress toward the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Two walkthroughs are provided (n_demos = 2) to cover variation along the same top-edge corridor. Variation 1 mirrors the direct top-edge path (1,2) -> (0,2) -> (0,1) -> (1,1); Variation 2 extends along the top edge a bit more before descending (e.g., including an alternate top-edge detour like moving to (0,0) before descending and finishing at (1,1)), illustrating how the corridor strategy generalizes to similar top-edge routes while still ending at the same goal.

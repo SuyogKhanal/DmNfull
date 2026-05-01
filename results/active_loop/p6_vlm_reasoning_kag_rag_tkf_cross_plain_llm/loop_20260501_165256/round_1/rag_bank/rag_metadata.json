@@ -1,0 +1,344 @@
+[
+  {
+    "run_id": "round_1",
+    "episode_id": 2,
+    "maze_name": "multimodal",
+    "seed": 44,
+    "total_steps": 76,
+    "total_reward": -50.70000000000005,
+    "success": false,
+    "start_pos": [
+      0,
+      1
+    ],
+    "goal_pos": [
+      2,
+      0
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "3",
+        "0"
+      ],
+      [
+        "3",
+        "4"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        [
+          0,
+          3
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    ],
+    "summary": "The root cause was an early incorrect decision at Step 3: from [1,0] the agent chose LEFT to [1,-1], hitting a wall and getting penalized, which derailed progress and led to repeated wall-hits near the left edge. The episode configuration had Start [0,1], Goal [2,0], and Fires at [0,3], [3,0], and [3,4], with the final observed position ending at [3,0] after 76 steps and no success. The correct path should have followed the Top-edge corridor: (0,1) -> (0,0) -> (1,0) -> (2,0), staying along the top row to the goal while avoiding walls and fires. This path avoids the fire tiles and reaches the goal in 3 moves from the start, preventing the wall-thrashing behavior seen in the log.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_1",
+    "episode_id": 4,
+    "maze_name": "multimodal",
+    "seed": 46,
+    "total_steps": 7,
+    "total_reward": -10.7,
+    "success": false,
+    "start_pos": [
+      1,
+      0
+    ],
+    "goal_pos": [
+      1,
+      2
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1"
+      ],
+      [
+        "4",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    ],
+    "summary": "The failure was due to following a central-route that passes near active fires, causing the agent to end on a fire at [4,0] before reaching the goal. Key configuration: start at [1,0], goal at [1,2], fires at [1,1], [2,1], and [4,0]. The correct path should avoid the central hazards by staying along the top edge: e.g., (1,0) -> (0,0) -> (0,1) -> (0,2) -> (1,2), with a variant that also covers a longer top-edge traversal. This corridor-based route keeps the agent away from fires and leads to the goal safely.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_1",
+    "episode_id": 5,
+    "maze_name": "multimodal",
+    "seed": 47,
+    "total_steps": 103,
+    "total_reward": -24.50000000000002,
+    "success": false,
+    "start_pos": [
+      0,
+      2
+    ],
+    "goal_pos": [
+      2,
+      1
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "2",
+        "3"
+      ],
+      [
+        "3",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        [
+          0,
+          3
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    ],
+    "summary": "Root cause: The episode wandered into the central area near hazards instead of following the safer top-edge corridor, leading to failure under fire proximity.\n\nKey configuration: Start at (0,2), goal at (2,1), with fires placed to incentivize avoiding the central area (central hazards near the intended route).\n\nCorrect path: Stay along the top edge, then descend along the second column: (0,2) -> (0,1) -> (1,1) -> (2,1).\n\nSummary of the safe route: Follow the top-edge corridor to the target column and then move down to the goal, avoiding central fire-prone regions.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_1",
+    "episode_id": 7,
+    "maze_name": "multimodal",
+    "seed": 49,
+    "total_steps": 200,
+    "total_reward": -31.099999999999895,
+    "success": false,
+    "start_pos": [
+      2,
+      3
+    ],
+    "goal_pos": [
+      2,
+      1
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "1"
+      ],
+      [
+        "1",
+        "3"
+      ],
+      [
+        "4",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        2,
+        3
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent diverged early from a shortest safe route, taking a DOWN move at Step 2 instead of continuing LEFT, which set up a pattern of detours and eventual timeout without reaching the goal. Key configuration: Start [2,3], Goal [2,1], Fires at [(0,1), (1,3), (4,0)]. Correct path: From [2,3], move LEFT to [2,2], then LEFT again to the goal at [2,1], avoiding the fires. Outcome: If followed, the agent would reach the goal in 2 steps; the observed run instead looped and timed out at 200 steps.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_1",
+    "episode_id": 8,
+    "maze_name": "multimodal",
+    "seed": 50,
+    "total_steps": 6,
+    "total_reward": -10.6,
+    "success": false,
+    "start_pos": [
+      1,
+      0
+    ],
+    "goal_pos": [
+      2,
+      2
+    ],
+    "fire_positions": [
+      [
+        "3",
+        "2"
+      ],
+      [
+        "3",
+        "3"
+      ],
+      [
+        "4",
+        "3"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        [
+          3,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          3
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent deviated from the safe corridor and entered a central/fire-prone area, ending up on a FIRE tile. Key configuration: start at [1,0], goal at [2,2], with fires at [3,2], [3,3], and [4,3]. Correct path: follow the top-edge corridor by moving from [1,0] up to [0,0], then right along the top row to [0,2], and finally descend to [2,2] via [1,2]. This avoids the central fire cluster and reaches the goal without triggering a fire.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_1",
+    "episode_id": 9,
+    "maze_name": "multimodal",
+    "seed": 51,
+    "total_steps": 145,
+    "total_reward": -31.449999999999974,
+    "success": false,
+    "start_pos": [
+      1,
+      2
+    ],
+    "goal_pos": [
+      1,
+      1
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "4"
+      ],
+      [
+        "4",
+        "1"
+      ],
+      [
+        "4",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        [
+          1,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ]
+      ]
+    ],
+    "summary": "The failure stems from the agent not generalizing fire-avoidance and instead wandering, with an early wrong decision (UP from [1,2]) that diverged from a decisive corridor-based plan. The episode\u2019s setup uses Start [1,2], Goal [1,1], and fires at [(1,4), (4,1), (4,2)], with the episode terminating on a fire tile at [4,1] after 145 steps. The correct approach is to follow the Top-edge corridor path to avoid central fires: (1,2) -> (0,2) -> (0,1) -> (1,1). This corridor-based route minimizes fire risk and aligns with the demonstrated safe corridor strategy.",
+    "root_cause": "pending"
+  }
+]
