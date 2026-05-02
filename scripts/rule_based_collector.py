@@ -123,12 +123,15 @@ def _save_demo(
     timestamp = int(time.time() * 1000)
     config = env.get_dynamic_config()
     filename = demo_dir / f"demo_{MAZE_NAME}_{layout_id}_bfs_{timestamp}.json"
+    # config["start_pos"] reports env.agent_pos, which after stepping the BFS
+    # plan equals the goal cell. The episode's true spawn is env.start_pos
+    # (set in _build_forced_env to the forced start).
     payload = {
         "maze_name":      MAZE_NAME,
         "timestamp":      timestamp,
         "layout_id":      layout_id,
         "source":         "rule_based_bfs",
-        "start_pos":      [int(x) for x in config["start_pos"]],
+        "start_pos":      [int(x) for x in env.start_pos],
         "goal_pos":       [int(x) for x in config["goal_pos"]],
         "fire_positions": [[int(x) for x in p] for p in config["fire_positions"]],
         "trajectory":     [[int(x) for x in p] for p in env.get_trajectory()],
