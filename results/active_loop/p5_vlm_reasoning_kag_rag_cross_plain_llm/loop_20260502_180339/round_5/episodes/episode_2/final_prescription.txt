@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 1
+demo_variations: Variation: same top-edge corridor but vary the start position along the top row (e.g., [0,1] vs [0,2]) with fires placed away from the top edge to test resilience.
+rationale: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It falters in the Top-edge corridor area (top_edge). Starting from [0,1], the agent should follow the top-edge path toward the GOAL, but it previously veered toward an unsafe boundary action instead of staying on the top edge and descending along column 0 to the GOAL.
+2. WHAT should a good walkthrough look like in that area? A clean Top-edge corridor walk: (0,1) -> (0,0) -> (1,0) -> (2,0). Move left along the top row to (0,0), then descend down column 0 to reach the GOAL at (2,0), avoiding the fires at (0,3), (3,0), and (3,4).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to consistently follow the top-edge corridor when possible, stay on the top row to the GOAL's column, and then descend, thereby reducing boundary thrashing and avoiding fire hazards.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this corrective example. Variation should come from the demo_variations line: test the Top-edge corridor with different top-row starts (e.g., [0,1] vs [0,2]) and fires placed away from the top-edge path to gauge generalization.

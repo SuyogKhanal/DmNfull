@@ -238,7 +238,7 @@ def _run_bfs_collector(layouts_path: Path, demo_dir_for_round: Path) -> Dict:
     ]
     _info(f"BFS expert: {' '.join(cmd)}")
     rc = subprocess.call(cmd, cwd=str(REPO_ROOT))
-    summary_path = demo_dir_for_round / "bfs_collection_summary.json"
+    summary_path = demo_dir_for_round.parent / "bfs_collection_summary.json"
     if rc != 0:
         _info(f"WARNING: BFS collector exited rc={rc}")
     if summary_path.exists():

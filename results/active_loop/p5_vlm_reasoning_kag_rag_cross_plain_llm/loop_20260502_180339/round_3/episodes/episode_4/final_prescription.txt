@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(1,0)->(0,0)->(0,1)->(0,2)->(1,2)>
+n_demos: 1
+demo_variations: rag rank=1 left_edge variant considered; top_edge corridor demonstration used instead
+rationale: Top-edge corridor chosen to minimize fire exposure by staying on the top row; 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drift away from a boundary corridor (the left-edge boundary) and venture into the interior near the central hazards, especially around Step 3 in the original run. In this FINAL_REC, we diagnose that confusion as happening when choosing to leave the topological boundary path and not sticking to a stable corridor early on.
+
+2. WHAT should a good walkthrough look like in that area? A robust demonstration should keep the agent along the top boundary (top_edge corridor) as long as possible, then descend to the goal column. The path we propose is: start at [1,0], go UP to [0,0], move right along the top edge to [0,2], then descend to the goal at [1,2].
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize a corridor-based routing strategy to avoid central fire hazards, demonstrating risk-averse behavior by staying on a boundary (top edge) before completing the goal, aligning with the RAG insight that early corridor commitment helps avoid hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? We provide 1 demonstration path here (n_demos = 1). If additional retrieved cases share the same corridor, you would include at least 2 variations to cover more routes within that corridor (per R2). Variations could involve slight shifts along the same top-edge path or testing the top-edge corridor with different goal columns or start positions that still keep the bulk of movement on row 0.

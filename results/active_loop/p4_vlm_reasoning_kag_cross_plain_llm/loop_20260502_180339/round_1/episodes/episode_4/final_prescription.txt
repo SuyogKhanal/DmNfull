@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 1
+demo_variations: Top-edge corridor demonstration with a one-step offset into the top row before crossing: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI tends to drift toward the central, fire-prone area in the top-left region and, as seen in the actual episode, takes a downward move from (1,0) into (2,0) instead of sticking to the top edge. The chosen corridor to address this is the top_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough that follows the top_edge corridor is: from the start (1,0), move up to (0,0), then go right along the top row to (0,1) and (0,2), and finally drop down to the goal at (1,2). So the sequence is (1,0)->(0,0)->(0,1)->(0,2)->(1,2).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize the top-edge corridor strategy, keeping to the top row to avoid the central fires, and only descend to the goal after safely traversing the top edge.
+
+4. HOW MANY walkthroughs are needed and how should they vary? The FINAL_REC specifies n_demos = 1, with a variation described in demo_variations that emphasizes a one-step offset into the top row before crossing. For stronger generalization, you could add more variations that still use the top-edge corridor (e.g., slight changes in where the cross from the top row to the final descent occurs, or additional small start-offsets) to cover similar hazard patterns in different start-goal-fire configurations.

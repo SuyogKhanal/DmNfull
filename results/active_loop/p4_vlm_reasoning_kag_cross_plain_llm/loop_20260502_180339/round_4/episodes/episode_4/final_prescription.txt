@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 1
+demo_variations: Top-edge corridor demonstration with nominal start at [1,0] to [1,2] via the top row, illustrating fire-avoidance bias.
+rationale: Top-edge corridor chosen, per KAG: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the top-half region when central fires block the direct route; in this episode it diverged away from the top-edge corridor and ended up stepping toward the bottom area, nearly colliding with a fire tile, instead of sticking to the top-edge path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough along the top_edge corridor would start at [1,0], move Up to [0,0], then Right to [0,1], Right to [0,2], and finally Down to the goal at [1,2]. This path uses the top row to avoid the central fires at [1,1] and [2,1] and ends on the GOAL tile.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer staying on the top-edge corridor when central rows contain fires, understanding that detouring along the top row is a robust strategy to avoid hazards and reach the goal in this configuration. It reinforces hazard-avoiding detours rather than descending into lower rows.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this specific corrective demonstration. In broader training, you can add more variants (e.g., slightly different start offsets on the top edge or different positions of central fires) but keep the top-edge corridor as the guiding strategy to reinforce the same hazard-avoidance principle.
