@@ -1,0 +1,63 @@
+VISION REPORT
+Maze=multimodal Steps=44 Reward=-15.85 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis for start_frame (step 0):
+
+1) Agent location and adjacent cells
+- Agent is at (1,2). Adjacent cells: left (1,1) is the goal (green tile), right (1,3) is empty, up (0,2) is empty, down (2,2) is empty. Fires are at (1,4), (4,1), and (4,2); none of the adjacent cells contain walls or fires.
+
+2) Goal location and Manhattan distance
+- Goal is at (1,1). Manhattan distance from agent (1,2) is |1-1| + |2-1| = 1.
+
+3) Fire hazards relative to the agent
+- Fires are at (1,4) distance 2, (4,1) distance 4, and (4,2) distance 3. None are in immediate adjacency. The closest fire (1,4) is two steps away and would not block the direct left move to the goal.
+
+4) First corrective demonstration move
+- Action: Move Left (to 1,1).
+- Justification: The goal is directly to the left and is not occupied by a fire. This reduces the distance to the goal from 1 to 0 and completes the objective in a single step.
+
+--- highest_loss_frame frame step 7 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells
+- Current position: (0, 2).
+- Adjacent (4-neighborhood): (0, 1), (0, 3), (1, 2) are all accessible (blue, no walls detected). Cells (−1, 2) is outside the grid.
+- Nearby hazards: no fire in the immediate adjacent cells.
+
+2) Goal location and Manhattan distance
+- Goal location: (1, 1).
+- Manhattan distance: |1−0| + |1−2| = 1 + 1 = 2.
+
+3) Fire hazards relative to the agent
+- Fires: (1, 4), (4, 1), (4, 2).
+- Distances to agent (0, 2): 3, 5, 4 respectively. The nearest fire is at (1, 4) (distance 3). No fire is currently adjacent.
+
+4) First corrective demonstration move
+- Action: Move East to (1, 2).
+- Justification: This reduces the goal distance from 2 to 1, moves toward the target, and does not step into any fire or wall.
+
+--- end_frame frame step 44 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells
+- Agent is at (row, col) = (4, 1).
+- Adjacent moves:
+  - Up: (3,1) – appears accessible (not shown as fire in the frame).
+  - Down: (5,1) – off-grid (blocked).
+  - Left: (4,0) – appears as a wall/blocked (grey cell).
+  - Right: (4,2) – fire (red tile).
+- Nearby goal: goal is far at (1,1). Walls and a fire immediately to the east constrain options.
+
+2) Goal location and Manhattan distance
+- Goal: (1, 1).
+- Manhattan distance from (4,1) to (1,1) = |4-1| + |1-1| = 3.
+
+3) Fire hazards relative to the agent
+- Fires present: (1,4), (4,1), (4,2).
+- Immediate hazard: (4,2) is to the right and is a fire; potentially (4,1) is also marked as a fire in the config, which would be a direct hazard on the current tile.
+- Another fire at (1,4) is far away and not an immediate threat.
+
+4) First corrective demonstration move
+- Action: Up (move to 3,1).
+- Justification: It’s the only safe, non-wall option; it reduces distance to the goal and avoids the adjacent fire on the right (4,2). After this move, distance to the goal would drop to 2 if the path remains clear.

@@ -1,0 +1,90 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup
+  - Start: [2,3]; Goal: [2,1]; Fires: [(0,1), (1,3), (4,0)]. The agent must avoid these hazards and reach the goal within 200 steps.
+  - Early frame (start): Manhattan distance to goal is 2. Nearest fire is at (1,3) (directly above the start’s vicinity if you move up).
+
+- Step-by-step summary (key moves from the provided trajectory)
+  - Step 1: at [2,3] -> LEFT -> [2,2], reward -0.10
+  - Step 2: at [2,2] -> DOWN -> [3,2], reward -0.10
+  - Step 3: at [3,2] -> LEFT -> [3,1], reward -0.10
+  - Step 4: at [3,1] -> LEFT -> [3,0], reward -0.10
+  - Step 5: at [3,0] -> UP -> [2,0], reward -0.10
+  - Step 6: at [2,0] -> UP -> [1,0], reward -0.10
+  - Step 7: at [1,0] -> UP -> [0,0], reward -0.10
+  - Step 8: at [0,0] -> LEFT (into boundary) -> [0,0], reward -0.60 (wall/boundary penalty included)
+  - Step 9: at [0,0] -> DOWN -> [1,0], reward -0.15
+  - Step 10: at [1,0] -> RIGHT -> [1,1], reward -0.10
+  - Step 11: at [1,1] -> RIGHT -> [1,2], reward -0.10
+  - Step 12: at [1,2] -> UP -> [0,2], reward -0.10
+  - Step 13: at [0,2] -> RIGHT -> [0,3], reward -0.10
+  - Step 14: at [0,3] -> LEFT -> [0,2], reward -0.15
+  - Step 15: at [0,2] -> DOWN -> [1,2], reward -0.15
+  - Step 16: at [1,2] -> LEFT -> [1,1], reward -0.15
+  - Step 17: at [1,1] -> LEFT -> [1,0], reward -0.15
+  - Step 18: at [1,0] -> DOWN -> [2,0], reward -0.15
+  - Step 19: at [2,0] -> DOWN -> [3,0], reward -0.15
+  - Step 20: at [3,0] -> RIGHT -> [3,1], reward -0.15
+  - Step 21: at [3,1] -> LEFT -> [3,0], reward -0.15
+  - Step 22: at [3,0] -> UP -> [2,0], reward -0.15
+  - Step 23: at [2,0] -> UP? or DOWN? (record shows repeated back-and-forth near the left edge; pattern continues)
+  - Step 24–60: continues looping among [0,0], [1,0], [1,1], [1,2], [0,2], [0,3], [2,0], [3,0], [3,1], with penalties accumulating; no progress toward the goal.
+  - Step 60: at [1,0] -> DOWN -> [2,0], continuing the cyclical/oscillatory behavior.
+  - End-of-episode: Step 200 reached with final position [1,0], goal still unreached.
+
+- Final outcome
+  - Episode outcome: Failure (Success False)
+  - Total steps: 200
+  - Total reward: -31.10
+  - Final position: [1,0]
+  - Vision readout highlights: The nearest hazard (fire) is at (1,3); the immediate hazard at (0,1) is not directly in the agent’s path given the observed sequence, but the agent repeatedly cycles along the left/central area without reaching [2,1], i.e., the policy fails to commit to a safe corridor and gets stuck in loops.
+
+- Observed failure pattern
+  - The agent repeatedly cycles between a small set of cells near the left edge and central region instead of committing to a corridor that would lead to the goal.
+  - No step in the trajectory enters a fire tile, so this is more consistent with a timeout/inefficient exploration/poor deterministic progression rather than a pure “fire collision” in this run.
+  - The highest-loss frame shows a risky boundary move from [0,0] (step 8) when the agent attempted a boundary-left action, incurring a wall penalty and additional step penalty, indicating fragility near walls.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a reasonably safe, short-path to the goal
+  - Step 1: The agent moves from [2,3] to [2,2].
+  - Expected safe path from the start to the goal (to minimize distance) would continue to the left along row 2: [2,3] -> [2,2] -> [2,1] (goal), which would reach the goal in two steps from the start.
+  - The critical mis-step occurs at Step 2: Instead of continuing LEFT to [2,1] (which would place the agent at the goal tile and yield a GOAL_REWARD on entering), the agent takes DOWN to [3,2], moving away from the goal and increasing the remaining Manhattan distance.
+- Decision at Step 2
+  - Taken: DOWN (to [3,2])
+  - Should have taken: LEFT (to [2,1])
+- Consequence
+  - This divergence prevents the most direct progression toward the goal and sets up a pattern of detours that contribute to the eventual timeout after 200 steps.
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode (as defined in KAG)
+  - fm_fire_collision is the common failure label when the agent enters a FIRE tile. In this episode, the agent did not step onto a fire tile, so the direct fire-collision failure label does not strictly apply to the observed trajectory. However, the FailureMode section in the KAG notes that “Most common failure” is fire_collision and that the policy must generalize fire-avoidance to different start/goal/fire placements.
+  - The failure observed here aligns more with timeout (fm_timeout) and, to some extent, wall_thrashing (fm_wall_thrashing) because the agent loops near walls and fails to progress toward the goal. The KAG’s FailureMode definitions list:
+    - fm_timeout: Episode reached MAX_STEPS (200) without reaching the goal.
+    - fm_wall_thrashing: Agent repeatedly hit walls while failing to progress toward the goal.
+- Dynamic config and generalization demands
+  - The episode’s dynamic config includes randomization of start, goal, and fires per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The KAG notes that this requires the policy to generalize across configurations and to use situational description rather than fixed coordinates in demonstrations.
+  - The policy’s Vision/Prediction setup (Observation horizon 4, Prediction horizon 3) plus the CellAlignedEncoder means the agent reasons over a short history and per-cell features. The observed trajectory shows persistent aimless looping rather than committing to a corridor. This suggests the policy has not learned robust fire-avoidance and corridor-following in this randomized setting, particularly when the best corridor is not immediately obvious from the local observation.
+- Corridor selection and ground-truth guidance
+  - The KAG defines three corridors:
+    - Left-edge corridor: Stay in column 0 down to row 4, then travel along row 4 to the goal column.
+    - Top-edge corridor: Stay in row 0 to the goal column, then descend to the goal row.
+    - Right-column corridor: Reach column 4 along the top, then descend column 4 to the goal row.
+  - In this episode, the fire placements (0,1), (1,3), (4,0) and the goal at (2,1) mean the Top-edge corridor is blocked by the fire at (0,1), and the Left-edge corridor would force traversal through (4,0) which is a fire hazard
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.835): A demonstration starting at (0, 0) with goal at (0, 0) and fires at [(2, 2), (2, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x UP, 4x LEFT, 1x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.833): A demonstration starting at (0, 4) with goal at (0, 4) and fires at [(2, 0), (2, 2), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x RIGHT, 4x UP, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.833): A demonstration starting at (0, 4) with goal at (0, 4) and fires at [(1, 3), (2, 1), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x RIGHT, 4x UP, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.833): A demonstration starting at (0, 4) with goal at (0, 4) and fires at [(1, 1), (2, 3), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x RIGHT, 4x UP, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.829): A demonstration starting at (4, 4) with goal at (4, 4) and fires at [(1, 1), (2, 4), (3, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 10 steps with actions: 5x RIGHT, 4x DOWN, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: This demonstration effectively shows how the agent can reliably select and commit to a safe corridor even when starting points, goals, and fire positions are randomized. The agent successfully navigates near fires without stepping into danger, using paths that avoid blocked corridors and minimize unnecessary moves like looping or wall thrashing. Each example highlights the agent's ability to adapt by choosing the best available route through the central area, often taking precise steps to bypass hazards while efficiently progressing toward the goal. This clear pattern of safe and goal-oriented navigation demonstrates robust corridor selection and commitment under challenging and varied conditions. Overall, the agent consistently reaches the goal safely and efficiently despite the presence of fires, showing that the policy generalizes well and is practical for real-world applications.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

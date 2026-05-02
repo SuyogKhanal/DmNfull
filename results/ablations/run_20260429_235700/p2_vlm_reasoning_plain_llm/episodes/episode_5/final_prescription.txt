@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: central_mixed
+steps: (0,2)->(1,2)->(2,2)->(2,1)
+n_demos: 3
+demo_variations: Demo variations: hazard-aware central corridor via (0,2)->(1,2)->(2,2)->(2,1); barrier-aware detour via left side (0,2)->(1,2)->(1,1)->(2,1); shortest safe left-edge path (0,2)->(0,1)->(1,1)->(2,1).
+rationale: central_mixed chosen because it matches the geometry described in section 5 and provides a fire-free central corridor toward the goal.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It gets off the intended central_mixed corridor you’d expect to lead from (0,2) to (2,1). In this episode, the agent later wandered away toward the bottom-right region (ending around (4,4) at step 24) and did not complete the corridor to the goal, indicating a misstep outside the central path.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough stays along the central corridor: start at (0,2), go down to (1,2), then to (2,2), and finally left to the goal at (2,1). This path stays mostly in the central corridor, avoids the known fires (0,3), (2,3), (3,2), and reaches the goal efficiently.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize progress toward the goal while staying within the central corridor when possible, and to apply safe, minimal detours only when needed to avoid hazards or barriers.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Three demonstrations are provided (n_demos = 3). Variations include: (A) hazard-aware central corridor with a minimal detour back toward the center if a nearby fire threatens the straight path; (B) barrier-aware detour via a left-side route to rejoin the corridor toward the goal; (C) shortest safe left-edge alternative that stays clear of fires while reaching (2,1).

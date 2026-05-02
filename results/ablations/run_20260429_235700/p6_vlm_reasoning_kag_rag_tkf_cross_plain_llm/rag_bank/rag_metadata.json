@@ -1,0 +1,173 @@
+[
+  {
+    "run_id": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm",
+    "episode_id": 2,
+    "maze_name": "multimodal",
+    "seed": 44,
+    "total_steps": 18,
+    "total_reward": -13.2,
+    "success": false,
+    "start_pos": [
+      0,
+      1
+    ],
+    "goal_pos": [
+      2,
+      0
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "3",
+        "0"
+      ],
+      [
+        "3",
+        "4"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        [
+          0,
+          3
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent failed due to fire_collision, stepping onto a fire tile (3,0) before reaching the goal, after diverging from a safe corridor.\n\nKey configuration: Start at (0,1); goal at (2,0); fire hazards at (0,3), (3,0), (3,4); episode ended at step 18 with the agent on (3,0).\n\nCorrect path: Use the top-edge corridor: (0,1) -> (0,0) -> (1,0) -> (2,0), reaching the goal without stepping on any fire tile.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm",
+    "episode_id": 4,
+    "maze_name": "multimodal",
+    "seed": 46,
+    "total_steps": 3,
+    "total_reward": -10.299999999999999,
+    "success": false,
+    "start_pos": [
+      1,
+      0
+    ],
+    "goal_pos": [
+      1,
+      2
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1"
+      ],
+      [
+        "4",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    ],
+    "summary": "The failure is due to the policy committing to a left-edge, vertical path and colliding with a fire at (4,0) instead of following a safe corridor. The episode configuration has start (1,0), goal (1,2), with fires at (1,1), (2,1), and (4,0). The correct safe path is the top-edge corridor: (1,0) -> (0,0) -> (0,1) -> (0,2) -> (1,2) (UP, RIGHT, RIGHT, DOWN), which avoids the central fires. This path routes along the top row to bypass central hazards before descending to the goal.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm",
+    "episode_id": 5,
+    "maze_name": "multimodal",
+    "seed": 47,
+    "total_steps": 41,
+    "total_reward": -15.25,
+    "success": false,
+    "start_pos": [
+      0,
+      2
+    ],
+    "goal_pos": [
+      2,
+      1
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "2",
+        "3"
+      ],
+      [
+        "3",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        [
+          0,
+          3
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent wandered into the central region where fires are placed, instead of sticking to the safe top-edge corridor; the policy had not learned to consistently prefer the top-edge route under central hazards.\n\nKey configuration: Start at (0,2) with the goal at (2,1); fires are placed to block central traversal, biasing toward central rows and tempting detours away from the top edge.\n\nCorrect path: Stay on the top-edge corridor: (0,2) -> (0,1) -> (1,1) -> (2,1), i.e., traverse along the top row first, then descend along the chosen column to reach the goal.",
+    "root_cause": "pending"
+  }
+]

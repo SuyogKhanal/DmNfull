@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 2
+demo_variations: Two variations: A) same start and fire layout as the episode, following the Top-edge corridor path (0,1)->(0,0)->(1,0)->(2,0); B) same start with a slightly shifted top-region fire placement to test generalization, still using the Top-edge corridor path to GOAL.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drift in the top_edge corridor area around the start, with an early risky detour and off-grid attempts in the original reasoning; the problematic moment comes from not following the top-edge corridor path toward the GOAL and instead thrashing or hitting walls.
+2. WHAT should a good walkthrough look like in that area? A clean Top-edge corridor walkthrough: from the start [0,1] move to [0,0], then down to [1,0], and finally to [2,0] (the GOAL).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to follow the top-edge corridor to reach the GOAL while avoiding off-grid detours and wall-hitting, thereby improving hazard avoidance and generalization to different fire placements within that corridor.
+4. HOW MANY walkthroughs are needed and how should they vary? 2 demonstrations: Variation A repeats the episode’s top-edge layout with the same path; Variation B uses a slightly different top-region fire placement but the same Top-edge corridor path to GOAL, reinforcing generalization while keeping the same start.

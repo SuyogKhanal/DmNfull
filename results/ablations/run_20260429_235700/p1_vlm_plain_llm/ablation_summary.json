@@ -1,0 +1,176 @@
+{
+  "cross_episode_reasoning": "[CROSS-EPISODE REASONING DISABLED FOR THIS PROFILE]",
+  "parsed_prescription": {
+    "n_failure_episodes_analysed": 3,
+    "failure_modes_found": 1,
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_1",
+        "episodes_in_cluster": [
+          2,
+          4,
+          5
+        ],
+        "root_cause": "looping",
+        "corridor": "mixed",
+        "where_it_fails": "The policy repeatedly revisits the same states without making progress across all three episodes.",
+        "what_it_does_wrong": "It enters cycles where actions do not lead to state advancement, preventing completion of the maze tasks.",
+        "source_final_recs": [
+          "unknown",
+          "unknown",
+          "unknown"
+        ]
+      }
+    ],
+    "demonstration_prescriptions": [
+      {
+        "demo_id": 1,
+        "corridor": "mixed",
+        "guidance": "Impose an exit-conditioned policy and encourage exploration diversity to break cycles.",
+        "target_region": "Whole maze space with emphasis on early exit strategies",
+        "what_it_teaches": "Promotes variety in action choices to avoid getting stuck in loops and to discover successful exit paths.",
+        "n_repetitions": 1
+      }
+    ],
+    "total_demonstrations_needed": 1,
+    "overall_summary": "All three failed episodes exhibit looping behavior that prevents progress in the 5x5 maze. A single mixed-corridor demonstration is prescribed to teach breaking cycles and ensuring exploration leads to exit conditions.",
+    "confidence": 0.65
+  },
+  "per_episode_prescriptions": [
+    {
+      "episode_id": 2,
+      "seed": 44,
+      "total_steps": 18,
+      "total_reward": -13.2,
+      "success": false,
+      "dynamic_config": {
+        "start_pos": [
+          0,
+          1
+        ],
+        "goal_pos": [
+          2,
+          0
+        ],
+        "fire_positions": [
+          [
+            "0",
+            "3"
+          ],
+          [
+            "3",
+            "0"
+          ],
+          [
+            "3",
+            "4"
+          ]
+        ]
+      },
+      "summary": "Reasoning disabled. Failure at episode 2 with config {'start_pos': [0, 1], 'goal_pos': [2, 0], 'fire_positions': [['0', '3'], ['3', '0'], ['3', '4']]}.",
+      "vlm_report": "VISION REPORT\nMaze=multimodal Steps=18 Reward=-13.20 Success=False\n---\n--- start_frame frame step 0 ---\n1) Agent location and adjacent cells\n- Agent at (0,1). Adjacent cells: left (0,0) empty, right (0,2) empty, down (1,1) empty. Up is outside the 5\u00d75 grid. No walls or fires in immediate neighbors; goal is not adjacent.\n\n2) Goal location and Manhattan distance\n- Goal at (2,0) (green G). Manhattan distance from (0,1) to (2,0) is |2\u22120| + |0\u22121| = 3.\n\n3) Fire hazards relative to the agent\n- Fires at (0,3), (3,0), (3,4). Distances to agent: to (0,3) is 2, to (3,0) is 4, to (3,4) is 6. No immediate fire (distance 1). Path planning should avoid moving toward (0,3) too quickly, but current adjacent cells are safe.\n\n4) First corrective demonstration move\n- Action: Down to (1,1) (D). Justification: reduces distance to goal from 3 to 2, keeps you away from immediate fires, and opens a straightforward route toward (2,0) without stepping into hazardous zones.\n\n--- highest_loss_frame frame step 3 ---\nStructured analysis of highest_loss_frame (step 3)\n\n1) Agent location and adjacent cells\n- Agent at (1,0). Adjacent cells: up (0,0) open, right (1,1) open, down (2,0) goal, left off-grid. No walls indicated around; Fires are not on adjacent tiles.\n\n2) Goal location and Manhattan distance\n- Goal at (2,0). Manhattan distance from agent: |2\u22121| + |0\u22120| = 1.\n\n3) Fire hazards relative to the agent\n- Fire tiles: (0,3), (3,0), (3,4). Distances to agent: 4, 2, 6 respectively. The nearest fire is two steps away at (3,0); none are on neighboring tiles. There is no immediate fire hazard on the targeted move to the goal.\n\n4) First corrective demonstration move\n- Action: Move Down (to 2,0).\n- Justification: Directly minimizes distance to the goal from 1 to 0, and the destination (2,0) is the goal tile with no fire. This is the shortest corrective step to succeed.\n\n--- end_frame frame step 18 ---\nStructured analysis for end_frame (step 18)\n\n1) Agent location and adjacency\n- Agent at (3,0). Adjacent cells: up (2,0) is the goal, right (3,1) is a safe, empty cell, down (4,0) is safe, left is out of bounds. No walls in the immediate vicinity. The immediate goal cell is directly adjacent.\n\n2) Goal location and Manhattan distance\n- Goal is at (2,0). Manhattan distance from the agent: |3\u22122| + |0\u22120| = 1.\n\n3) Fire hazards relative to the agent\n- Fires listed: (0,3), (3,0), (3,4). If (3,0) is active, the agent is currently on a fire hazard. Distances to fires: to (0,3) is 6, to (3,4) is 4, and to (3,0) is 0 (if treated as active). In many visualizations, the visible hazards near the agent are (0,3) and (3,4); none are immediately adjacent, so the only pressing hazard would be if (3,0) is indeed burning.\n\n4) First corrective demonstration move\n- Action: UP (move from 3,0 to 2,0).\n- Justification: It directly reaches the goal in a single step, reducing distance to 0 and avoiding detours that could introduce additional fire exposure.",
+      "kag_context": "",
+      "rag_context": "",
+      "analysis_text": "[REASONING DISABLED]",
+      "prescription": "",
+      "reasoning_combined": "[REASONING DISABLED]\n",
+      "tkf_result": null,
+      "adjusted_prescription": "",
+      "frame_paths": {
+        "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_2/frames/start.png",
+        "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_2/frames/high_loss.png",
+        "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_2/frames/end.png"
+      }
+    },
+    {
+      "episode_id": 4,
+      "seed": 46,
+      "total_steps": 3,
+      "total_reward": -10.299999999999999,
+      "success": false,
+      "dynamic_config": {
+        "start_pos": [
+          1,
+          0
+        ],
+        "goal_pos": [
+          1,
+          2
+        ],
+        "fire_positions": [
+          [
+            "1",
+            "1"
+          ],
+          [
+            "2",
+            "1"
+          ],
+          [
+            "4",
+            "0"
+          ]
+        ]
+      },
+      "summary": "Reasoning disabled. Failure at episode 4 with config {'start_pos': [1, 0], 'goal_pos': [1, 2], 'fire_positions': [['1', '1'], ['2', '1'], ['4', '0']]}.",
+      "vlm_report": "VISION REPORT\nMaze=multimodal Steps=3 Reward=-10.30 Success=False\n---\n--- start_frame frame step 0 ---\nStructured analysis for start_frame (step 0)\n\n1) Agent location and adjacent cells\n- Agent is at (1,0) (A). Adjacent cells: North (0,0) is empty, East (1,1) is a fire, South (2,0) is empty, West is off-grid. The goal is at (1,2) and the top row contains open cells (no walls seen).\n\n2) Goal location and Manhattan distance\n- Goal: (1,2). Manhattan distance from (1,0) is |1\u22121| + |2\u22120| = 2.\n\n3) Fire hazards relative to the agent\n- Fire at (1,1) is directly to the east (immediate hazard). Additional fires at (2,1) (distance 2) and (4,0) (distance 3). No fires on (0,0), (0,1), or (0,2), so a top-row route is viable to bypass the eastern fire.\n\n4) First corrective demonstration move\n- Action: Up to (0,0). Justification: avoids the adjacent fire at (1,1) and starts heading toward the goal via a safe top-row path (e.g., (0,0) \u2192 (0,2) \u2192 (1,2)).\n\n--- highest_loss_frame frame step 1 ---\nStructured analysis for highest_loss_frame (step 1)\n\n1) Agent location and adjacents\n- Agent at (2,0). Adjacent cells: Up to (1,0) \u2014 empty/safe; Right to (2,1) \u2014 fire; Down to (3,0) \u2014 empty/safe; Left is outside the grid (wall).\n- Nearby items: Fires at (1,1), (2,1), (4,0). Goal at (1,2) is two steps away, not adjacent.\n\n2) Goal location and Manhattan distance\n- Goal is at (1,2).\n- Manhattan distance from agent (2,0) = |2\u22121| + |0\u22122| = 3.\n\n3) Fire hazards relative to the agent\n- Immediate hazard: fire at (2,1) directly to the east.\n- Other fires: (1,1) (north-east) and a distant fire at (4,0).\n- The agent cannot move Right now; the path must navigate around (2,1) and (1,1) toward (1,2).\n\n4) First corrective demonstration move\n- Action: Up (to 1,0).\n- Justification: It avoids the immediate fire at (2,1) and begins progress toward the goal without stepping into a hazard; Right is blocked by fire, Left is a wall, so Up is the safest first corrective step.\n\n--- end_frame frame step 3 ---\nStructured analysis of end_frame (step 3)\n\n1) Agent location and adjacent cells\n- Agent is at (4, 0).\n- Adjacent valid moves: Up to (3, 0) and Right to (4, 1). Down/Left are out of bounds.\n- Nearby hazards: fires are configured at (1, 1), (2, 1), and (4, 0). The current cell (4, 0) is a fire cell per config (hazard present on the agent\u2019s square); (3, 0) and (4, 1) appear safe in the grid view.\n\n2) Goal location and Manhattan distance\n- Goal is at (1, 2).\n- Manhattan distance from (4, 0) to (1, 2) is |4\u22121| + |0\u22122| = 5.\n\n3) Fire hazards relative to the agent\n- Fire at (4, 0): agent is on a fire tile (extreme hazard).\n- Fire at (2, 1): distance from agent = |4\u22122| + |0\u22121| = 3.\n- Fire at (1, 1): distance from agent = |4\u22121| + |0\u22121| = 4.\n- Adjacent cells (3, 0) and (4, 1) are not on fire, but (3, 0) would place you closer to the near-fire cluster if you proceed toward (2,1).\n\n4) First corrective demonstration move\n- Action: Up (to 3, 0).\n- Justification: Moves away from the immediate fire on (4, 0) and reduces the distance to the goal from 5 to 4, while staying on a non-fire tile. This sets a safer direction toward the goal while avoiding the nearby fires at (1,1) and (2,1).",
+      "kag_context": "",
+      "rag_context": "",
+      "analysis_text": "[REASONING DISABLED]",
+      "prescription": "",
+      "reasoning_combined": "[REASONING DISABLED]\n",
+      "tkf_result": null,
+      "adjusted_prescription": "",
+      "frame_paths": {
+        "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_4/frames/start.png",
+        "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_4/frames/high_loss.png",
+        "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_4/frames/end.png"
+      }
+    },
+    {
+      "episode_id": 5,
+      "seed": 47,
+      "total_steps": 41,
+      "total_reward": -15.25,
+      "success": false,
+      "dynamic_config": {
+        "start_pos": [
+          0,
+          2
+        ],
+        "goal_pos": [
+          2,
+          1
+        ],
+        "fire_positions": [
+          [
+            "0",
+            "3"
+          ],
+          [
+            "2",
+            "3"
+          ],
+          [
+            "3",
+            "2"
+          ]
+        ]
+      },
+      "summary": "Reasoning disabled. Failure at episode 5 with config {'start_pos': [0, 2], 'goal_pos': [2, 1], 'fire_positions': [['0', '3'], ['2', '3'], ['3', '2']]}.",
+      "vlm_report": "VISION REPORT\nMaze=multimodal Steps=41 Reward=-15.25 Success=False\n---\n--- start_frame frame step 0 ---\nStructured analysis for start_frame (step 0)\n\n1) Agent location and adjacent cells\n- Agent at (0, 2) (row 0, col 2). Adjacent cells: \n  - Up: out of bounds (wall)\n  - Down: (1, 2) \u2014 open\n  - Left: (0, 1) \u2014 open\n  - Right: (0, 3) \u2014 fire (hazard)\n- Nearby walls/fires/goal: Fire at (0, 3) is immediate to the right. Goal is not adjacent.\n\n2) Goal location and Manhattan distance\n- Goal at (2, 1).\n- Manhattan distance from agent: |2-0| + |1-2| = 2 + 1 = 3.\n\n3) Fire hazards relative to the agent\n- Fire at (0, 3): distance 1 (immediate right; high risk)\n- Fire at (2, 3): distance 3\n- Fire at (3, 2): distance 3\n- Summary: there is a nearby fire on the right; other fires are several steps away.\n\n4) First corrective demonstration move\n- Action: Down (to 1, 2)\n- Justification: It reduces the Manhattan distance to the goal (3 \u2192 2) while avoiding the immediate fire on the right, and keeps a safe path toward the goal (2,1) via a straightforward vertical move.\n\n--- highest_loss_frame frame step 24 ---\nStructured analysis for highest_loss_frame (step 24)\n\n1) Agent location and adjacent cells\n- Agent is at (4,4).\n- Adjacent cells: Up to (3,4) \u2014 free; Left to (4,3) \u2014 free; Down and Right are out of bounds.\n- Nearby walls/fires/goal: There is a wall at (3,3) that blocks a direct left-up route toward the goal. No fires in the two adjacent cells; the goal is at (2,1).\n\n2) Goal location and Manhattan distance\n- Goal is at (2,1).\n- Manhattan distance from the agent: |4\u22122| + |4\u22121| = 2 + 3 = 5.\n\n3) Fire hazards relative to the agent\n- Fires at (0,3), (2,3), (3,2).\n- Distances to fires from the agent: to (0,3) = 5; to (2,3) = 3; to (3,2) = 3.\n- No adjacent-fire hazard; nearest fires are 3 steps away. Moving to (3,4) or (4,3) would place you at distance 2 from two fires, so caution is warranted in subsequent moves.\n\n4) First corrective demonstration move\n- Action: Move Up (to (3,4)).\n- Justification: Keeps a safe route around the wall at (3,3) and continues progress toward the goal, reducing the distance from 5 to 4 on a path that avoids immediate fire risks and avoids the blocked corridor.\n\n--- end_frame frame step 41 ---\nStructured analysis (end_frame, step 41)\n\n1) Agent location and adjacent cells\n- Agent is at (2, 3).\n- Adjacent cells:\n  - Up (1, 3): safe/normal tile\n  - Down (3, 3): safe\n  - Left (2, 2): safe\n  - Right (2, 4): safe\n- No walls shown around; none of the adjacent cells appear to be on fire in this frame.\n\n2) Goal location and Manhattan distance\n- Goal is at (2, 1).\n- Manhattan distance from (2, 3) to (2, 1): |2\u22122| + |3\u22121| = 2.\n\n3) Fire hazards relative to the agent\n- Fires are listed at (0, 3), (2, 3), and (3, 2).\n- Relative to the agent at (2, 3): the fire at (2, 3) would be on the same tile (ambiguous in the frame), while fires at (0, 3) and (3, 2) are two steps away.\n- No fires are in the four immediate neighboring cells (adjacent risk is currently low).\n\n4) First corrective demonstration move\n- Action: move_left (to 2, 2).\n- Justification: This reduces the Manhattan distance to the goal by 1 (from 2 to 1), keeps the agent on a non-hazard adjacent tile, and sets up finishing with another left move to (2, 1).",
+      "kag_context": "",
+      "rag_context": "",
+      "analysis_text": "[REASONING DISABLED]",
+      "prescription": "",
+      "reasoning_combined": "[REASONING DISABLED]\n",
+      "tkf_result": null,
+      "adjusted_prescription": "",
+      "frame_paths": {
+        "start_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_5/frames/start.png",
+        "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_5/frames/high_loss.png",
+        "end_frame": "/vast/s226137394/DmN/DmNfull/results/ablations/run_20260429_235700/rollout/episodes/episode_5/frames/end.png"
+      }
+    }
+  ]
+}

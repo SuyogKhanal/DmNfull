@@ -1,0 +1,93 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+Episode context (static facts used here):
+- Start: [1, 2]; Goal: [1, 1]; Fires: [1,4], [4,1], [4,2].
+- Fires are hazards that terminate on contact. The agent never enters WALL tiles in this episode.
+- Final position: [4, 1] after 44 steps; final tile is FIRE (termination).
+
+Step-by-step trajectory (step index corresponds to the action executed at that step; the “at” position is the agent’s location before taking the action):
+- Step 0 (start): at [1, 2].
+- Step 1: DOWN -> move to [2, 2]; reward -0.10
+- Step 2: RIGHT -> move to [2, 3]; reward -0.10
+- Step 3: UP -> move to [1, 3]; reward -0.10
+- Step 4: UP -> move to [0, 3]; reward -0.10
+- Step 5: LEFT -> move to [0, 2]; reward -0.10
+- Step 6: LEFT -> move to [0, 1]; reward -0.10
+- Step 7: RIGHT -> move to [0, 2]; reward -0.15
+- Step 8: DOWN -> move to [1, 2]; reward -0.15
+- Step 9: DOWN -> move to [2, 2]; reward -0.15
+- Step 10: DOWN -> move to [3, 2]; reward -0.10
+- Step 11: LEFT -> move to [3, 1]; reward -0.10
+- Step 12: LEFT -> move to [3, 0]; reward -0.10
+- Step 13: UP -> move to [2, 0]; reward -0.10
+- Step 14: UP -> move to [1, 0]; reward -0.10
+- Step 15: UP -> move to [0, 0]; reward -0.10
+- Step 16: RIGHT -> move to [0, 1]; reward -0.15
+- Step 17: RIGHT -> move to [0, 2]; reward -0.15
+- Step 18: RIGHT -> move to [0, 3]; reward -0.15
+- Step 19: DOWN -> move to [1, 3]; reward -0.15
+- Step 20: DOWN -> move to [2, 3]; reward -0.15
+- Step 21: RIGHT -> move to [2, 4]; reward -0.10
+- Step 22: LEFT -> move to [2, 3]; reward -0.15
+- Step 23: UP -> move to [1, 3]; reward -0.15
+- Step 24: LEFT -> move to [1, 2]; reward -0.15
+- Step 25: UP -> move to [0, 2]; reward -0.15
+- Step 26: LEFT -> move to [0, 1]; reward -0.15
+- Step 27: RIGHT -> move to [0, 2]; reward -0.15
+- Step 28: DOWN -> move to [1, 2]; reward -0.15
+- Step 29: DOWN -> move to [2, 2]; reward -0.15
+- Step 30: DOWN -> move to [3, 2]; reward -0.15
+- Step 31: LEFT -> move to [3, 1]; reward -0.15
+- Step 32: LEFT -> move to [3, 0]; reward -0.15
+- Step 33: UP -> move to [2, 0]; reward -0.15
+- Step 34: UP -> move to [1, 0]; reward -0.15
+- Step 35: UP -> move to [0, 0]; reward -0.15
+- Step 36: RIGHT -> move to [0, 1]; reward -0.15
+- Step 37: RIGHT -> move to [0, 2]; reward -0.15
+- Step 38: RIGHT -> move to [0, 3]; reward -0.15
+- Step 39: DOWN -> move to [1, 3]; reward -0.15
+- Step 40: DOWN -> move to [2, 3]; reward -0.15
+- Step 41: DOWN -> move to [3, 3]; reward -0.10
+- Step 42: LEFT -> move to [3, 2]; reward -0.15
+- Step 43: LEFT -> move to [3, 1]; reward -0.15
+- Step 44: DOWN -> move to [4, 1]; reward -10.10 (FIRE tile; episode terminates)
+
+Key takeaways from the trajectory:
+- The agent never reaches the GOAL [1,1].
+- The path is dominated by cycles around the upper-left quadrant and middle region, with repeated reversals (e.g., toggling between [0,1] and [0,2], bouncing between rows 0–3 and columns 0–3).
+- The final step ends on a FIRE tile at [4,1], causing termination with a large negative reward.
+- The direct GOAL is actually adjacent to the starting position: from [1,2], GOAL [1,1] is one left move away. The agent did not take that optimal route.
+
+2) FIRST WRONG DECISION
+
+Earliest deviation from a safe/optimal path:
+- Step 1: From start at [1, 2], the agent chooses DOWN to [2, 2] instead of LEFT to [1, 1] (the GOAL tile).
+- Rationale for “should have”: The GOAL is directly left, is enterable, and not a fire; taking LEFT would reach the GOAL in one step, achieving success immediately (assuming no hidden hazards on that tile). The local observation includes GOAL at [1,1], so LEFT is a clearly safe, optimal action in that moment.
+
+3) WHY THE POLICY FAILED
+
+Root-cause synthesis grounded in evidence and KAG definitions:
+- Primary failure mode observed in this episode is a fire_collision (the agent ends on a FIRE tile). The agent entered a FIRE tile at step 44, terminating the episode with a large negative reward.
+- Evidence from the trajectory shows repeated non-progressive wandering and back-and-forth looping rather than prioritizing a direct corridor to the GOAL. The earliest incorrect decision (Step 1) was to move DOWN when LEFT to GOAL was immediately available and safe.
+- Dynamic config and generalization challenge (KAG facts):
+  - The environment has dynamic randomization of start, goal, and fire placements per episode, and the architecture relies on a Vision-conditioned diffusion policy trained on human demonstrations. This mix makes generalization to new hazard configurations essential.
+  - The KAG describes several failure modes and their triggers, notably fire_collision (entered a FIRE tile) and timeout (max steps). Here, the episode culminates in a fire_collision, indicating insufficient generalization of fire-avoidance across start/goal/fire configurations.
+  - The environment’s dynamic config includes a min_start_goal_manhattan constraint (value=4) intended to enforce a minimum separation, but the provided episode shows a start-goal pair with distance 1. This mismatch suggests either a data inconsistency or a test episode that challenges the policy differently than the intended distribution. The implication is that the policy must generalize across a wide variety of start/goal separations, including near-goal cases, which it did not reliably do in this episode.
+  - Vision and representation hypothesis (KAG
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,1)->(1,1)
+n_demos: 3
+demo_variations: Variations explore slight top-edge emphasis and small detours along the top row: path1=(1,2)->(0,2)->(0,1)->(1,1); path2=(1,2)->(0,2)->(0,1)->(0,0)->(1,0)->(1,1); path3=(1,2)->(0,2)->(0,3)->(0,2)->(0,1)->(1,1).
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI tends to drift away from a direct left-step to the GOAL and loops near the top-left region; the planned fix centers on the top_edge corridor (staying on the top row) to reach the GOAL safely.
+2. WHAT should a good walkthrough look like in that area? A good path from the start [1,2] is: Up to [0,2], then along the top row to [0,1], and finally down to the GOAL at [1,1].
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to favor the top-edge corridor when feasible, using the top row to approach the GOAL quickly while avoiding central-fire hazards.
+4. HOW MANY walkthroughs are needed and how should they vary? Use 3 walkthroughs as in n_demos, varying slight top-row detours (e.g., direct top-edge path, an extended top-edge run, and a small detour along the top row) to cover realistic near-edge variants.

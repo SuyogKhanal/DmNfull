@@ -1,0 +1,28 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Ground truth anchors we have
+  - Start position: [0, 2].
+  - Goal position: [2, 1].
+  - Fires: [ [0,3], [2,3], [3,2] ].
+  - Episode outcome: failure (41 steps, total reward -15.25).
+  - Start-frame evidence: The agent initially faces an
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,2)->(0,1)->(1,1)->(2,1)
+n_demos: 2
+demo_variations: covers rag rank=1 top_edge variant and rank=2 top_edge variant
+rationale: Top-edge corridor selected; justification from KAG: 'Stay in row 0 while traversing to the goal column, then descend along that column'.
+<<<END_FINAL_REC>>>
+
+Plain-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to falter in the top-edge corridor area when fires are placed in upper/mid regions; the chosen corridor here is top_edge, which is the region where the policy has historically struggled and where the RAG cases suggest focused demonstrations.
+
+2. WHAT should a good walkthrough look like in that area? A clean top-edge walk is: from the start at [0,2], move left to [0,1], then descend along column 1 to reach the goal at [2,1] via [1,1] and finally [2,1]. This stays on the top edge for the initial segment and then follows the vertical descent along the goal’s column, avoiding the known fire tiles.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to favor the top-edge corridor when fires block central regions, reinforcing a safe path that keeps the agent away from hazards—aligning with the two retrieved top-edge demonstrations (rank 1 and rank 2) showing safe top-edge strategies in similar fire layouts.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Two demonstrations are provided (n_demos = 2) to cover variation within the same corridor: one derived from the rank-1 top-edge variant and another from the rank-2 top-edge variant described in the RAG results. This gives the learner exposure to alternative but still top-edge-consistent routes that avoid the fires.

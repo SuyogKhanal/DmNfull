@@ -1,0 +1,24 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 3
+demo_variations: Variant 1: rag rank=1 top_edge variant; Variant 2: internal top-edge path with detour to (0,3) and (1,3) before reaching (1,2); Variant 3: extended top-edge corridor path along row 0 to (0,4), then into (1,4) and left to (1,2)
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to stick to a vertical left-edge path (left_edge) and ends up stepping onto a fire at (4,0) in this fire layout. The FINAL_REC selects the top_edge corridor as the safer route to bypass the central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough along the top-edge corridor would start at (1,0), move Up to (0,0), then Right along the top row to (0,1) and (0,2), and finally Down to the goal at (1,2). This path stays on the top row for the bulk of the journey and avoids the central fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to favor the top-edge corridor when central fires threaten the direct route, aligning with the RAG rank-1 case which also recommended the top-edge path (0,1) -> (0,0) -> (1,0) -> (2,0) in a similar layout. The additional variations reinforce staying on the safe top row before descending, reinforcing the generalization to fire-avoidance across core corridor patterns.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Three walkthroughs are provided (n_demos = 3) to cover the core top-edge corridor strategy and to show minor variations:
+  - Variation 1 (RAG-guided): a direct top-edge corridor demonstration that follows the safe top-row path to the goal.
+  - Variation 2 (detour within top-edge corridor): stays on the top row longer (e.g., extends to (0,3) before descending to (1,3) and finishing at (1,2)).
+  - Variation 3 (extended top-edge corridor): travels further along the top row to (0,4), descends to (1,4), and then moves left to the goal at (1,2).
+These variations are designed to help the policy generalize the safe corridor concept across slightly different top-edge trajectories while avoiding central fires.
