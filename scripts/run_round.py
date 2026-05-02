@@ -221,6 +221,9 @@ def parse_args():
                    help="Hard cap on rounds inside one --auto-loop session.")
     p.add_argument("--notify-to", type=str, default=None, dest="notify_to",
                    help="Recipient for notification emails. Defaults to $NOTIFY_TO env var.")
+
+    p.add_argument("--checkpoint-dir", type=str, default="checkpoints", dest="checkpoint_dir",
+                   help = "Directory to save checkpoints (passed as EXTRA_ARGS to slurm/round.sh; ignored by run_round.py itself).")
     return p.parse_args()
 
 
@@ -314,7 +317,7 @@ def run_one_round(args, loop_id: str, is_new_loop: bool, rnd: int) -> Dict:
         _info("Skipping training (--skip-train).")
         train_loss = float("nan")
     else:
-        train_stdout = run_train(resume=True, demo_paths=demo_paths_arg)
+        train_stdout = run_train(resume=True, demo_paths=demo_paths_arg, checkpoint_dir=args.checkpoint_dir)
         train_loss = parse_train_loss(train_stdout)
         _info(f"parsed train_loss = {train_loss}")
 

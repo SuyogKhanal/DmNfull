@@ -18,7 +18,7 @@ from model.diffusion_policy import MazeDiffusionPolicy
 
 DEMO_DIR        = "demos"
 CHECKPOINT_DIR  = "checkpoints"
-EPOCHS          = 5000
+EPOCHS          = 500
 BATCH_SIZE      = 32
 LR              = 3e-4
 OBS_HORIZON     = 4
