@@ -63,6 +63,7 @@ CLI
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -75,6 +76,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
+
+# Notifier is best-effort — never let an email failure break the round.
+try:
+    from scripts.notify import notify_event
+except Exception as _notify_err:
+    def notify_event(event, payload=None, **kw):
+        print(f"[run_round] notify_event noop ({_notify_err}): {event}")
+        return False
 
 # Reuse the helpers active_loop.py already exposes — the heavy lifting (train,
 # eval, metric computation, log appending, layout flattening) lives there.
@@ -197,73 +206,95 @@ def parse_args():
     p.add_argument("--skip-train", action="store_true", dest="skip_train",
                    help="Skip the training step (use whatever is in checkpoints/ as-is). "
                         "Useful for re-running the LLM pipeline on an unchanged policy.")
+    p.add_argument("--expert", type=str, choices=["human", "bfs", "none"], default="none",
+                   dest="expert",
+                   help="Demo source AFTER the LLM phase. "
+                        "'human' = print the play_maze command for the user (no auto-collect); "
+                        "'bfs' = run scripts/rule_based_collector.py headless on the prescribed "
+                        "layouts so the round is fully autonomous (slurm-friendly); "
+                        "'none' (default) = save layouts only, no further action.")
+    p.add_argument("--auto-loop", action="store_true", dest="auto_loop",
+                   help="With --expert bfs, after this round finishes, automatically launch the "
+                        "next round in the SAME process until success_rate >= --target-sr or "
+                        "--max-rounds is reached. Designed for unattended slurm jobs.")
+    p.add_argument("--max-rounds", type=int, default=20, dest="max_rounds",
+                   help="Hard cap on rounds inside one --auto-loop session.")
+    p.add_argument("--notify-to", type=str, default=None, dest="notify_to",
+                   help="Recipient for notification emails. Defaults to $NOTIFY_TO env var.")
     return p.parse_args()
 
 
-def main():
-    args = parse_args()
+def _run_bfs_collector(layouts_path: Path, demo_dir_for_round: Path) -> Dict:
+    """Invoke scripts/rule_based_collector.py as a subprocess on the prescribed
+    layouts. Returns the parsed bfs_collection_summary.json."""
+    cmd = [
+        sys.executable, "-u", str(REPO_ROOT / "scripts" / "rule_based_collector.py"),
+        "--layouts-from", str(layouts_path),
+        "--demo_dir", str(demo_dir_for_round),
+        "--skip-unsolvable",
+    ]
+    _info(f"BFS expert: {' '.join(cmd)}")
+    rc = subprocess.call(cmd, cwd=str(REPO_ROOT))
+    summary_path = demo_dir_for_round / "bfs_collection_summary.json"
+    if rc != 0:
+        _info(f"WARNING: BFS collector exited rc={rc}")
+    if summary_path.exists():
+        with open(summary_path, "r") as f:
+            return json.load(f)
+    return {"n_layouts": 0, "n_saved": 0, "n_skipped": 0, "exit_code": rc}
+
+
+def _resolve_loop_id(profile_root: Path, args) -> Tuple[str, bool]:
+    """Pick (or create) the loop_id for this invocation. Returns (id, is_new)."""
+    if args.new_loop or (args.loop_id is None and _latest_loop_id(profile_root) is None):
+        return f"loop_{datetime.now().strftime('%Y%m%d_%H%M%S')}", True
+    if args.loop_id is None:
+        return _latest_loop_id(profile_root), False
+    return args.loop_id, not (profile_root / args.loop_id).exists()
+
+
+def run_one_round(args, loop_id: str, is_new_loop: bool, rnd: int) -> Dict:
+    """Execute one round end-to-end and return a result dict."""
     profile_name, profile_yaml = resolve_profile(args.profile)
-    profile_root = ACTIVE_LOOP_ROOT / profile_name
-    profile_root.mkdir(parents=True, exist_ok=True)
-
-    # ------------------------------------------------------------------ #
-    # Resolve loop_id.                                                    #
-    # ------------------------------------------------------------------ #
-    if args.new_loop or args.loop_id is None and _latest_loop_id(profile_root) is None:
-        loop_id = f"loop_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        is_new_loop = True
-    elif args.loop_id is None:
-        loop_id = _latest_loop_id(profile_root)
-        is_new_loop = False
-    else:
-        loop_id = args.loop_id
-        is_new_loop = not (profile_root / loop_id).exists()
-
-    loop_root = profile_root / loop_id
-    loop_root.mkdir(parents=True, exist_ok=True)
-
-    # ------------------------------------------------------------------ #
-    # Resolve round number.                                               #
-    # ------------------------------------------------------------------ #
-    if args.round_number is not None:
-        rnd = int(args.round_number)
-    else:
-        rnd = _next_round_number(loop_root)
-    round_dir = loop_root / f"round_{rnd}"
+    profile_root        = ACTIVE_LOOP_ROOT / profile_name
+    loop_root           = profile_root / loop_id
+    round_dir           = loop_root / f"round_{rnd}"
     round_dir.mkdir(parents=True, exist_ok=True)
 
-    profile_demo_dir       = profile_loop_demos_dir(profile_name, loop_id)
+    profile_demo_dir    = profile_loop_demos_dir(profile_name, loop_id)
     profile_demo_dir.mkdir(parents=True, exist_ok=True)
-    demo_dir_for_round     = profile_demo_dir / f"round_{rnd}"
-    demo_paths_arg         = build_demo_paths(profile_name, loop_id)
+    demo_dir_for_round  = profile_demo_dir / f"round_{rnd}"
+    demo_paths_arg      = build_demo_paths(profile_name, loop_id)
 
-    profile_log_path       = profile_root / "loop_log.json"
-    learning_curve_path    = profile_root / "learning_curve.png"
+    profile_log_path    = profile_root / "loop_log.json"
+    learning_curve_path = profile_root / "learning_curve.png"
 
     cumulative_regret, _last = _load_prev_metrics(profile_log_path, loop_id)
 
-    _section(f"RUN_ROUND — profile={profile_name}", char="=")
+    _section(f"RUN_ROUND — profile={profile_name} round={rnd}", char="=")
     _info(f"loop_id        : {loop_id}  (new_loop={is_new_loop})")
-    _info(f"round          : {rnd}")
     _info(f"round_dir      : {round_dir}")
     _info(f"profile demos  : {profile_demo_dir}  (this loop)")
     _info(f"demo globs     : {demo_paths_arg}")
     _info(f"baseline demos : {count_baseline_demos()}")
     _info(f"prev cum_regret: {cumulative_regret:.3f}")
+    _info(f"expert         : {args.expert}")
 
-    # ------------------------------------------------------------------ #
-    # Baseline checkpoint restore — only on round 1 of a NEW loop, so the #
-    # rest of the loop accumulates training on top of itself.             #
-    # ------------------------------------------------------------------ #
+    notify_event("ROUND_START", {
+        "profile": profile_name, "loop_id": loop_id, "round": rnd,
+        "expert": args.expert, "target_sr": args.target_sr,
+        "round_dir": str(round_dir),
+    }, to=args.notify_to, silent=True)
+
+    # Baseline restore on round 1 of a NEW loop only.
     if rnd == 1 and is_new_loop and not args.skip_baseline_restore:
         restore_baseline_checkpoint(Path(args.baseline_checkpoint))
     else:
-        _info(f"Baseline restore skipped (rnd={rnd}, new_loop={is_new_loop}, "
-              f"--skip-baseline-restore={args.skip_baseline_restore}).")
+        _info(
+            f"Baseline restore skipped (rnd={rnd}, new_loop={is_new_loop}, "
+            f"--skip-baseline-restore={args.skip_baseline_restore})."
+        )
 
-    # Manifest — written once per loop, but it's safe to overwrite the existing
-    # one when a loop's earliest round is rerun. Keep the original timestamp so
-    # downstream tooling can tell when the loop was first opened.
     manifest_path = loop_root / "loop_manifest.json"
     if not manifest_path.exists():
         with open(manifest_path, "w") as f:
@@ -276,24 +307,27 @@ def main():
                 "profile_demo_dir":        str(profile_demo_dir),
             }, f, indent=2, default=str)
 
-    # ------------------------------------------------------------------ #
-    # TRAIN.                                                              #
-    # ------------------------------------------------------------------ #
+    # ---- TRAIN ---------------------------------------------------------
     round_t0 = time.time()
+    train_t0 = time.time()
     if args.skip_train:
         _info("Skipping training (--skip-train).")
         train_loss = float("nan")
     else:
-        # Resume from the existing best_model.pth in checkpoints/ — that is
-        # either the just-restored baseline (round 1 / new loop) or the policy
-        # the previous round left behind (rounds 2+).
         train_stdout = run_train(resume=True, demo_paths=demo_paths_arg)
         train_loss = parse_train_loss(train_stdout)
         _info(f"parsed train_loss = {train_loss}")
 
-    # ------------------------------------------------------------------ #
-    # EVAL — full pipeline (Phase A + B + C).                             #
-    # ------------------------------------------------------------------ #
+    notify_event("TRAIN_DONE", {
+        "profile": profile_name, "loop_id": loop_id, "round": rnd,
+        "train_loss": train_loss,
+        "elapsed_sec": round(time.time() - train_t0, 1),
+        "demo_paths": demo_paths_arg,
+        "training_dataset_size": count_baseline_demos() + count_demos_in(profile_demo_dir),
+    }, to=args.notify_to, silent=True)
+
+    # ---- EVAL ----------------------------------------------------------
+    eval_t0 = time.time()
     full_output_path = run_eval(
         profile_yaml=profile_yaml,
         base_config=args.config,
@@ -301,7 +335,6 @@ def main():
         n_episodes=args.n_episodes,
         seed=args.seed,
     )
-
     metrics = compute_metrics(
         full_output_path, train_loss, cumulative_regret,
         round_start_demos=count_demos_in(profile_demo_dir),
@@ -314,47 +347,146 @@ def main():
     )
     print_prescriptions(rnd, metrics.get("prescriptions", []))
 
+    n_layouts = sum(
+        len(p.get("recommended_layouts") or []) for p in metrics.get("prescriptions", [])
+    )
+    notify_event("EVAL_DONE", {
+        "profile": profile_name, "loop_id": loop_id, "round": rnd,
+        "success_rate": metrics["success_rate"],
+        "n_failures":   metrics["n_failures"],
+        "n_episodes":   metrics["n_episodes"],
+        "n_prescriptions": len(metrics.get("prescriptions", [])),
+        "n_layouts_recommended": n_layouts,
+        "elapsed_sec": round(time.time() - eval_t0, 1),
+        "round_dir":   str(round_dir),
+        "layouts_file": str(layouts_path),
+    }, to=args.notify_to, silent=True, attachments=[str(layouts_path)] if layouts_path.exists() else None)
+
     record = {
         "round":     rnd,
         "loop_id":   loop_id,
-        "profile":   profile_name,
+        "profile":   args.profile,
         "target_sr": args.target_sr,
         "round_dir": str(round_dir),
         **metrics,
     }
     append_loop_log(profile_log_path, record)
-    save_loop_graph(profile_log_path, learning_curve_path, profile_name)
+    save_loop_graph(profile_log_path, learning_curve_path, args.profile)
 
     target_hit = metrics["success_rate"] >= args.target_sr
-    elapsed = time.time() - round_t0
 
+    # ---- DEMO COLLECTION (BFS / human / none) --------------------------
+    bfs_summary: Optional[Dict] = None
+    if not target_hit and args.expert == "bfs":
+        _section(f"BFS EXPERT — collecting {n_layouts} demo(s)", char="-")
+        bfs_t0 = time.time()
+        bfs_summary = _run_bfs_collector(layouts_path, demo_dir_for_round)
+        notify_event("DEMO_COLLECTION_DONE", {
+            "profile": profile_name, "loop_id": loop_id, "round": rnd,
+            "expert":  "bfs",
+            "n_saved":   bfs_summary.get("n_saved", 0),
+            "n_skipped": bfs_summary.get("n_skipped", 0),
+            "demo_dir":  str(demo_dir_for_round),
+            "elapsed_sec": round(time.time() - bfs_t0, 1),
+        }, to=args.notify_to, silent=True)
+    elif not target_hit and args.expert == "human":
+        _info(
+            f"NEXT STEP (human expert) — record demos with:\n"
+            f"  python scripts/play_maze.py --layouts-from {layouts_path}\n"
+            f"  (will save into {demo_dir_for_round})"
+        )
+
+    elapsed = time.time() - round_t0
     _section(f"ROUND {rnd} DONE — SR={metrics['success_rate']:.2f}", char="*")
     _info(f"target_sr      : {args.target_sr:.2f}  (hit={target_hit})")
     _info(f"elapsed        : {elapsed/60:.1f}m")
-    _info(f"round_dir      : {round_dir}")
     _info(f"layouts file   : {layouts_path}")
     _info(f"profile log    : {profile_log_path}")
     _info(f"learning curve : {learning_curve_path}")
     _info(f"profile demos  : {metrics['total_profile_demos']} (+{metrics['demos_added']} this round)")
 
-    if target_hit:
-        _info("TARGET HIT — no further rounds needed for this loop.")
-    else:
-        n_layouts_to_record = len(metrics.get("prescriptions", []) and
-                                  [l for p in metrics["prescriptions"]
-                                     for l in (p.get("recommended_layouts") or [])])
-        _info(
-            f"NEXT STEP — record demos with:\n"
-            f"  python scripts/play_maze.py --layouts-from {layouts_path}\n"
-            f"  (will save into {demo_dir_for_round})"
-        )
+    if not target_hit and args.expert in ("none", "human"):
         _info(
             f"THEN submit next round with:\n"
             f"  PROFILE={args.profile} LOOP_ID={loop_id} sbatch scripts/slurm/round.sh"
         )
 
-    # Exit code: 0 always (slurm mail fires regardless). The user reads the
-    # log to know whether to record demos or stop.
+    notify_event("ROUND_END", {
+        "profile": profile_name, "loop_id": loop_id, "round": rnd,
+        "success_rate": metrics["success_rate"],
+        "target_hit":   target_hit,
+        "elapsed_min":  round(elapsed / 60.0, 2),
+        "profile_demos_total": metrics["total_profile_demos"],
+        "demos_added_this_round": metrics["demos_added"],
+        "bfs_summary": bfs_summary,
+    }, to=args.notify_to, silent=True)
+
+    return {
+        "round":          rnd,
+        "loop_id":        loop_id,
+        "round_dir":      round_dir,
+        "metrics":        metrics,
+        "target_hit":     target_hit,
+        "layouts_path":   layouts_path,
+        "demo_dir":       demo_dir_for_round,
+        "bfs_summary":    bfs_summary,
+    }
+
+
+def main():
+    args = parse_args()
+    profile_name, _ = resolve_profile(args.profile)
+    profile_root = ACTIVE_LOOP_ROOT / profile_name
+    profile_root.mkdir(parents=True, exist_ok=True)
+
+    loop_id, is_new_loop = _resolve_loop_id(profile_root, args)
+    (profile_root / loop_id).mkdir(parents=True, exist_ok=True)
+
+    if args.round_number is not None:
+        starting_round = int(args.round_number)
+    else:
+        starting_round = _next_round_number(profile_root / loop_id)
+
+    if args.auto_loop and args.expert != "bfs":
+        _info("WARNING: --auto-loop requires --expert bfs (no human-in-the-loop possible). Disabling auto-loop.")
+        args.auto_loop = False
+
+    notify_event("LOOP_INVOCATION", {
+        "profile": args.profile, "loop_id": loop_id,
+        "starting_round": starting_round, "expert": args.expert,
+        "auto_loop": args.auto_loop, "max_rounds": args.max_rounds,
+        "target_sr": args.target_sr,
+    }, to=args.notify_to, silent=True)
+
+    if not args.auto_loop:
+        result = run_one_round(args, loop_id, is_new_loop, starting_round)
+        return 0 if result is not None else 1
+
+    # ---------------- Auto-loop with BFS expert -----------------------
+    rnd = starting_round
+    last_result: Optional[Dict] = None
+    rounds_done = 0
+    cap = args.max_rounds
+    while rounds_done < cap:
+        result = run_one_round(args, loop_id, is_new_loop and rounds_done == 0, rnd)
+        last_result = result
+        rounds_done += 1
+        if result["target_hit"]:
+            _info(f"AUTO-LOOP: target reached at round {rnd}; stopping.")
+            break
+        # If BFS collected zero demos, looping wouldn't help — stop.
+        n_saved = (result.get("bfs_summary") or {}).get("n_saved", 0)
+        if n_saved == 0:
+            _info(f"AUTO-LOOP: BFS saved 0 demos this round; stopping to avoid spinning.")
+            break
+        rnd += 1
+    notify_event("AUTO_LOOP_DONE", {
+        "profile": args.profile, "loop_id": loop_id,
+        "rounds_done":  rounds_done,
+        "final_round":  last_result["round"]      if last_result else None,
+        "target_hit":   last_result["target_hit"] if last_result else None,
+        "final_sr":     last_result["metrics"]["success_rate"] if last_result else None,
+    }, to=args.notify_to)
     return 0
 
 

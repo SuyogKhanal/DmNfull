@@ -156,6 +156,11 @@ def parse_args():
                    help="Skip launching pygame for layout-driven demo collection (CI / "
                         "dry-run mode). Recommended layouts are still written to "
                         "recommended_layouts.json so you can record them later.")
+    p.add_argument("--expert", type=str, choices=["human", "bfs"], default="human",
+                   help="Where the round's demos come from. 'human' (default) launches "
+                        "play_maze for each prescribed layout; 'bfs' invokes the rule-based "
+                        "BFS collector instead so the loop is fully autonomous. "
+                        "--no-pygame is implied with bfs.")
     p.add_argument("--no-demo-prompt", action="store_true",
                    help="Skip the 'press ENTER after recording' prompt between rounds.")
     return p.parse_args()
@@ -614,6 +619,7 @@ def run_demo_collection_for_round(
     profile_demo_dir_for_round: Path,
     no_pygame: bool,
     no_prompt: bool,
+    expert: str = "human",
 ) -> List[Dict]:
     """Run the layout-driven demo-collection step for one round.
 
@@ -637,13 +643,29 @@ def run_demo_collection_for_round(
 
     if not layouts:
         _info("No recommended layouts this round.")
-        if not no_prompt:
+        if not no_prompt and expert == "human":
             input("→ Press ENTER to continue to the next round.\n")
         return layouts
 
-    _section(f"DEMO COLLECTION — {len(layouts)} layout(s) queued", char="-")
+    _section(f"DEMO COLLECTION — {len(layouts)} layout(s) queued (expert={expert})", char="-")
     _info(f"demos will save to: {profile_demo_dir_for_round}")
     _info(f"profile={profile_name}  loop={loop_id}  round={rnd}")
+
+    if expert == "bfs":
+        # Headless: hand the JSON we just wrote to the BFS collector subprocess.
+        # No pygame, no prompts, no human-in-the-loop.
+        cmd = [
+            sys.executable, "-u", str(SCRIPTS / "rule_based_collector.py"),
+            "--layouts-from", str(round_dir / "recommended_layouts.json"),
+            "--demo_dir",     str(profile_demo_dir_for_round),
+            "--skip-unsolvable",
+        ]
+        _info(f"BFS collector: {' '.join(cmd)}")
+        subprocess.call(cmd, cwd=str(REPO_ROOT))
+        n_collected = count_demos_in(profile_demo_dir_for_round)
+        _info(f"BFS collector finished. demos in round dir = {n_collected}")
+        return layouts
+
     if no_pygame:
         _info("--no-pygame set; layouts will be recorded to recommended_layouts.json only.")
 
@@ -867,8 +889,9 @@ def main():
             rnd=rnd,
             round_dir=round_dir,
             profile_demo_dir_for_round=round_demo_dir,
-            no_pygame=args.no_pygame,
-            no_prompt=args.no_demo_prompt,
+            no_pygame=args.no_pygame or args.expert == "bfs",
+            no_prompt=args.no_demo_prompt or args.expert == "bfs",
+            expert=args.expert,
         )
 
     save_loop_graph(profile_log_path, learning_curve, profile_name)
