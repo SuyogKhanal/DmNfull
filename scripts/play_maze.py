@@ -228,7 +228,10 @@ def save_demo(env, obs_seq, action_seq, reward_seq, demo_dir: str = DEMO_DIR, la
         "maze_name":      MAZE_NAME,
         "timestamp":      timestamp,
         "layout_id":      layout_id,
-        "start_pos":      [int(x) for x in config["start_pos"]],
+        # config["start_pos"] reflects env.agent_pos, which by save time is
+        # wherever the agent ended up. Use the trajectory's first cell so the
+        # recorded start is the actual spawn position.
+        "start_pos":      [int(x) for x in env.get_trajectory()[0]],
         "goal_pos":       [int(x) for x in config["goal_pos"]],
         "fire_positions": [[int(x) for x in p] for p in config["fire_positions"]],
         "trajectory":     [[int(x) for x in p] for p in env.get_trajectory()],
