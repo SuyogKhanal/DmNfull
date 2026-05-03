@@ -482,61 +482,47 @@ Output lands under `results/ablations/run_<ts>/` and is ready for
 `python dashboard/app.py`.
 
 To run **one full active loop per profile** in parallel slurm jobs (each
-profile autonomous via BFS), there is a hazard the simple for-loop pattern
-hides — every profile that trains in the same working directory writes to
-the SAME `checkpoints/best_model.pth` and `checkpoints/best_model_ema.pth`.
-Demos and RAG banks are profile-isolated, but the checkpoint files are not,
-so two parallel jobs sharing one repo will trample each other mid-training.
-
-To run them truly in parallel, give each profile its own checkout of the
-repo (one per /vast subdirectory). The baseline checkpoint can be a single
-shared file referenced by absolute path:
+profile autonomous via BFS), submit one job per profile from the same
+working tree. `scripts/slurm/round.sh` already auto-isolates each profile
+under `checkpoints/${PROFILE}/` (see `CHECKPOINT_DIR` default at the top of
+that script), so demos, RAG banks, AND checkpoints are all per-profile —
+parallel jobs do not trample each other.
 
 ```bash
-# one-time: clone the repo three times so each profile has its own checkpoints/
 for p in p4 p5 p6; do
-    git clone <your remote> /vast/$USER/DmN/DmNfull_${p}
-done
-
-# submit one slurm job per profile, each in its own working tree
-for p in p4 p5 p6; do
-    PROJECT_ROOT=/vast/$USER/DmN/DmNfull_${p} \
     PROFILE=$p EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 \
         NEW_LOOP=1 TARGET_SR=0.9 \
-        BASELINE_CKPT=/vast/$USER/DmN/shared_baseline.pth \
         NOTIFY_TO=you@example.com \
         sbatch --job-name=dmn_${p} scripts/slurm/round.sh
 done
 ```
 
-The slurm script honours `PROJECT_ROOT`; setting it per profile is what
-keeps the three jobs from racing on `checkpoints/`.
+What's isolated:
 
-Once each profile's job has finished, snapshot its final EMA checkpoint
-into a stable, per-profile filename so the McNemar evaluator can find it
-(see the next section):
+| Resource | Path | Isolated by |
+| --- | --- | --- |
+| Demos | `demos/active_loop/<profile>/<loop_id>/` | `active_loop.profile_loop_demos_dir` |
+| RAG bank | `results/active_loop/<profile>/<loop_id>/round_<N>/rag_bank/` | `run_eval` (per-round wipe) |
+| Training output | `checkpoints/<profile>/best_model{,_ema}.pth` | `slurm/round.sh` sets `--checkpoint-dir checkpoints/${PROFILE}`; `train_diffusion.py` writes there |
+| Eval load | reads `checkpoints/<profile>/best_model_ema.pth` | `run_eval` overrides `cfg.rollout.checkpoint_path` to the same dir |
+
+The eval-load row is the fix on this branch: previously `run_eval` left
+`cfg.rollout.checkpoint_path` at the master-config default
+(`checkpoints/best_model_ema.pth`, the *global* file), so the per-round
+pipeline was reading whichever profile last touched the global path
+rather than the just-trained per-profile EMA. `run_eval` now mirrors
+`run_train`'s `--checkpoint-dir` flow, pinning the eval to the same
+per-profile directory.
+
+After each profile's job finishes, snapshot its final EMA checkpoint into
+a stable per-profile filename so the McNemar evaluator can name them
+explicitly:
 
 ```bash
 for p in p4 p5 p6; do
-    cp /vast/$USER/DmN/DmNfull_${p}/checkpoints/best_model_ema.pth \
-       /vast/$USER/DmN/checkpoints/${p}_final_ema.pth
+    cp checkpoints/${p}/best_model_ema.pth \
+       checkpoints/${p}_final_ema.pth
 done
-```
-
-If you'd rather skip the multi-clone setup, run the three profiles
-**sequentially** in one job using `--dependency=afterok` (each starts
-only after the previous one's training has finished writing
-`checkpoints/`):
-
-```bash
-PROFILE=p4 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
-    sbatch --parsable --job-name=dmn_p4 scripts/slurm/round.sh > .jid_p4
-PROFILE=p5 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
-    sbatch --parsable --dependency=afterok:$(cat .jid_p4) \
-        --job-name=dmn_p5 scripts/slurm/round.sh > .jid_p5
-PROFILE=p6 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
-    sbatch --parsable --dependency=afterok:$(cat .jid_p5) \
-        --job-name=dmn_p6 scripts/slurm/round.sh
 ```
 
 ---
@@ -565,9 +551,9 @@ within their metric, so corrected α = 0.025.
 
 ```bash
 python scripts/run_mcnemar_eval.py \
-    --p4-ckpt /vast/$USER/DmN/checkpoints/p4_final_ema.pth \
-    --p5-ckpt /vast/$USER/DmN/checkpoints/p5_final_ema.pth \
-    --p6-ckpt /vast/$USER/DmN/checkpoints/p6_final_ema.pth \
+    --p4-ckpt checkpoints/p4_final_ema.pth \
+    --p5-ckpt checkpoints/p5_final_ema.pth \
+    --p6-ckpt checkpoints/p6_final_ema.pth \
     --n-episodes 100 --seed-base 0
 ```
 
