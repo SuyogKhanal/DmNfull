@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(1,0)->(0,0)->(0,1)->(0,2)->(1,2)>
+n_demos: 1
+demo_variations: top-edge corridor demonstration; rank=1 left_edge variant rejected due to differing start/goal configuration
+rationale: The top_edge corridor is chosen to align with the analysis's section 5 recommendation and is justified by the KAG fact 'Stay in row 0 while traversing to the goal column, then descend along that column', and the rank=1 left_edge retrieval is rejected due to start/goal/fire layout differences in the current episode.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It gets tripped up at the very first move: from the start [1,0] it chooses DOWN to [2,0] instead of UP to begin the top-edge corridor via [0,0].
+
+2. WHAT should a good walkthrough look like in that area? A top-edge corridor path that stays on the top row as long as possible and then descends to the goal: (1,0) -> (0,0) -> (0,1) -> (0,2) -> (1,2). This keeps to the top edge for most of the route and ends at the goal without stepping on fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? The policy will learn to prioritize the top-edge corridor when fires occupy the central rows, reducing the chance of fire collisions by exploiting a safe, edge-hugging route. It links the early Up decision to a safer, top-row progression toward the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough (n_demos = 1) is provided here. If you later want more coverage, you could add another top-edge variant with a slightly shifted start or goal configuration, but with this episode’s fire layout the one demonstrated path already targets the core safe corridor.

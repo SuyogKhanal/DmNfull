@@ -1,22 +1,22 @@
 [
   {
     "round": 1,
-    "loop_id": "loop_20260501_165259",
-    "profile": "p5_vlm_reasoning_kag_rag_cross_plain_llm",
+    "loop_id": "loop_20260502_180339",
+    "profile": "p5",
     "target_sr": 0.9,
-    "round_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260501_165259/round_1",
+    "round_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_1",
     "run_id": "round_1",
-    "run_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260501_165259/round_1",
+    "run_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_1",
     "train_loss": NaN,
-    "n_episodes": 10,
+    "n_episodes": 7,
     "n_successes": 5,
-    "n_failures": 5,
-    "success_rate": 0.5,
-    "failure_rate": 0.5,
-    "mean_episode_length": 60.4,
-    "mean_reward": -9.484999999999983,
-    "std_reward": 19.59400482290436,
-    "cumulative_regret": 0.5,
+    "n_failures": 2,
+    "success_rate": 0.7142857142857143,
+    "failure_rate": 0.2857142857142857,
+    "mean_episode_length": 33.142857142857146,
+    "mean_reward": -3.2357142857142898,
+    "std_reward": 16.564133246387566,
+    "cumulative_regret": 0.2857142857142857,
     "demo_coverage_gap": 0.0,
     "fire_proximity_rate": 0.0,
     "demos_added": 0,
@@ -27,36 +27,241 @@
       {
         "demo_id": 1,
         "corridor": "top_edge",
-        "guidance": "Demonstrations should reinforce committing to the Top-edge corridor early when central rows contain fires, showing how to stay on row 0 and descend along the goal column without detouring into hazardous regions.",
-        "target_region": "Start positions near the top rows with central fires present; goal placed within reach via top-edge path.",
-        "what_it_teaches": "Reliable fire avoidance and decisive corridor commitment within the Top-edge corridor when central fires are present.",
-        "n_repetitions": 2,
-        "recommended_layouts": []
+        "guidance": "Show the agent sticking to the top-edge corridor even when central fires block parts of the top row, and only descend to the goal column when the path is hazard-free.",
+        "target_region": "Top-edge corridor strategy under central-fire pressure, across varied starts/goals.",
+        "what_it_teaches": "Reinforces reliable adoption of the top-edge corridor to avoid fires, addressing the generalization gap observed in episodes 2 and 4.",
+        "n_repetitions": 3,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Tests maintaining the top-edge path along the top row despite a mid-top fire, reinforcing top-edge prioritization before descending to the GOAL column."
+          },
+          {
+            "start_pos": [
+              0,
+              1
+            ],
+            "goal_pos": [
+              1,
+              4
+            ],
+            "fire_positions": [
+              [
+                0,
+                2
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Challenges top-edge adherence when a larger top-row segment is fire-blocked, encouraging safe progression along the upper boundary to reach the GOAL column."
+          },
+          {
+            "start_pos": [
+              0,
+              3
+            ],
+            "goal_pos": [
+              2,
+              0
+            ],
+            "fire_positions": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                4
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Assesses top-edge viability when near-start top cells are fire-blocked and the GOAL is to the left, emphasizing safe transition along the top edge to the GOAL column."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "round": 2,
+    "loop_id": "loop_20260502_180339",
+    "profile": "p5",
+    "target_sr": 0.9,
+    "round_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_2",
+    "run_id": "round_2",
+    "run_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_2",
+    "train_loss": NaN,
+    "n_episodes": 7,
+    "n_successes": 4,
+    "n_failures": 3,
+    "success_rate": 0.5714285714285714,
+    "failure_rate": 0.42857142857142855,
+    "mean_episode_length": 21.0,
+    "mean_reward": -3.4357142857142877,
+    "std_reward": 15.272868434059195,
+    "cumulative_regret": 0.7142857142857143,
+    "demo_coverage_gap": 0.0,
+    "fire_proximity_rate": 0.0,
+    "demos_added": 0,
+    "total_profile_demos": 4,
+    "baseline_demos": 145,
+    "training_dataset_size": 149,
+    "prescriptions": [
+      {
+        "demo_id": 1,
+        "corridor": "mixed",
+        "guidance": "Record demonstrations that start from a region near the upper-left quadrant and force traversal through a mixed-corridor situation to avoid FIRE, illustrating safe corridor choice despite randomised fire placements.",
+        "target_region": "Start and goal positions should be chosen so that the minimum Manhattan distance is at least 4; vary fire placements across the three distinct areas to reflect mixed corridors.",
+        "what_it_teaches": "Improves fire-avoidance generalisation across mixed corridor configurations by demonstrating safe progress through non-fire tiles while avoiding FIRE tiles in nearby cells.",
+        "n_repetitions": 3,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              4,
+              4
+            ],
+            "fire_positions": [
+              [
+                2,
+                2
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                3,
+                1
+              ]
+            ],
+            "n_repetitions": 3,
+            "rationale": "Demonstrates avoiding FIRE tiles while navigating a mixed-corridor scenario, reinforcing fire-avoidance behavior across varied start/goal placements."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "round": 3,
+    "loop_id": "loop_20260502_180339",
+    "profile": "p5",
+    "target_sr": 0.9,
+    "round_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_3",
+    "run_id": "round_3",
+    "run_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_3",
+    "train_loss": NaN,
+    "n_episodes": 7,
+    "n_successes": 5,
+    "n_failures": 2,
+    "success_rate": 0.7142857142857143,
+    "failure_rate": 0.2857142857142857,
+    "mean_episode_length": 20.714285714285715,
+    "mean_reward": 0.514285714285714,
+    "std_reward": 11.08685561135071,
+    "cumulative_regret": 1.0,
+    "demo_coverage_gap": 0.0,
+    "fire_proximity_rate": 0.0,
+    "demos_added": 0,
+    "total_profile_demos": 7,
+    "baseline_demos": 145,
+    "training_dataset_size": 152,
+    "prescriptions": [
+      {
+        "demo_id": 1,
+        "corridor": "left_edge",
+        "guidance": "Reinforce corridor-bound, fire-avoidant progress along the left edge by starting at the top-left region and maintaining column 0 descent before turning toward the goal.",
+        "target_region": "Start near top-left quadrant, ensure stay in column 0 while descending to approach the goal along the left boundary; avoid detours into interior cells or top-row deviations that increase fire exposure.",
+        "what_it_teaches": "Emphasizes sticking to the left-edge corridor to avoid interior fires and wall pitfalls, aligning with Cluster A failure mode.",
+        "n_repetitions": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              4,
+              3
+            ],
+            "fire_positions": [
+              [
+                3,
+                0
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                3,
+                4
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Exercises left-edge corridor adherence with hazards near the left edge and top row to reinforce safe, corridor-aligned routing."
+          }
+        ]
       },
       {
         "demo_id": 2,
         "corridor": "top_edge",
-        "guidance": "Demonstrations should emphasize rapid commitment to the Top-edge corridor to prevent wandering, particularly in tasks where central fires could tempt detours.",
-        "target_region": "Start near top-middle with goal positioned to require descent along the top-edge path.",
-        "what_it_teaches": "Reduces timeout by teaching the agent to stick to a single corridor from the start when fires are present.",
-        "n_repetitions": 2,
+        "guidance": "Reinforce corridor-bound, fire-avoidant progress along the top edge by starting near the top-left region, staying on row 0, then descending toward the goal column when safe.",
+        "target_region": "Start near top rows; maintain row 0 as long as possible, avoid interior detours that invite central fires, and descend to the goal column.",
+        "what_it_teaches": "Emphasizes staying on the top-edge boundary to minimize exposure to central fires, aligning with Cluster B failure mode.",
+        "n_repetitions": 1,
         "recommended_layouts": [
           {
             "start_pos": [
               1,
-              2
+              0
             ],
             "goal_pos": [
-              4,
-              1
+              1,
+              4
             ],
             "fire_positions": [
               [
-                1,
-                4
+                0,
+                2
               ],
               [
-                4,
+                0,
                 3
               ],
               [
@@ -64,19 +269,136 @@
                 2
               ]
             ],
-            "n_repetitions": 2,
-            "rationale": "Illustrates top-edge commitment even as fires appear near the middle-right; addresses the timeout observed in episodes 4 and 9."
+            "n_repetitions": 1,
+            "rationale": "Exercises top-edge corridor adherence despite top-row hazards, reducing unnecessary interior exploration."
           }
         ]
-      },
+      }
+    ]
+  },
+  {
+    "round": 4,
+    "loop_id": "loop_20260502_180339",
+    "profile": "p5",
+    "target_sr": 0.9,
+    "round_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_4",
+    "run_id": "round_4",
+    "run_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_4",
+    "train_loss": NaN,
+    "n_episodes": 7,
+    "n_successes": 5,
+    "n_failures": 2,
+    "success_rate": 0.7142857142857143,
+    "failure_rate": 0.2857142857142857,
+    "mean_episode_length": 33.285714285714285,
+    "mean_reward": -2.321428571428568,
+    "std_reward": 14.11536288544347,
+    "cumulative_regret": 1.2857142857142856,
+    "demo_coverage_gap": 0.0,
+    "fire_proximity_rate": 0.0,
+    "demos_added": 0,
+    "total_profile_demos": 9,
+    "baseline_demos": 145,
+    "training_dataset_size": 154,
+    "prescriptions": [
       {
-        "demo_id": 3,
+        "demo_id": 1,
         "corridor": "top_edge",
-        "guidance": "For infeasible-corridor cases, help the agent recognize when no safe corridor path exists and avoid continuing the search unnecessarily.",
-        "target_region": "Representative infeasible configuration near Episode 7\u2019s description.",
-        "what_it_teaches": "Recognize infeasibility under corridor constraints and avoid futile wandering.",
+        "guidance": "Demonstrate safe navigation along the top-edge corridor that avoids Fire Hazards while progressing toward the goal, emphasizing early commitment to a single corridor and avoidance of hazards near the top boundary.",
+        "target_region": "Top-edge corridor region with a start near the top-left and a goal toward the top-right, ensuring a minimum Manhattan distance of 4 between start and goal.",
+        "what_it_teaches": "Reinforces hazard-avoidance in the top-edge corridor and the need to commit to a single corridor path without backtracking when Fire Hazards are present.",
         "n_repetitions": 1,
-        "recommended_layouts": []
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              4,
+              0
+            ],
+            "fire_positions": [
+              [
+                2,
+                2
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                3,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "This layout places the start on the top edge with a long vertical progression toward the goal, while three Fire Hazards are positioned off the direct top-edge path to force the agent to recognise and avoid hazards before committing to a single corridor."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "round": 5,
+    "loop_id": "loop_20260502_180339",
+    "profile": "p5",
+    "target_sr": 0.9,
+    "round_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_5",
+    "run_id": "round_5",
+    "run_dir": "/vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_5",
+    "train_loss": NaN,
+    "n_episodes": 7,
+    "n_successes": 4,
+    "n_failures": 3,
+    "success_rate": 0.5714285714285714,
+    "failure_rate": 0.42857142857142855,
+    "mean_episode_length": 15.714285714285714,
+    "mean_reward": -1.4571428571428569,
+    "std_reward": 12.34013280119061,
+    "cumulative_regret": 1.7142857142857142,
+    "demo_coverage_gap": 0.0,
+    "fire_proximity_rate": 0.0,
+    "demos_added": 0,
+    "total_profile_demos": 10,
+    "baseline_demos": 145,
+    "training_dataset_size": 155,
+    "prescriptions": [
+      {
+        "demo_id": 1,
+        "corridor": "top_edge",
+        "guidance": "Record a single demonstration that traverses the top-edge corridor from a top-start toward the goal, focusing on how the agent responds to FIRE placements along that route.",
+        "target_region": "Start near the top rows, follow the top-edge corridor toward the goal column, ensuring the path remains within the top edge before descending toward the goal.",
+        "what_it_teaches": "Shows the agent's ability to commit to the top-edge corridor while encountering randomized FIRE placements and emphasizes maintaining a safe trajectory that avoids stepping on FIRE.",
+        "n_repetitions": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              2
+            ],
+            "goal_pos": [
+              4,
+              2
+            ],
+            "fire_positions": [
+              [
+                2,
+                1
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                3,
+                3
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Tests FIRE avoidance and corridor commitment within the top-edge corridor, reflecting the observed failures in episodes 2, 4, and 5."
+          }
+        ]
       }
     ]
   }

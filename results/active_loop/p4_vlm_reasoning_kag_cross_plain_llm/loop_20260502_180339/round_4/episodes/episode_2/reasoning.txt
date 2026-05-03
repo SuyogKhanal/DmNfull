@@ -1,0 +1,63 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode context
+  - Start: [0, 1], Goal: [2, 0], Fires: [0,3], [3,0], [3,4].
+  - Fires are hazards that terminate on entry; Walls are impassable; GOAL ends with +10; stepping on FIRE yields -10 and terminates.
+
+- Step-by-step trajectory
+  - Step 0 (start): at [0,1], goal [2,0], fires as above.
+  - Step 1: action LEFT -> moves to [0,0], reward -0.10 (normal step penalty on a free cell).
+  - Step 2: action DOWN -> moves to [1,0], reward -0.10.
+  - Steps 3–37: sequence of repeated LEFT actions from [1,0].
+    - Step 3: LEFT -> target [1,-1] (off-grid). Result: hit wall, reward -0.60 (WALL_PENALTY -0.5 + STEP_PENALTY -0.1); position remains [1,0].
+    - Steps 4–37: repeated LEFT attempts from [1,0], all yielding -0.60 each (-wall penalty + step penalty), position unchanged at [1,0].
+  - Step 38: action RIGHT -> moves to [1,1], reward -0.10.
+  - Step 39: action DOWN -> moves to [2,1], reward -0.10.
+  - Step 40: action DOWN -> moves to [3,1], reward -0.10.
+  - Step 41: action DOWN -> moves to [4,1], reward -0.10.
+  - Step 42: action LEFT -> moves to [4,0], reward -0.10.
+  - Step 43: action LEFT -> attempts [4,-1] (off-grid). Hit wall, reward -0.60; position remains [4,0].
+  - Step 44: action LEFT -> again off-grid; reward -0.60; position [4,0].
+  - Step 45: action UP -> moves to [3,0], which is a FIRE tile; reward -10.10 (FIRE_PENALTY -10 + STEP_PENALTY -0.1); episode terminates with failure.
+- Episode outcome
+  - Final position: [3,0] (on a FIRE tile).
+  - Total steps: 45
+  - Total reward: -33.00
+  - Success: False
+
+- Observations from trajectory
+  - The agent largely followed a leftward-first approach (consistent with a left-edge corridor bias) but diverged on Step 3 by attempting LEFT from [1,0] when the corridor plan would have kept descending along column 0 (i.e., DOWN to [2,0]).
+  - A long sequence of wall collisions (Steps 3 and 43–44) indicates repeated boundary-hitting, i.e., wall-thrashing with no meaningful progress toward the goal.
+  - The final move steps the agent onto a FIRE tile ([3,0]), causing immediate termination with a large negative reward, rather than reaching the GOAL at [2,0].
+  - The observed pattern matches a failure mode: fire_collision at end (stepped onto a FIRE tile) and a separate wall-thrash window during early exploration.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a safe path: Step 3
+  - Location prior to decision: (row=1, col=0).
+  - Action taken: LEFT (to [1, -1], off-grid).
+  - What it should have been: DOWN (to [2, 0], the GOAL on the top-edge corridor path) or, more generally, continue descending along column 0 as per the Top-edge corridor plan: move to [2,0] (which would reach the GOAL in one more step if starting from [1,0]).
+  - Rationale: The Top-edge corridor (described in the KAG) prescribes staying on the top row to traverse to the GOAL column, then descending along that column; from [1,0], continuing DOWN to [2,0] would be the direct, safe progress toward GOAL at [2,0], avoiding the left-edge hazard configuration. The Left move at Step 3 abandons the downwards corridor and invites boundary penalties, delaying progress and increasing exposure to hazards.
+
+3) WHY THE POLICY FAILED
+
+- Root-cause synthesis grounded in the KAG and dynamic config
+  - Dynamic randomization and exposure gaps
+    - The environment is configured to randomize Start, Goal, and Fire hazards every episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). This requires robust generalization across configurations. The current episode presents a start-goal pair with Manhattan distance 3 (start [0,1], goal [2,0]), which violates min_start_goal_manhattan = 4 in the dynamic config. This misalignment suggests a mismatch between intended constraints and the actual episode, creating a scenario the policy may not have seen often during training. This contributes to brittle behavior when a nonstandard configuration
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 3
+demo_variations: Variants exploring slight start-position offsets along the top rows (e.g., starting at [0,2] vs [0,1]) and fire placements that still allow following the top-edge corridor, all resulting in staying on row 0 before descending to the GOAL.
+rationale: 'Top-edge corridor: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to veer toward the left/boundary area near the top-left region, especially at the moment around (1,0) where it tries to go off-grid rather than following the top-edge corridor path.
+2. WHAT should a good walkthrough look like in that area? A safe, effective walkthrough is: start at (0,1), move left to (0,0) (staying on the top row to reach the GOAL column), then descend along column 0 to the GOAL at (2,0) — i.e., (0,1) -> (0,0) -> (1,0) -> (2,0).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to the top-edge corridor plan in this region: stay on the top row to align with the GOAL’s column, then descend along that column, avoiding off-grid detours and hazards.
+4. HOW MANY walkthroughs are needed and how should they vary? 3 walkthroughs (n_demos = 3), with natural variations such as slight shifts in the starting top-row position (e.g., starting at [0,2] vs [0,1]) and different safe fire placements that still permit the top-edge corridor strategy.

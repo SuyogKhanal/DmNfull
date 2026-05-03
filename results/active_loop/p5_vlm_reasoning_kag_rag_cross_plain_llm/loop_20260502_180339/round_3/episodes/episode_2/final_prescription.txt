@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 1
+demo_variations: Natural variation with a left-edge corridor focus, including start-position offsets and mild fire-side bias (prefer staying closer to left wall)
+rationale: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It shows a bias toward the left-edge corridor and makes an early misstep near the left edge (Step 3) by attempting to move left from [1,0] instead of progressing toward the goal with a DOWN move, risking walls and later a fire hazard.
+
+2. WHAT should a good walkthrough look like in that area? A straightforward corridor-aligned progression: start at [0,1], move LEFT to [0,0], then DOWN to [1,0], and finally DOWN to [2,0] to reach the GOAL, staying firmly along the left edge and avoiding hazards.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to the left-edge corridor when the start/goal configuration is near the top-left and fires are elsewhere, reducing unnecessary wall-hits and avoiding hazardous detours that could lead into fire tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? One core corrective walkthrough is provided (n_demos = 1). Variations should cover start-position offsets and a slight fire-side bias in future demos, to help the policy generalize corridor-following and fire-avoidance across nearby configurations.

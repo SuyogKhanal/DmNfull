@@ -51,13 +51,15 @@ N_EPISODES="${N_EPISODES:-}"
 SEED="${SEED:-}"
 TARGET_SR="${TARGET_SR:-0.90}"
 BASELINE_CKPT="${BASELINE_CKPT:-checkpoints/baseline.pth}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/${PROFILE}}"
+mkdir -p "$CHECKPOINT_DIR"
 SKIP_TRAIN="${SKIP_TRAIN:-0}"
 SKIP_BASELINE_RESTORE="${SKIP_BASELINE_RESTORE:-0}"
 EXPERT="${EXPERT:-bfs}"         # bfs (default headless) | human | none
 AUTO_LOOP="${AUTO_LOOP:-0}"     # 1 -> chain rounds inside this single slurm job
 MAX_ROUNDS="${MAX_ROUNDS:-20}"
 NOTIFY_TO="${NOTIFY_TO:-}"      # empty -> notifier silent (uses $NOTIFY_TO inside python too)
-EXTRA_ARGS="${EXTRA_ARGS:-}"
+EXTRA_ARGS="${EXTRA_ARGS:-} --checkpoint-dir $CHECKPOINT_DIR"
 export NOTIFY_TO                # exported so notify.py picks it up if --notify-to omitted
 
 echo "[slurm] === DmN active-loop round ==="

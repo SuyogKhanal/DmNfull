@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+n_demos: 3
+demo_variations: covers rag rank=1 top_edge variant across 3 start-position variations
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The issue centers on a top-area corridor (top_edge) being safer when fires are placed in central/left areas. The problematic misstep in the episode would be to descend into lower regions; the chosen correction uses the top-edge corridor to avoid central-left fires.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough stays on the top row as long as needed, moves right along row 0 toward the goal column, then drops down along that goal column to reach the GOAL without stepping on any FIRE tiles (e.g., start at [1,0], go to [0,0], then [0,1], [0,2], and finally [1,2]).
+
+3. WHAT will the AI learn from seeing that walkthrough? The AI learns to generalize fire-avoidance by prioritizing corridor-based routing when central fires threaten direct paths. This aligns with the retrieved case’s guidance that a top-edge corridor reduces risk when fires occupy middle columns.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Use 3 variations (n_demos = 3) to cover different start positions along the top-edge corridor while avoiding fires, reflecting the retrieved rank-1 guidance that three top-edge variations help map safety across configurations.

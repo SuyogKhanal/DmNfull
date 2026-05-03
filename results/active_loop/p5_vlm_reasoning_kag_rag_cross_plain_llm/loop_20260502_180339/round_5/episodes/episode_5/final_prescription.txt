@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,2)->(0,1)->(1,1)->(2,1)>
+n_demos: 2
+demo_variations: covers rag rank=1 top_edge variant and rank=2 top_edge variant
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It struggles in the top-edge corridor area where the policy should stay on the top row to reach the goal column, then descend down that same column; ambiguity in when to begin the descent can lead to suboptimal moves or stepping into hazards.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough uses the top-edge corridor: start on the current row, move along the top row toward the goal column, then descend along that column to reach the goal. For the episode in our FINAL_REC, a concrete path is: from (0,2) go left to (0,1), then descend to (1,1) and finally to (2,1) which is the GOAL tile.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the top-edge corridor strategy when the goal lies in the same column reached by staying on the top row, and to execute the planned descent along the chosen column, as illustrated by the two RAG-retrieved failures that both indicated top-edge corridor guidance helps avoid central fires.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Two walkthroughs are provided (n_demos = 2) to cover variation in fire placements and start/goal configurations that still map to the top_edge corridor. The first variation mirrors rag rank=1 (top-edge variant with start near the top-left and fires near the top/right area), and the second mirrors rag rank=2 (top-edge variant with a different start/goal and a different fire pattern).

@@ -1,0 +1,11 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.966 run=round_5 ep=2 ---
+  Dynamic config: start=[0, 1] goal=[2, 0] fires=[[np.int64(0), np.int64(3)], [np.int64(3), np.int64(0)], [np.int64(3), np.int64(4)]]
+  Summary:        Root cause: The agent departed from a safe, goal-directed corridor by choosing a wall/corner boundary move at Step 3, leading to wasted steps and eventually a hazardous fire collision, revealing a failure to generalize fire avoidance under dynamic start/goal/fire layouts.
+
+Key configuration: Start at [0,1], goal at [2,0], with fires at [0,3], [3,0], and [3,4], in a setup that favors a top-edge corridor.
+
+What the correct path should have been: Follow the top-edge corridor: [0,1] -> [0,0] -> [1,0] -> [2,0], reaching the goal without entering fire tiles.
+
+Impact: The erroneous Step 3 decision caused boundary thrashing and delayed progress, culminating in the final move onto a fire tile and episode failure.
+  Root cause:     pending

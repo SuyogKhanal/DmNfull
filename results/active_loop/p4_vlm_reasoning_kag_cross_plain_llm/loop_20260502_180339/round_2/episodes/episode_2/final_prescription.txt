@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 1
+demo_variations: Top-edge corridor variants with start positions along row 0 (e.g., [0,0], [0,1], [0,2]); slight fire-side bias while staying on row 0 and descending to the goal.
+rationale: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the Top-edge corridor area near the top rows. It tends to drift into wall-hitting behavior and fails to commit to a safe path that avoids the fires, with an early misstep resembling moving along the boundary instead of following the top-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A clear, safe walkthrough along the Top-edge corridor is: from the start at [0,1], move LEFT to [0,0] (still on the top row), then move DOWN to [1,0], and finally DOWN to [2,0], which is the GOAL. This follows the top-edge guidance of staying on row 0 to reach the goal column, then descending along that column.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit early to the Top-edge corridor when the fires are in central rows, avoid unnecessary wall-hitting along other boundaries, and reach the GOAL by descending along the goal’s column after aligning on the top edge. This demonstrates safe corridor-based navigation rather than wandering along walls or moving toward hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the single demonstrated path described above. Variations can be explored by the provided demo_variations line: top-edge corridor variants with different top-row start positions along row 0 (e.g., [0,0], [0,1], [0,2]), maintaining the stay-on-row-0 then descend pattern to the GOAL to test robustness while still avoiding fires.
