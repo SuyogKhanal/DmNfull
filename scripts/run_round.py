@@ -223,7 +223,10 @@ def parse_args():
                    help="Recipient for notification emails. Defaults to $NOTIFY_TO env var.")
 
     p.add_argument("--checkpoint-dir", type=str, default="checkpoints", dest="checkpoint_dir",
-                   help = "Directory to save checkpoints (passed as EXTRA_ARGS to slurm/round.sh; ignored by run_round.py itself).")
+                   help = "Directory used by BOTH training (--checkpoint_dir to train_diffusion.py) "
+                          "and the per-round eval (overrides cfg.rollout.checkpoint_path / "
+                          "fallback_checkpoint_path so eval reads the just-trained per-profile weights). "
+                          "scripts/slurm/round.sh sets this to checkpoints/${PROFILE} by default.")
     return p.parse_args()
 
 
@@ -337,6 +340,7 @@ def run_one_round(args, loop_id: str, is_new_loop: bool, rnd: int) -> Dict:
         round_dir=round_dir,
         n_episodes=args.n_episodes,
         seed=args.seed,
+        checkpoint_dir=args.checkpoint_dir,
     )
     metrics = compute_metrics(
         full_output_path, train_loss, cumulative_regret,

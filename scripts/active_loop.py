@@ -234,12 +234,20 @@ def run_eval(
     round_dir: Path,
     n_episodes: Optional[int],
     seed: Optional[int],
+    checkpoint_dir: str = "checkpoints",
 ) -> Path:
     """Run the full pipeline (Phase A + B + C) into round_dir.
 
     The RAG bank for this round is forced to round_dir/rag_bank so per-loop
     isolation matches the per-profile isolation already enforced by the
     ablation suite.
+
+    `checkpoint_dir` mirrors run_train()'s argument: training writes its
+    best_model{,_ema}.pth into <checkpoint_dir>/, and eval must read from
+    the same place. Without this override the eval would fall back to the
+    config default (checkpoints/best_model_ema.pth, the global location)
+    and therefore evaluate stale weights — the round's prescriptions would
+    be analysing a different model than the one that just trained.
     """
     from pipeline.pipeline_runner import load_config, run_pipeline
 
@@ -249,6 +257,10 @@ def run_eval(
         cfg.setdefault("rollout", {})["n_episodes"] = int(n_episodes)
     if seed is not None:
         cfg.setdefault("rollout", {})["seed"] = int(seed)
+
+    ckpt_dir_path = Path(checkpoint_dir)
+    cfg.setdefault("rollout", {})["checkpoint_path"]          = str(ckpt_dir_path / "best_model_ema.pth")
+    cfg.setdefault("rollout", {})["fallback_checkpoint_path"] = str(ckpt_dir_path / "best_model.pth")
 
     # Per-round isolated RAG bank — fresh every round so a poor early
     # prescription cannot keep contaminating later rounds within the same loop.
@@ -263,6 +275,7 @@ def run_eval(
     _section(f"EVAL — in-process pipeline → {round_dir.name}", char="-")
     _info(f"profile yaml : {profile_yaml}")
     _info(f"base config  : {base_config}")
+    _info(f"checkpoint   : {cfg['rollout']['checkpoint_path']} (fallback {cfg['rollout']['fallback_checkpoint_path']})")
     _info(f"n_episodes   : {cfg.get('rollout',{}).get('n_episodes')}  seed={cfg.get('rollout',{}).get('seed')}")
     _info(f"pipeline flags: {cfg.get('pipeline',{})}")
     _info(f"rag bank dir : {rag_path}")
