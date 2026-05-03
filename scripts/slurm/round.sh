@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=dmn_round
 #SBATCH --partition=gpu
-#SBATCH --qos=batch-short
+#SBATCH --qos=batch-long
 #SBATCH --gpus=4
 #SBATCH --mem=80G
 #SBATCH --cpus-per-gpu=8
-#SBATCH --time=48:00:00
+#SBATCH --time=68:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=s226137394@deakin.edu.au
 #SBATCH --output=slurm_logs/%x_%j.out

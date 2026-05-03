@@ -4,7 +4,7 @@
 #SBATCH --qos=batch-short
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
-#SBATCH --time=00:30:00
+#SBATCH --time=08:30:00
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=s226137394@deakin.edu.au
 #SBATCH --output=slurm_logs/%x_%j.out

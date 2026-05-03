@@ -5,7 +5,7 @@
 #SBATCH --gpus=1
 #SBATCH --mem=40G
 #SBATCH --cpus-per-gpu=8
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00
 #SBATCH --array=0-2
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=s226137394@deakin.edu.au
