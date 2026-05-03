@@ -1,24 +1,18 @@
 """McNemar paired-binary analysis for the P4-vs-P5 and P5-vs-P6 comparisons.
 
-Consumes the per-episode success vectors written by run_mcnemar_eval.py and
-runs statsmodels.stats.contingency_tables.mcnemar on each pair. Bonferroni-
-corrects across the two comparisons within a single mode (corrected alpha =
+Consumes the per-episode policy-evaluation success vectors written by
+run_mcnemar_eval.py and runs statsmodels.stats.contingency_tables.mcnemar on
+each pair. Bonferroni-corrects across the two comparisons (corrected alpha =
 0.05 / 2 = 0.025).
 
-Why McNemar (vs. McNemar-fishing for direction): the outcome is paired binary
-(same episode_id, same env seed, same layout, run under two profiles). The
-discordant pairs (b, c) are exactly the per-episode disagreements; concordant
-pairs are uninformative for the test. statsmodels picks `exact` (binomial)
-when b+c is small (< 25), continuity-corrected chi-square otherwise — we
-follow the standard rule below.
+Why McNemar: the outcome is paired binary (same episode_id, same env seed,
+same layout, run under two profiles' fine-tuned checkpoints). The discordant
+pairs (b, c) are exactly the per-episode disagreements; concordant pairs are
+uninformative. We use the exact binomial when b+c < 25, continuity-corrected
+chi-square otherwise.
 
 Usage:
-  python scripts/mcnemar_analysis.py --results-dir results/mcnemar/run_<ts> \
-      --mode policy
-  python scripts/mcnemar_analysis.py --results-dir results/mcnemar/run_<ts> \
-      --mode llm_actor
-  python scripts/mcnemar_analysis.py --results-dir results/mcnemar/run_<ts> \
-      --mode both
+  python scripts/mcnemar_analysis.py --results-dir results/mcnemar/run_<ts>
 """
 from __future__ import annotations
 
@@ -50,13 +44,12 @@ def parse_args():
     p = argparse.ArgumentParser(description="McNemar test on paired per-episode success vectors.")
     p.add_argument("--results-dir", type=str, required=True, dest="results_dir",
                    help="Directory written by scripts/run_mcnemar_eval.py")
-    p.add_argument("--mode", type=str, choices=["policy", "llm_actor", "both"], required=True)
     return p.parse_args()
 
 
-def _load_success_vec(profile_dir: Path, mode: str) -> Tuple[List[int], Dict]:
+def _load_success_vec(profile_dir: Path) -> Tuple[List[int], Dict]:
     """Return (success_vec_indexed_by_episode_id, raw_payload)."""
-    fname = profile_dir / f"per_episode_success_{mode}.json"
+    fname = profile_dir / "per_episode_success_policy.json"
     if not fname.exists():
         raise FileNotFoundError(f"missing {fname}")
     with open(fname, "r") as f:
@@ -140,54 +133,42 @@ def _print_pair(r: Dict):
     print(f"  Bonferroni  α={ALPHA_CORRECTED}  -> {'SIGNIFICANT' if r['significant_bonferroni'] else 'ns'}")
 
 
-def _run_mode(results_dir: Path, mode: str) -> Dict:
-    print(f"\n{'='*72}\n[mcnemar] mode = {mode}\n{'='*72}")
-    vecs: Dict[str, List[int]] = {}
-    sources: Dict[str, str] = {}
-    for short, profile in PROFILE_DIR.items():
-        prof_dir = results_dir / profile
-        vec, payload = _load_success_vec(prof_dir, mode)
-        vecs[short] = vec
-        sources[short] = str(prof_dir / f"per_episode_success_{mode}.json")
-        print(f"[mcnemar/{mode}] {short}: SR={sum(vec)}/{len(vec)} ({sum(vec)/len(vec):.2%})")
-
-    # Confirm seed schedules match across profiles — the McNemar pairing
-    # depends on episode_id i meaning the same env layout in each profile.
-    # If anyone drifted, bail out loudly rather than report a paired test
-    # that isn't actually paired.
-    expected_n = len(vecs["p4"])
-    if not (len(vecs["p5"]) == len(vecs["p6"]) == expected_n):
-        raise ValueError(f"profile lengths differ: "
-                         f"p4={len(vecs['p4'])} p5={len(vecs['p5'])} p6={len(vecs['p6'])}")
-
-    pair_results = []
-    for a, b in PAIRS:
-        pair_results.append(_run_pair(a, b, vecs[a], vecs[b]))
-    for r in pair_results:
-        _print_pair(r)
-
-    return {
-        "mode":          mode,
-        "n_comparisons": N_COMPARISONS,
-        "alpha":         ALPHA,
-        "alpha_bonferroni": ALPHA_CORRECTED,
-        "sources":       sources,
-        "comparisons":   pair_results,
-    }
-
-
 def main():
     args = parse_args()
     results_dir = Path(args.results_dir)
     if not results_dir.exists():
         raise SystemExit(f"results dir not found: {results_dir}")
 
-    modes = ["policy", "llm_actor"] if args.mode == "both" else [args.mode]
-    out: Dict = {"results_dir": str(results_dir), "modes": {}}
-    for m in modes:
-        out["modes"][m] = _run_mode(results_dir, m)
+    print(f"\n{'='*72}\n[mcnemar] policy mode\n{'='*72}")
+    vecs: Dict[str, List[int]] = {}
+    sources: Dict[str, str] = {}
+    for short, profile in PROFILE_DIR.items():
+        prof_dir = results_dir / profile
+        vec, _ = _load_success_vec(prof_dir)
+        vecs[short] = vec
+        sources[short] = str(prof_dir / "per_episode_success_policy.json")
+        print(f"[mcnemar] {short}: SR={sum(vec)}/{len(vec)} ({sum(vec)/len(vec):.2%})")
 
-    out_path = results_dir / f"mcnemar_results_{args.mode}.json"
+    # Pairing depends on episode_id i meaning the same env layout in every
+    # profile. Bail out loudly if anyone drifted.
+    expected_n = len(vecs["p4"])
+    if not (len(vecs["p5"]) == len(vecs["p6"]) == expected_n):
+        raise ValueError(f"profile lengths differ: "
+                         f"p4={len(vecs['p4'])} p5={len(vecs['p5'])} p6={len(vecs['p6'])}")
+
+    pair_results = [_run_pair(a, b, vecs[a], vecs[b]) for a, b in PAIRS]
+    for r in pair_results:
+        _print_pair(r)
+
+    out = {
+        "results_dir":    str(results_dir),
+        "n_comparisons":  N_COMPARISONS,
+        "alpha":          ALPHA,
+        "alpha_bonferroni": ALPHA_CORRECTED,
+        "sources":        sources,
+        "comparisons":    pair_results,
+    }
+    out_path = results_dir / "mcnemar_results.json"
     with open(out_path, "w") as f:
         json.dump(out, f, indent=2)
     print(f"\n[mcnemar] wrote {out_path}")
@@ -195,3 +176,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
