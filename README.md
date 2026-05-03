@@ -547,24 +547,101 @@ answer two different questions:
 Both tests Bonferroni-correct across the two pairs `(p4,p5)` and `(p5,p6)`
 within their metric, so corrected α = 0.025.
 
-### 1. Per-episode policy evaluation (input to McNemar)
+### Recommended: chain everything off the training jobs in slurm
+
+`scripts/slurm/mcnemar_eval.sh` snapshots each profile's final EMA
+checkpoint, runs the per-episode evaluation (default **500 episodes**),
+runs the McNemar test, auto-detects each profile's latest `loop_log.json`
+under `results/active_loop/<profile>/`, and runs the prescription-quality
+paired t-test — all in one job. Submit it with `--dependency=afterok` so
+it starts only after all three training jobs exit successfully:
+
+```bash
+JID4=$(PROFILE=p4 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
+       TARGET_SR=0.9 NOTIFY_TO=you@example.com \
+       sbatch --parsable --job-name=dmn_p4 scripts/slurm/round.sh)
+JID5=$(PROFILE=p5 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
+       TARGET_SR=0.9 NOTIFY_TO=you@example.com \
+       sbatch --parsable --job-name=dmn_p5 scripts/slurm/round.sh)
+JID6=$(PROFILE=p6 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
+       TARGET_SR=0.9 NOTIFY_TO=you@example.com \
+       sbatch --parsable --job-name=dmn_p6 scripts/slurm/round.sh)
+
+N_EPISODES=500 SEED_BASE=0 NOTIFY_TO=you@example.com \
+    sbatch --dependency=afterok:${JID4}:${JID5}:${JID6} \
+           --job-name=dmn_mcnemar scripts/slurm/mcnemar_eval.sh
+```
+
+The three training jobs run in parallel (each in its own
+`checkpoints/${PROFILE}/`); `dmn_mcnemar` queues immediately and slurm
+holds it until all three exit code 0. If any training job fails, the
+McNemar job auto-cancels — you won't get a stats run on a half-trained
+model.
+
+Snapshot layout written by `mcnemar_eval.sh` (so a later training round
+can't mutate the weights you tested against):
+
+```
+checkpoints/snapshots/<job_id>/
+├── p4/best_model_ema.pth   + best_model.pth + best_model_meta.json
+├── p5/...
+└── p6/...
+```
+
+Outputs land in `results/mcnemar/run_<job_id>/`:
+`per_episode_success_policy.json` per profile, `mcnemar_results.json`,
+`prescription_quality_results.json`.
+
+Env vars for `mcnemar_eval.sh`:
+
+| Var | Default | Meaning |
+| --- | --- | --- |
+| `N_EPISODES` | `500` | Episodes per profile for the per-episode eval. |
+| `SEED_BASE` | `0` | First env seed; episodes use `SEED_BASE..SEED_BASE+N-1`. |
+| `NOTIFY_TO` | (unset) | Empty disables the SLURM_START / SLURM_END mail. |
+| `PROJECT_ROOT` | `/vast/$USER/DmN/DmNfull` | Working tree to `cd` into. |
+| `P4_LOOP_LOG` / `P5_LOOP_LOG` / `P6_LOOP_LOG` | (auto) | Override the auto-detected latest `loop_log.json`. |
+
+### Manual / interactive equivalent (skip slurm)
+
+Each step the slurm wrapper does is its own callable script, so you can
+run them by hand if you'd rather not queue a job.
+
+#### 1. Snapshot the per-profile checkpoints (one-time, after training)
+
+```bash
+mkdir -p checkpoints/snapshots/manual
+for p in p4 p5 p6; do
+    mkdir -p checkpoints/snapshots/manual/${p}
+    cp checkpoints/${p}/best_model_ema.pth   checkpoints/snapshots/manual/${p}/
+    cp checkpoints/${p}/best_model.pth       checkpoints/snapshots/manual/${p}/  2>/dev/null || true
+    cp checkpoints/${p}/best_model_meta.json checkpoints/snapshots/manual/${p}/  2>/dev/null || true
+done
+```
+
+The meta sidecar matters: `pipeline/rollout._load_meta()` looks for
+`best_model_meta.json` next to the checkpoint and falls back to
+defaults if it isn't there, which can build the policy with the wrong
+horizons.
+
+#### 2. Per-episode policy evaluation (input to McNemar)
 
 ```bash
 python scripts/run_mcnemar_eval.py \
-    --p4-ckpt checkpoints/p4_final_ema.pth \
-    --p5-ckpt checkpoints/p5_final_ema.pth \
-    --p6-ckpt checkpoints/p6_final_ema.pth \
-    --n-episodes 100 --seed-base 0
+    --p4-ckpt checkpoints/snapshots/manual/p4/best_model_ema.pth \
+    --p5-ckpt checkpoints/snapshots/manual/p5/best_model_ema.pth \
+    --p6-ckpt checkpoints/snapshots/manual/p6/best_model_ema.pth \
+    --n-episodes 500 --seed-base 0
 ```
 
-Loads each profile's checkpoint, rolls out 100 episodes per profile on
-`seeds 0..99`, reseeds `torch / cuda / numpy / random` per episode (locks
-DDPM denoise noise so any per-episode SR difference is attributable to the
-checkpoints, not RNG drift), and writes one
+Loads each profile's checkpoint, rolls out N episodes per profile on
+`seeds 0..N-1`, reseeds `torch / cuda / numpy / random` per episode
+(locks DDPM denoise noise so any per-episode SR difference is
+attributable to the checkpoints, not RNG drift), and writes one
 `per_episode_success_policy.json` per profile under
 `results/mcnemar/run_<ts>/<profile>/`.
 
-### 2. McNemar paired test on the success vectors
+#### 3. McNemar paired test on the success vectors
 
 ```bash
 python scripts/mcnemar_analysis.py \
@@ -577,7 +654,7 @@ Builds the 2×2 paired table for `(p4, p5)` and `(p5, p6)` and runs
 uncorrected (α = 0.05) and Bonferroni (α = 0.025) decisions, and writes
 `mcnemar_results.json` next to the inputs.
 
-### 3. Paired t-test on prescription quality (across active-loop rounds)
+#### 4. Paired t-test on prescription quality (across active-loop rounds)
 
 ```bash
 python scripts/prescription_quality_analysis.py \
