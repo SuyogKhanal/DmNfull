@@ -1,0 +1,116 @@
+[
+  {
+    "run_id": "round_1",
+    "episode_id": 2,
+    "maze_name": "multimodal",
+    "seed": 44,
+    "total_steps": 56,
+    "total_reward": -38.700000000000024,
+    "success": false,
+    "start_pos": [
+      0,
+      1
+    ],
+    "goal_pos": [
+      2,
+      0
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "3",
+        "0"
+      ],
+      [
+        "3",
+        "4"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        [
+          0,
+          3
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    ],
+    "summary": "Root cause: The AI tended to deviate into risky detours when fires were placed near the middle/left, breaking the safe top-edge plan and descending into the left column too early. Key configuration: start positions on the top edge (0,1), (0,2), or (0,0) with the goal at (2,0); fires are positioned to threaten central/left areas, making the top-edge corridor the safer route. Correct path: stay on the top row to reach the goal column, then descend along that column, e.g., (0,1) -> (0,0) -> (1,0) -> (2,0). Demonstrations consist of three variations of the top-edge strategy to map to different starting spots while avoiding fires.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_1",
+    "episode_id": 4,
+    "maze_name": "multimodal",
+    "seed": 46,
+    "total_steps": 7,
+    "total_reward": -10.7,
+    "success": false,
+    "start_pos": [
+      1,
+      0
+    ],
+    "goal_pos": [
+      1,
+      2
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1"
+      ],
+      [
+        "4",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    ],
+    "summary": "Root cause: The policy failed to generalize fire-avoidance across configurations, leading to a suboptimal detour toward central and bottom regions and eventually stepping onto a FIRE tile. \n\nKey configuration: Start at [1,0], goal at [1,2], with fires at [1,1], [2,1], and [4,0]; the immediate hazard blocks the direct rightward route.\n\nCorrect path: Stay along the top-edge corridor: [1,0] -> [0,0] -> [0,1] -> [0,2] -> [1,2], avoiding central-left fires and reaching the goal.\n\nContext note: The misstep occurred at Step 5 (moving down to [4,2]); the proposed corridor-based route would have avoided this hazard entirely.",
+    "root_cause": "pending"
+  }
+]

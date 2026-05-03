@@ -1,0 +1,54 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Start: Episode begins at [0, 1] with goal at [2, 0] and fires at [0,3], [3,0], [3,4].
+- Step 1: Action LEFT from [0,1] to [0,0]. Reward = -0.10.
+- Step 2: Action DOWN from [0,0] to [1,0]. Reward = -0.10.
+- Step 3: Action LEFT from [1,0]. This would move to [1,-1] (outside grid); wall collision keeps you in place. Reward = -0.60. Position remains [1,0].
+- Steps 4–45: RepeatedLY attempted LEFT from [1,0] while staying in place (blocked by left boundary). Each such wall-hit yields a wall-penalty component. Reward pattern observed: -0.60 per wall-hit step (plus the step penalty portion when applicable).
+  - Notable: Steps 46–49 proceed away from the wall after the wall-hitting spree.
+- Step 46: Action RIGHT from [1,0] to [1,1]. Reward = -0.10.
+- Step 47: Action DOWN from [1,1] to [2,1]. Reward = -0.10.
+- Step 48: Action DOWN from [2,1] to [3,1]. Reward = -0.10.
+- Step 49: Action DOWN from [3,1] to [4,1]. Reward = -0.10.
+- Step 50: Action LEFT from [4,1] to [4,0]. Reward = -0.10.
+- Step 51: Action LEFT from [4,0] toward the boundary is blocked; remains at [4,0]. Reward = -0.60.
+- Step 52: Action LEFT from [4,0] toward the boundary is blocked again; remains at [4,0]. Reward = -0.60.
+- Step 53: Action UP from [4,0] toward [3,0], which is a FIRE tile. Entering a FIRE tile terminates episode with large negative penalty. Reward = -10.10. Final position reported as [3,0].
+
+Ground-truth state summaries from the episode data:
+- Final pos: [3, 0]
+- Total steps: 53
+- Total reward: -37.80
+- The GOAL tile is at [2,0], which was not reached.
+
+2) FIRST WRONG DECISION
+
+- Earliest misstep: Step 3
+  - Location prior to decision: [1,0]
+  - Action taken: LEFT (to [1,-1], blocked by wall)
+  - Action that should have been taken to stay on a safe, goal-directed corridor: DOWN (to [2,0], i.e., the GOAL)
+- Rationale: From [1,0], the safe and efficient route to the GOAL is
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 1
+demo_variations: Direct top-edge corridor path: [0,1]->[0,0]->[1,0]->[2,0].
+rationale: Top-edge corridor chosen because 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- In the top_edge corridor area (the top-row path that then descends along the GOAL's column). The misstep tends to occur when the agent tries an unsafe move early on, instead of following the top-edge route toward the GOAL.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at [0,1], move left to [0,0], then down to [1,0], and finally down to [2,0] (the GOAL). This stays on the top edge to reach the GOAL column and then descends along that column, avoiding fire tiles.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn a safe, corridor-based strategy: use the top-edge corridor first (stay on row 0 to reach the GOAL column) and then descend along that column to the GOAL, avoiding detours that could lead into fire or wall penalties.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- One demonstration is provided (n_demos = 1) illustrating the direct top-edge path. If you want broader generalization, add variations such as minor detours along row 0 before dropping to the GOAL column or starting from slightly different top-row positions, but keep the core top-edge strategy as the core teaching cue.

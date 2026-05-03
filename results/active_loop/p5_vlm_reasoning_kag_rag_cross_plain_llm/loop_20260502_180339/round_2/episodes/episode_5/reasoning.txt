@@ -1,0 +1,23 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,1)->(0,0)->(1,0)->(2,0)
+n_demos: 4
+demo_variations: covers rag rank=1 left_edge variants: (0,1)->(0,0)->(1,0)->(2,0); (0,0)->(1,0)->(2,0); (1,0)->(2,0); and rag rank=2 top_edge variant: Stay on the top edge: (1,0)->(0,0)->(0,1)->(0,2)->(1,2)
+rationale: Justified by KAG corridor fact: 'Left-edge corridor: Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+Plain-English Explanation for the human demonstrator:
+1) WHERE in the maze does the AI get confused? The confusion tends to occur in the left_edge corridor area, especially around the top-left region where the agent must commit to staying in column 0 early on to descend toward the goal while avoiding central fire hazards.
+
+2) WHAT should a good walkthrough look like in that area? A good walkthrough demonstrates moving left to the leftmost column (to column 0), then descending along that column toward the row of the goal, for example the path (0,1)->(0,0)->(1,0)->(2,0), and then proceeding horizontally along the goal’s row to align with the goal column as needed.
+
+3) WHAT will the AI learn from seeing that walkthrough? The AI will learn to prioritize a corridor-based strategy (left_edge) to avoid fire and minimize backtracking, and it will see variations that encourage choosing alternative corridors (e.g., a top_edge path) when the left_edge path is less viable due to fire placement.
+
+4) HOW MANY walkthroughs are needed and how should they vary? Four demonstrations are provided to cover variation within the same corridor (left_edge) and an additional variant that uses a different corridor (top_edge) to encourage generalization:
+- Left_edge variations starting from different top-left-adjacent starts: (0,1)->(0,0)->(1,0)->(2,0); (0,0)->(1,0)->(2,0); (1,0)->(2,0);
+- A top_edge variation to illustrate corridor-switching when needed: Stay on the top edge: (1,0)->(0,0)->(0,1)->(0,2)->(1,2).

@@ -248,7 +248,7 @@ def main():
         "saved":        [str(p) for p in saved_paths],
         "skipped":      skipped,
     }
-    summary_path = demo_dir / "bfs_collection_summary.json"
+    summary_path = demo_dir.parent / "bfs_collection_summary.json"
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
     print(f"\n[bfs] DONE. saved={len(saved_paths)} skipped={len(skipped)}")

@@ -18,7 +18,7 @@ from model.diffusion_policy import MazeDiffusionPolicy
 
 DEMO_DIR        = "demos"
 CHECKPOINT_DIR  = "checkpoints"
-EPOCHS          = 5000
+EPOCHS          = 500
 BATCH_SIZE      = 32
 LR              = 3e-4
 OBS_HORIZON     = 4
@@ -137,7 +137,10 @@ class MazeDemoDataset(Dataset):
             with open(fpath, "r") as f:
                 demo = json.load(f)
 
-            obs_arr = np.array(demo["observations"], dtype=np.float32)
+            if "observations" not in demo or "actions" not in demo:
+                continue
+
+            obs_arr = np.array(demo.get("observations"), dtype=np.float32)
             act_arr = np.array(demo["actions"],      dtype=np.int64)
 
             if "images" in demo and demo["images"] is not None and len(demo["images"]) > 0:

@@ -1,0 +1,46 @@
+maze:
+  name: multimodal
+  randomize_start: true
+  randomize_goal: true
+  randomize_fire: true
+  num_fire_tiles: 3
+rollout:
+  n_episodes: 7
+  seed: 42
+  checkpoint_path: checkpoints/best_model_ema.pth
+  fallback_checkpoint_path: checkpoints/best_model.pth
+  render: false
+pipeline:
+  use_vlm: true
+  use_kag: true
+  use_rag: true
+  use_reasoning: true
+  use_cross_episode_reasoning: true
+  use_tkf: false
+  use_aggregator: true
+  use_plain_llm: true
+kag:
+  document_path: knowledge/kag_maze_knowledge.json
+rag:
+  bank_path: /vast/s226137394/DmN/DmNfull/results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_20260502_180339/round_1/rag_bank
+  top_k: 3
+  sim_threshold: 0.3
+  clip_model: openai/clip-vit-large-patch14
+tkf:
+  demo_dir: demos
+  index_path: results/demo_knowledge_base
+  clip_model: openai/clip-vit-large-patch14
+  sim_threshold_found: 0.8
+  sim_threshold_partial: 0.7
+  use_crewai: true
+llm:
+  model: gpt-5-nano-2025-08-07
+  vlm_model: gpt-5-nano-2025-08-07
+  reasoning_effort: high
+  max_output_tokens: 16384
+tracking:
+  save_frames: true
+  save_per_episode_json: true
+  save_prescriptions: true
+  save_config_snapshot: true
+  output_dir: results/runs

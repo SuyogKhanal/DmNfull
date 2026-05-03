@@ -1,0 +1,116 @@
+[
+  {
+    "run_id": "round_4",
+    "episode_id": 2,
+    "maze_name": "multimodal",
+    "seed": 44,
+    "total_steps": 46,
+    "total_reward": -29.999999999999993,
+    "success": false,
+    "start_pos": [
+      0,
+      1
+    ],
+    "goal_pos": [
+      2,
+      0
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "3"
+      ],
+      [
+        "3",
+        "0"
+      ],
+      [
+        "3",
+        "4"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        [
+          0,
+          3
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    ],
+    "summary": "The episode failed primarily due to a fire collision: the agent wandered into a fire tile at (3,0) after a long period of wall-hugging along the left edge, indicating poor fire-avoidance and path planning. The configuration was start [0,1], goal [2,0], with fires at (0,3), (3,0), and (3,4); the agent ultimately ended on (3,0) and received a large negative penalty. The correct path, as suggested by corrective demonstrations, should have moved from (0,1) down to (1,1) and then head toward the goal by staying away from the left edge (e.g., (1,1) -> (2,1) -> (2,0)) rather than repeatedly attempting to move left along the wall. A top-edge corridor option exists (stay along the top row toward the goal column and descend), but the key is to avoid the left-wall detour and prioritize a direct, fire-avoiding route toward (2,0).",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "round_4",
+    "episode_id": 4,
+    "maze_name": "multimodal",
+    "seed": 46,
+    "total_steps": 7,
+    "total_reward": -10.7,
+    "success": false,
+    "start_pos": [
+      1,
+      0
+    ],
+    "goal_pos": [
+      1,
+      2
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "1"
+      ],
+      [
+        "4",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    ],
+    "summary": "The failure was caused by a left-edge descent instead of leveraging a top-edge corridor, leading the agent to collide with a fire at (4,0). The episode configuration had start [1,0], goal [1,2], with fires at [1,1], [2,1], and [4,0], and the agent ended on a fire tile after 7 steps. The correct strategy is to stay on the top edge: [1,0] -> [0,0] -> [0,1] -> [0,2] -> [1,2]. This top-edge path avoids the central fire cluster and reaches the goal without stepping on fire.",
+    "root_cause": "pending"
+  }
+]

@@ -188,7 +188,7 @@ def _stream_subprocess(cmd: List[str]) -> Tuple[int, str]:
     return rc, "".join(captured)
 
 
-def run_train(resume: bool, demo_paths: Optional[str] = None) -> str:
+def run_train(resume: bool, demo_paths: Optional[str] = None, checkpoint_dir: str = "checkpoints") -> str:
     """Train the diffusion policy.
 
     demo_paths: comma-separated globs forwarded to train_diffusion as
@@ -196,7 +196,7 @@ def run_train(resume: bool, demo_paths: Optional[str] = None) -> str:
     (baseline demos UNION this profile's accumulated active-loop demos),
     which is what defends against catastrophic forgetting between rounds.
     """
-    cmd = [sys.executable, "-u", str(SCRIPTS / "train_diffusion.py")]  # -u: unbuffered so tqdm streams live
+    cmd = [sys.executable, "-u", str(SCRIPTS / "train_diffusion.py"), "--checkpoint_dir", checkpoint_dir]  # -u: unbuffered so tqdm streams live
     if resume:
         cmd.append("--resume")
     if demo_paths:
