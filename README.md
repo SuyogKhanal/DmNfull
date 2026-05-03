@@ -549,14 +549,23 @@ within their metric, so corrected α = 0.025.
 
 ### Recommended: chain everything off the training jobs in slurm
 
-`scripts/slurm/mcnemar_eval.sh` snapshots each profile's final EMA
-checkpoint, runs the per-episode evaluation (default **500 episodes**),
-runs the McNemar test, auto-detects each profile's latest `loop_log.json`
-under `results/active_loop/<profile>/`, and runs the prescription-quality
-paired t-test — all in one job. Submit it with `--dependency=afterok` so
-it starts only after all three training jobs exit successfully:
+The end-to-end workflow is three sbatches, each chained off the previous
+via `--dependency=afterok`:
+
+1. **Three training jobs** (parallel, one per profile) — your existing
+   `scripts/slurm/round.sh` pattern, just with `--parsable` so we capture
+   the job IDs.
+2. **One McNemar eval array job** (3 array tasks, parallel) — each task
+   evaluates one profile on its own GPU. Snapshots that profile's final
+   EMA checkpoint into a per-array-job directory and writes
+   `per_episode_success_policy.json` under `results/mcnemar/run_<id>/`.
+3. **One McNemar analysis job** (CPU, fast) — runs `mcnemar_analysis.py`
+   on the three success vectors and `prescription_quality_analysis.py`
+   over the active-loop rounds. Auto-discovers the latest eval run dir
+   and the latest `loop_log.json` per profile.
 
 ```bash
+# 1) Train P4/P5/P6 in parallel.
 JID4=$(PROFILE=p4 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
        TARGET_SR=0.9 NOTIFY_TO=you@example.com \
        sbatch --parsable --job-name=dmn_p4 scripts/slurm/round.sh)
@@ -567,40 +576,64 @@ JID6=$(PROFILE=p6 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
        TARGET_SR=0.9 NOTIFY_TO=you@example.com \
        sbatch --parsable --job-name=dmn_p6 scripts/slurm/round.sh)
 
-N_EPISODES=500 SEED_BASE=0 NOTIFY_TO=you@example.com \
-    sbatch --dependency=afterok:${JID4}:${JID5}:${JID6} \
-           --job-name=dmn_mcnemar scripts/slurm/mcnemar_eval.sh
+# 2) Per-profile per-episode eval as a 3-task array, runs in parallel.
+EVAL_JID=$(N_EPISODES=500 SEED_BASE=0 NOTIFY_TO=you@example.com \
+    sbatch --parsable \
+           --dependency=afterok:${JID4}:${JID5}:${JID6} \
+           scripts/slurm/mcnemar_eval.sh)
+
+# 3) McNemar + prescription-quality analysis once the array has finished.
+sbatch --dependency=afterok:${EVAL_JID} \
+       NOTIFY_TO=you@example.com \
+       scripts/slurm/mcnemar_analysis.sh
 ```
 
-The three training jobs run in parallel (each in its own
-`checkpoints/${PROFILE}/`); `dmn_mcnemar` queues immediately and slurm
-holds it until all three exit code 0. If any training job fails, the
-McNemar job auto-cancels — you won't get a stats run on a half-trained
-model.
+Why three jobs:
+
+- Training jobs already isolate `checkpoints/${PROFILE}/`, so they run
+  in true parallel.
+- The McNemar eval is the slow part (500 episodes × DDPM denoise per
+  step). Splitting it into a 3-task array means each profile gets its
+  own GPU and the wall-clock is ~1/3 of the serial version, modulo
+  cluster scheduling.
+- The analysis step is ~seconds, needs no GPU, and needs all three
+  per-profile success files. Running it as a separate CPU-only job
+  keeps the GPU array job from sitting idle on it, and `afterok:<array_job_id>`
+  is satisfied only when every array task exits 0 — so we never run
+  the test on a partial set of profiles.
 
 Snapshot layout written by `mcnemar_eval.sh` (so a later training round
 can't mutate the weights you tested against):
 
 ```
-checkpoints/snapshots/<job_id>/
+checkpoints/snapshots/<array_job_id>/
 ├── p4/best_model_ema.pth   + best_model.pth + best_model_meta.json
 ├── p5/...
 └── p6/...
 ```
 
-Outputs land in `results/mcnemar/run_<job_id>/`:
-`per_episode_success_policy.json` per profile, `mcnemar_results.json`,
-`prescription_quality_results.json`.
+Outputs land in `results/mcnemar/run_<array_job_id>/`:
+`per_episode_success_policy.json` per profile (written by the array
+tasks), then `mcnemar_results.json` and
+`prescription_quality_results.json` (written by the analysis job).
 
-Env vars for `mcnemar_eval.sh`:
+Env vars for `mcnemar_eval.sh` (the array job):
 
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `N_EPISODES` | `500` | Episodes per profile for the per-episode eval. |
 | `SEED_BASE` | `0` | First env seed; episodes use `SEED_BASE..SEED_BASE+N-1`. |
-| `NOTIFY_TO` | (unset) | Empty disables the SLURM_START / SLURM_END mail. |
+| `NOTIFY_TO` | (unset) | Empty disables the per-task end-of-job mail. |
 | `PROJECT_ROOT` | `/vast/$USER/DmN/DmNfull` | Working tree to `cd` into. |
+
+Env vars for `mcnemar_analysis.sh` (the analysis job):
+
+| Var | Default | Meaning |
+| --- | --- | --- |
+| `MCNEMAR_RUN_DIR` | (latest under `results/mcnemar/`) | Pin a specific eval run dir. |
 | `P4_LOOP_LOG` / `P5_LOOP_LOG` / `P6_LOOP_LOG` | (auto) | Override the auto-detected latest `loop_log.json`. |
+| `NOTIFY_TO` | (unset) | Empty disables the SLURM_END mail. |
+| `PROJECT_ROOT` | `/vast/$USER/DmN/DmNfull` | Working tree to `cd` into. |
 
 ### Manual / interactive equivalent (skip slurm)
 
