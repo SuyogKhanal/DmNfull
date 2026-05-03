@@ -34,6 +34,7 @@ better targeted demo set than DAgger's per-failure interventions.
   - [Baselines (naive DAgger / diff-DAgger)](#baselines-naive-dagger--diff-dagger)
   - [Dashboard](#dashboard)
 - [Headless ablation studies on Slurm](#headless-ablation-studies-on-slurm)
+- [Statistical comparison: McNemar + paired t-test (P4 / P5 / P6)](#statistical-comparison-mcnemar--paired-t-test-p4--p5--p6)
 - [Email notifications via Gmail API](#email-notifications-via-gmail-api)
 - [What gets saved where](#what-gets-saved-where)
 - [Glossary of components](#glossary-of-components)
@@ -481,20 +482,147 @@ Output lands under `results/ablations/run_<ts>/` and is ready for
 `python dashboard/app.py`.
 
 To run **one full active loop per profile** in parallel slurm jobs (each
-profile autonomous via BFS):
+profile autonomous via BFS), there is a hazard the simple for-loop pattern
+hides — every profile that trains in the same working directory writes to
+the SAME `checkpoints/best_model.pth` and `checkpoints/best_model_ema.pth`.
+Demos and RAG banks are profile-isolated, but the checkpoint files are not,
+so two parallel jobs sharing one repo will trample each other mid-training.
+
+To run them truly in parallel, give each profile its own checkout of the
+repo (one per /vast subdirectory). The baseline checkpoint can be a single
+shared file referenced by absolute path:
 
 ```bash
-for p in p1 p2 p3 p4 p5 p6; do
-    PROFILE=$p EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=15 \
-        NOTIFY_TO=you@example.com NEW_LOOP=1 \
+# one-time: clone the repo three times so each profile has its own checkpoints/
+for p in p4 p5 p6; do
+    git clone <your remote> /vast/$USER/DmN/DmNfull_${p}
+done
+
+# submit one slurm job per profile, each in its own working tree
+for p in p4 p5 p6; do
+    PROJECT_ROOT=/vast/$USER/DmN/DmNfull_${p} \
+    PROFILE=$p EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 \
+        NEW_LOOP=1 TARGET_SR=0.9 \
+        BASELINE_CKPT=/vast/$USER/DmN/shared_baseline.pth \
+        NOTIFY_TO=you@example.com \
         sbatch --job-name=dmn_${p} scripts/slurm/round.sh
 done
 ```
 
-Each job's per-profile demos are isolated under
-`demos/active_loop/<profile>/<loop_id>/`, and each profile's RAG bank is
-isolated under `results/active_loop/<profile>/<loop_id>/round_<N>/rag_bank/`,
-so the parallel runs cannot contaminate each other.
+The slurm script honours `PROJECT_ROOT`; setting it per profile is what
+keeps the three jobs from racing on `checkpoints/`.
+
+Once each profile's job has finished, snapshot its final EMA checkpoint
+into a stable, per-profile filename so the McNemar evaluator can find it
+(see the next section):
+
+```bash
+for p in p4 p5 p6; do
+    cp /vast/$USER/DmN/DmNfull_${p}/checkpoints/best_model_ema.pth \
+       /vast/$USER/DmN/checkpoints/${p}_final_ema.pth
+done
+```
+
+If you'd rather skip the multi-clone setup, run the three profiles
+**sequentially** in one job using `--dependency=afterok` (each starts
+only after the previous one's training has finished writing
+`checkpoints/`):
+
+```bash
+PROFILE=p4 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
+    sbatch --parsable --job-name=dmn_p4 scripts/slurm/round.sh > .jid_p4
+PROFILE=p5 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
+    sbatch --parsable --dependency=afterok:$(cat .jid_p4) \
+        --job-name=dmn_p5 scripts/slurm/round.sh > .jid_p5
+PROFILE=p6 EXPERT=bfs AUTO_LOOP=1 MAX_ROUNDS=5 NEW_LOOP=1 \
+    sbatch --parsable --dependency=afterok:$(cat .jid_p5) \
+        --job-name=dmn_p6 scripts/slurm/round.sh
+```
+
+---
+
+## Statistical comparison: McNemar + paired t-test (P4 / P5 / P6)
+
+Once each profile has finished its active loop, two independent tests
+answer two different questions:
+
+1. **McNemar (episode-level, paired binary).** Did P_a's *trained policy*
+   outperform P_b's on the same held-out episodes? Outcome per episode is
+   success ∈ {0, 1}; same `(seed_base + episode_idx)` schedule across
+   profiles so episode_id `i` is the same start/goal/fire layout in every
+   profile. Discordant pairs (b, c) drive the test.
+2. **Paired t-test (round-level, prescription quality).** Did P_a's *LLM
+   prescriptions* propose higher-quality layouts than P_b's during the
+   active-loop rounds themselves? Per round per profile we record
+   `save_rate = n_saved / n_prescribed` (solvable layouts) and
+   `mean_steps = mean(len(actions))` across saved demos (richness). One
+   paired observation per round.
+
+Both tests Bonferroni-correct across the two pairs `(p4,p5)` and `(p5,p6)`
+within their metric, so corrected α = 0.025.
+
+### 1. Per-episode policy evaluation (input to McNemar)
+
+```bash
+python scripts/run_mcnemar_eval.py \
+    --p4-ckpt /vast/$USER/DmN/checkpoints/p4_final_ema.pth \
+    --p5-ckpt /vast/$USER/DmN/checkpoints/p5_final_ema.pth \
+    --p6-ckpt /vast/$USER/DmN/checkpoints/p6_final_ema.pth \
+    --n-episodes 100 --seed-base 0
+```
+
+Loads each profile's checkpoint, rolls out 100 episodes per profile on
+`seeds 0..99`, reseeds `torch / cuda / numpy / random` per episode (locks
+DDPM denoise noise so any per-episode SR difference is attributable to the
+checkpoints, not RNG drift), and writes one
+`per_episode_success_policy.json` per profile under
+`results/mcnemar/run_<ts>/<profile>/`.
+
+### 2. McNemar paired test on the success vectors
+
+```bash
+python scripts/mcnemar_analysis.py \
+    --results-dir results/mcnemar/run_<ts>
+```
+
+Builds the 2×2 paired table for `(p4, p5)` and `(p5, p6)` and runs
+`statsmodels.stats.contingency_tables.mcnemar` (exact binomial when
+`b + c < 25`, continuity-corrected χ² otherwise). Prints both
+uncorrected (α = 0.05) and Bonferroni (α = 0.025) decisions, and writes
+`mcnemar_results.json` next to the inputs.
+
+### 3. Paired t-test on prescription quality (across active-loop rounds)
+
+```bash
+python scripts/prescription_quality_analysis.py \
+    --p4-loop-log results/active_loop/p4_vlm_reasoning_kag_cross_plain_llm/loop_<id>/loop_log.json \
+    --p5-loop-log results/active_loop/p5_vlm_reasoning_kag_rag_cross_plain_llm/loop_<id>/loop_log.json \
+    --p6-loop-log results/active_loop/p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm/loop_<id>/loop_log.json
+```
+
+For each round per profile, reads `recommended_layouts.json` for
+`n_prescribed`, counts `demo_*.json` files in the round's `demo_dir` for
+`n_saved` and uses each demo's `len(actions)` for `mean_steps`. The
+`bfs_collection_summary.json` (whether at the round-level legacy path or
+the loop-level post-fix path) is loaded as a cross-reference; the file
+count is canonical and the script warns if the summary disagrees.
+
+If profiles ran a different number of rounds, the script truncates each
+profile to `min(n_rounds_per_profile)` and prints a WARNING. Output:
+`prescription_quality_results.json` next to the P4 loop log.
+
+### Reading the results
+
+For each of the (P4 vs P5) and (P5 vs P6) comparisons you'll get:
+
+| Test | Reports | Significance threshold |
+| --- | --- | --- |
+| McNemar | b, c, χ² / exact stat, p-value | Bonferroni α = 0.025 |
+| Paired t-test (save_rate) | mean ± std per profile, t, p-value | Bonferroni α = 0.025 |
+| Paired t-test (mean_steps) | mean ± std per profile, t, p-value | Bonferroni α = 0.025 |
+
+A profile "wins" a comparison when the corresponding `Δ > 0` and the
+Bonferroni-corrected decision is SIGNIFICANT.
 
 ---
 
