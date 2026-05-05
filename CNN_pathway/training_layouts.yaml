@@ -1,21 +1,23 @@
 # Training layouts for the CNN+MLP policy.
 #
-# Each entry defines a base 5x5 grid template (walls + free cells) and how many
-# demos to record on that template. CNN_pathway/expand_layouts.py walks this
-# file, samples `n_demos` (start, goal, fire) configurations per layout
-# (validated by BFS, three fires every time), and writes a flat JSON that
-# `scripts/play_maze.py --layouts-from` can play through one by one. Recorded
-# human demos go to CNN_pathway/demos and are picked up by CNN_pathway/train.py.
+# This file is the single source of truth for the training distribution. It
+# is consumed directly by:
+#   - scripts/play_maze.py     --layouts-from CNN_pathway/training_layouts.yaml
+#   - CNN_pathway/train.py     (reads img_size / grid_size / cell_px)
+#   - CNN_pathway/rollout_test.py  --layouts CNN_pathway/training_layouts.yaml
 #
-# IMPORTANT: the two test layouts in test_layouts.yaml are NEVER used here.
-# They live in a held-out distribution that the trained model has never seen.
+# Each layout entry hard-codes its own grid (walls), start_pos, goal_pos and
+# fire_positions, so play_maze can render and queue them with no extra
+# preprocessing step. n_repetitions controls how many demos play_maze will
+# record on each layout before auto-advancing to the next.
 #
-# Grid key: 0 = free, 1 = wall. Fires/goal/start are sampled per demo.
+# Grid key: 0 = free, 1 = wall. Fire / goal cells are added on top by the env
+# at runtime from the start_pos / goal_pos / fire_positions fields below.
 
 img_size: 80
 grid_size: 5
 cell_px: 16
-num_fire_tiles: 3              # always 3 fires per recorded demo
+num_fire_tiles: 3
 min_manhattan_dist: 4
 
 training_layouts:
@@ -27,7 +29,10 @@ training_layouts:
       - [0, 0, 0, 0, 0]
       - [0, 0, 0, 0, 0]
       - [0, 0, 0, 0, 0]
-    n_demos: 8
+    start_pos: [0, 0]
+    goal_pos:  [4, 4]
+    fire_positions: [[2, 1], [2, 2], [2, 3]]
+    n_repetitions: 3
 
   - name: center_block
     grid:
@@ -36,7 +41,10 @@ training_layouts:
       - [0, 0, 1, 0, 0]
       - [0, 0, 0, 0, 0]
       - [0, 0, 0, 0, 0]
-    n_demos: 8
+    start_pos: [0, 4]
+    goal_pos:  [4, 0]
+    fire_positions: [[1, 2], [3, 2], [2, 0]]
+    n_repetitions: 3
 
   - name: top_bottom_corridor
     grid:
@@ -45,7 +53,10 @@ training_layouts:
       - [0, 0, 0, 0, 0]
       - [0, 1, 1, 1, 0]
       - [0, 0, 0, 0, 0]
-    n_demos: 8
+    start_pos: [0, 0]
+    goal_pos:  [4, 4]
+    fire_positions: [[2, 1], [2, 2], [2, 3]]
+    n_repetitions: 3
 
   - name: zigzag
     grid:
@@ -54,7 +65,10 @@ training_layouts:
       - [0, 0, 0, 0, 0]
       - [0, 0, 1, 0, 0]
       - [0, 0, 0, 0, 0]
-    n_demos: 8
+    start_pos: [0, 0]
+    goal_pos:  [4, 4]
+    fire_positions: [[0, 2], [2, 2], [4, 2]]
+    n_repetitions: 3
 
   - name: side_walls
     grid:
@@ -63,4 +77,7 @@ training_layouts:
       - [1, 0, 0, 0, 1]
       - [1, 0, 0, 0, 1]
       - [0, 0, 0, 0, 0]
-    n_demos: 8
+    start_pos: [0, 0]
+    goal_pos:  [4, 4]
+    fire_positions: [[1, 2], [2, 2], [3, 2]]
+    n_repetitions: 3

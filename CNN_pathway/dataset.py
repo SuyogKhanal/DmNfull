@@ -59,9 +59,8 @@ class CNNMLPDemoDataset(Dataset):
             raise FileNotFoundError(
                 f"No demo JSON files found under {demo_dir}. "
                 f"Run play_maze.py first:\n"
-                f"  python -m CNN_pathway.expand_layouts\n"
                 f"  python scripts/play_maze.py "
-                f"--layouts-from CNN_pathway/training_layouts_play.json "
+                f"--layouts-from CNN_pathway/training_layouts.yaml "
                 f"--demo_dir {demo_dir}"
             )
 

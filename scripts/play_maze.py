@@ -7,6 +7,7 @@ import math
 from typing import List, Optional, Tuple
 
 import pygame
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs.maze_env import MazeNavEnv, ACTION_NAMES, CELL_SIZE, TILE_FREE, TILE_FIRE, TILE_GOAL
@@ -69,23 +70,36 @@ def parse_args():
 
 
 def _load_layouts_from_file(path: str) -> List[dict]:
-    """Load and validate the flat layouts list written by active_loop /
-    run_round into recommended_layouts.json.
+    """Load and validate a flat layouts list from JSON or YAML.
 
-    Accepts:
-      {"layouts": [ {start_pos, goal_pos, fire_positions, ...}, ... ]}
-      or a bare list of layouts.
+    Accepted shapes:
+      * JSON: written by active_loop / run_round into recommended_layouts.json,
+        either {"layouts": [...]} or a bare list.
+      * YAML: the CNN_pathway training/test config, with a top-level
+        `training_layouts` or `test_layouts` list.
 
     Each layout MUST contain start_pos, goal_pos, fire_positions. Optional:
     n_repetitions, repetition, layout_index, parent_demo_id, corridor,
-    rationale — these are surfaced in the on-screen status and the
-    auto-generated layout_id so demos are traceable.
+    rationale, grid — these are surfaced in the on-screen status and the
+    auto-generated layout_id so demos are traceable. When a layout entry
+    carries its own `grid`, play_maze installs it into MAZE_LAYOUTS before
+    constructing the env.
     """
+    is_yaml = path.lower().endswith((".yaml", ".yml"))
     with open(path, "r") as f:
-        data = json.load(f)
-    layouts = data.get("layouts") if isinstance(data, dict) else data
+        data = yaml.safe_load(f) if is_yaml else json.load(f)
+    if isinstance(data, dict):
+        layouts = (
+            data.get("layouts")
+            or data.get("training_layouts")
+            or data.get("test_layouts")
+        )
+    else:
+        layouts = data
     if not isinstance(layouts, list) or not layouts:
-        raise ValueError(f"{path}: no 'layouts' list found")
+        raise ValueError(
+            f"{path}: no 'layouts' / 'training_layouts' / 'test_layouts' list found"
+        )
     out = []
     for i, l in enumerate(layouts):
         if not all(k in l for k in ("start_pos", "goal_pos", "fire_positions")):

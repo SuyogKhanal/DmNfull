@@ -41,8 +41,12 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", type=str,
                    default=str(REPO_ROOT / "CNN_pathway" / "checkpoints" / "best_cnn_mlp.pth"))
-    p.add_argument("--test_layouts", type=str,
-                   default=str(REPO_ROOT / "CNN_pathway" / "test_layouts.yaml"))
+    p.add_argument("--layouts", type=str,
+                   default=str(REPO_ROOT / "CNN_pathway" / "test_layouts.yaml"),
+                   help="YAML with a top-level `training_layouts` or `test_layouts` "
+                        "list. Either is accepted, so the same script can evaluate the "
+                        "policy on training-distribution layouts as well as the held-out "
+                        "test layouts.")
     p.add_argument("--out_dir", type=str, default=None,
                    help="Output run directory. Defaults to "
                         "results/cnn_pathway/run_<timestamp>.")
@@ -205,11 +209,24 @@ def main():
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    with open(args.test_layouts, "r") as f:
+    with open(args.layouts, "r") as f:
         spec = yaml.safe_load(f) or {}
-    layouts = spec.get("test_layouts") or []
+    layouts = (
+        spec.get("test_layouts")
+        or spec.get("training_layouts")
+        or spec.get("layouts")
+        or []
+    )
     if not layouts:
-        raise SystemExit(f"no test_layouts in {args.test_layouts}")
+        raise SystemExit(
+            f"no `test_layouts` / `training_layouts` / `layouts` list in {args.layouts}"
+        )
+    layout_kind = (
+        "test_layouts" if "test_layouts" in spec
+        else "training_layouts" if "training_layouts" in spec
+        else "layouts"
+    )
+    print(f"[cnn-rollout] {layout_kind}: {len(layouts)} layouts from {args.layouts}")
 
     ckpt = torch.load(args.checkpoint, map_location=device)
     model = CNNMLPPolicy(
@@ -301,7 +318,7 @@ def main():
     print(f"[cnn-rollout] DONE  successes={len(success_ids)}/{len(layouts)}  "
           f"failures={failure_ids}")
     print(f"[cnn-rollout] artefacts → {run_dir}")
-    print(f"[cnn-rollout] next: python -m CNN_pathway.analyze_p4 --rollout_dir {run_dir}")
+    print(f"[cnn-rollout] next: python -m CNN_pathway.analyze_p4 --rollout_dir \"{run_dir}\"")
 
 
 if __name__ == "__main__":

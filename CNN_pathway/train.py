@@ -2,15 +2,12 @@
 
 Workflow
 --------
-    # 1. expand the YAML layouts into a play_maze-compatible JSON
-    python -m CNN_pathway.expand_layouts
-
-    # 2. record demos manually (auto-advances through every layout/config)
+    # 1. record demos manually (auto-advances through every layout)
     python scripts/play_maze.py \
-        --layouts-from CNN_pathway/training_layouts_play.json \
+        --layouts-from CNN_pathway/training_layouts.yaml \
         --demo_dir CNN_pathway/demos
 
-    # 3. train the CNN+MLP on the recorded demos
+    # 2. train the CNN+MLP on the recorded demos
     python -m CNN_pathway.train \
         --demo_dir CNN_pathway/demos \
         --layouts CNN_pathway/training_layouts.yaml
