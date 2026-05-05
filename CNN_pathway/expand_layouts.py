@@ -43,6 +43,11 @@ def parse_args():
                    default=str(REPO_ROOT / "CNN_pathway" / "training_layouts_play.json"))
     p.add_argument("--demo_dir", type=str,
                    default=str(REPO_ROOT / "CNN_pathway" / "demos"))
+    p.add_argument("--demos_per_config", type=int, default=1,
+                   help="How many demos to record per concrete (start, goal, fires) "
+                        "configuration. Written into each entry as `n_repetitions`, which "
+                        "play_maze respects: it stays on the same layout until that many "
+                        "saves have been recorded before auto-advancing.")
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
 
@@ -126,8 +131,10 @@ def main():
             cfg["layout_name"] = name
             cfg["layout_index"] = k
             cfg["grid"] = layout["grid"]
+            cfg["n_repetitions"] = max(1, int(args.demos_per_config))
             cfg["rationale"] = (
-                f"Training layout '{name}' demo {k+1}/{n_demos}."
+                f"Training layout '{name}' config {k+1}/{n_demos} "
+                f"(record {cfg['n_repetitions']} demos for this config)."
             )
             expanded.append(cfg)
 

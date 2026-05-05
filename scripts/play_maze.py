@@ -61,6 +61,10 @@ def parse_args():
                         "to next layout. After the last layout, pygame exits. While in this "
                         "mode press N to skip the current layout without saving, R to retry "
                         "the SAME layout (same start/goal/fires), or Q to abort.")
+    p.add_argument("--demos_per_layout", type=int, default=1,
+                   help="Queue mode only. Record this many demos for each queued layout "
+                        "before auto-advancing to the next one. A per-layout `n_repetitions` "
+                        "field in the JSON, when present, takes precedence over this flag.")
     return p.parse_args()
 
 
@@ -343,6 +347,8 @@ def _print_layout_banner(layout: dict, idx: int, total: int):
         print(f"  corridor   : {layout['corridor']}")
     if layout.get("repetition") and layout.get("n_repetitions"):
         print(f"  repetition : {layout['repetition']}/{layout['n_repetitions']}")
+    elif layout.get("n_repetitions"):
+        print(f"  n_repetitions : {layout['n_repetitions']} (record this many before advancing)")
     if layout.get("guidance"):
         print(f"  guidance   : {layout['guidance']}")
     if layout.get("rationale"):
@@ -375,6 +381,18 @@ def main():
     # ------------------------------------------------------------------ #
     layouts_queue: List[dict] = []
     layout_idx = 0
+    def _target_demos_for(layout: dict) -> int:
+        """Per-layout demo count: explicit n_repetitions wins, else CLI default."""
+        n = layout.get("n_repetitions")
+        try:
+            n = int(n) if n is not None else None
+        except (TypeError, ValueError):
+            n = None
+        return max(1, n if n is not None else int(args.demos_per_layout))
+
+    saved_for_current_layout = 0
+    target_for_current_layout = 1
+
     if args.layouts_from:
         layouts_queue = _load_layouts_from_file(args.layouts_from)
         print(f"[play_maze] Loaded {len(layouts_queue)} layouts from {args.layouts_from}")
@@ -382,6 +400,7 @@ def main():
         _install_layout_grid(first)
         forced_start, forced_goal, forced_fires = _layout_to_forced(first)
         active_layout_id = args.layout_id or _layout_id_for(first, 0, len(layouts_queue))
+        target_for_current_layout = _target_demos_for(first)
     else:
         forced_start = args.start
         forced_goal  = args.goal
@@ -493,6 +512,8 @@ def main():
                     _install_layout_grid(nxt)
                     forced_start, forced_goal, forced_fires = _layout_to_forced(nxt)
                     active_layout_id = _layout_id_for(nxt, layout_idx, len(layouts_queue))
+                    saved_for_current_layout = 0
+                    target_for_current_layout = _target_demos_for(nxt)
                     _print_layout_banner(nxt, layout_idx, len(layouts_queue))
                     env.close()
                     episode += 1
@@ -516,6 +537,26 @@ def main():
 
                         # Decide what to do AFTER the save based on which mode we're in.
                         if layouts_queue:
+                            saved_for_current_layout += 1
+                            if saved_for_current_layout < target_for_current_layout:
+                                # More demos still wanted for this same layout.
+                                env.close()
+                                episode += 1
+                                env, obs_seq, action_seq, reward_seq = reset_episode(
+                                    FIRE_MODE, episode, attempt=episode,
+                                    demo_dir=demo_dir,
+                                    forced_start=forced_start,
+                                    forced_goal=forced_goal,
+                                    forced_fires=forced_fires,
+                                )
+                                drag_active      = False
+                                drag_start_pixel = None
+                                print(f"[play_maze] Saved {saved_for_current_layout}/"
+                                      f"{target_for_current_layout} for layout "
+                                      f"{layout_idx+1}/{len(layouts_queue)}. "
+                                      f"Press S again for another demo on the SAME layout, "
+                                      f"or N to skip to the next.")
+                                continue
                             layout_idx += 1
                             if layout_idx >= len(layouts_queue):
                                 print(f"[play_maze] All {len(layouts_queue)} layouts recorded. Closing pygame.")
@@ -525,6 +566,8 @@ def main():
                             _install_layout_grid(nxt)
                             forced_start, forced_goal, forced_fires = _layout_to_forced(nxt)
                             active_layout_id = _layout_id_for(nxt, layout_idx, len(layouts_queue))
+                            saved_for_current_layout = 0
+                            target_for_current_layout = _target_demos_for(nxt)
                             _print_layout_banner(nxt, layout_idx, len(layouts_queue))
                             env.close()
                             episode += 1
