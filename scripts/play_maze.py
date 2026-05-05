@@ -10,6 +10,7 @@ import pygame
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs.maze_env import MazeNavEnv, ACTION_NAMES, CELL_SIZE, TILE_FREE, TILE_FIRE, TILE_GOAL
+from configs.maze_layouts import MAZE_LAYOUTS
 
 MAZE_NAME          = "multimodal"
 DEMO_DIR           = "demos"
@@ -318,6 +319,21 @@ def _layout_to_forced(layout: dict):
     )
 
 
+def _install_layout_grid(layout: dict):
+    """If the layout dict carries its own wall template (`grid`), install it
+    into MAZE_LAYOUTS["multimodal"] so the next env constructed by create_env
+    picks up the right walls. Used by the CNN_pathway training-layouts queue
+    where each base layout has a different wall structure."""
+    grid = layout.get("grid")
+    if grid is None:
+        return
+    MAZE_LAYOUTS[MAZE_NAME]["grid"] = [list(row) for row in grid]
+    if "start_pos" in layout:
+        MAZE_LAYOUTS[MAZE_NAME]["start"] = list(layout["start_pos"])
+    if "goal_pos" in layout:
+        MAZE_LAYOUTS[MAZE_NAME]["goal"] = list(layout["goal_pos"])
+
+
 def _print_layout_banner(layout: dict, idx: int, total: int):
     print()
     print("-" * 72)
@@ -363,6 +379,7 @@ def main():
         layouts_queue = _load_layouts_from_file(args.layouts_from)
         print(f"[play_maze] Loaded {len(layouts_queue)} layouts from {args.layouts_from}")
         first = layouts_queue[0]
+        _install_layout_grid(first)
         forced_start, forced_goal, forced_fires = _layout_to_forced(first)
         active_layout_id = args.layout_id or _layout_id_for(first, 0, len(layouts_queue))
     else:
@@ -473,6 +490,7 @@ def main():
                         running = False
                         break
                     nxt = layouts_queue[layout_idx]
+                    _install_layout_grid(nxt)
                     forced_start, forced_goal, forced_fires = _layout_to_forced(nxt)
                     active_layout_id = _layout_id_for(nxt, layout_idx, len(layouts_queue))
                     _print_layout_banner(nxt, layout_idx, len(layouts_queue))
@@ -504,6 +522,7 @@ def main():
                                 running = False
                                 break
                             nxt = layouts_queue[layout_idx]
+                            _install_layout_grid(nxt)
                             forced_start, forced_goal, forced_fires = _layout_to_forced(nxt)
                             active_layout_id = _layout_id_for(nxt, layout_idx, len(layouts_queue))
                             _print_layout_banner(nxt, layout_idx, len(layouts_queue))

@@ -1,11 +1,19 @@
-"""Train the CNN+MLP maze policy on the layouts in training_layouts.yaml.
+"""Train the CNN+MLP maze policy on demos collected via play_maze.
 
-Usage
------
+Workflow
+--------
+    # 1. expand the YAML layouts into a play_maze-compatible JSON
+    python -m CNN_pathway.expand_layouts
+
+    # 2. record demos manually (auto-advances through every layout/config)
+    python scripts/play_maze.py \
+        --layouts-from CNN_pathway/training_layouts_play.json \
+        --demo_dir CNN_pathway/demos
+
+    # 3. train the CNN+MLP on the recorded demos
     python -m CNN_pathway.train \
-        --layouts CNN_pathway/training_layouts.yaml \
-        --epochs 60 --batch_size 64 --lr 3e-4 \
-        --checkpoint_dir CNN_pathway/checkpoints
+        --demo_dir CNN_pathway/demos \
+        --layouts CNN_pathway/training_layouts.yaml
 """
 from __future__ import annotations
 
@@ -32,8 +40,13 @@ from CNN_pathway.model import CNNMLPPolicy
 
 def parse_args():
     p = argparse.ArgumentParser()
+    p.add_argument("--demo_dir", type=str,
+                   default=str(REPO_ROOT / "CNN_pathway" / "demos"),
+                   help="Directory of play_maze demo JSONs (recursively searched).")
     p.add_argument("--layouts", type=str,
-                   default=str(REPO_ROOT / "CNN_pathway" / "training_layouts.yaml"))
+                   default=str(REPO_ROOT / "CNN_pathway" / "training_layouts.yaml"),
+                   help="Training layouts YAML — only used to read img_size / "
+                        "grid_size / cell_px for model construction.")
     p.add_argument("--epochs", type=int, default=60)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--lr", type=float, default=3e-4)
@@ -52,9 +65,14 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[cnn-train] device={device}")
-    print(f"[cnn-train] layouts={args.layouts}")
+    print(f"[cnn-train] demo_dir={args.demo_dir}")
+    print(f"[cnn-train] layouts ={args.layouts}")
 
-    dataset = CNNMLPDemoDataset(args.layouts, seed=args.seed, augment=True)
+    dataset = CNNMLPDemoDataset(
+        demo_dir=args.demo_dir,
+        layouts_yaml=args.layouts,
+        augment=True,
+    )
 
     val_size = max(1, int(len(dataset) * args.val_frac))
     train_size = len(dataset) - val_size
