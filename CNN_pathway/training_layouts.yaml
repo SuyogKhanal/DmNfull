@@ -1,0 +1,68 @@
+# Training layouts for the CNN+MLP policy.
+#
+# Each entry defines a base 5x5 grid template (walls + free cells). For every
+# layout we generate `n_demos` BFS demonstrations: start, goal and fire tile
+# positions are randomised within the template's free cells, and a fire-free
+# shortest-path plan is recorded as the supervision signal.
+#
+# IMPORTANT: the two test layouts in test_layouts.yaml are NEVER used here.
+# They live in a held-out distribution that the trained model has never seen.
+#
+# Grid key: 0 = free, 1 = wall, 2 = fire (placeholder, overwritten by sampler),
+#           3 = goal (placeholder, overwritten by sampler).
+
+img_size: 80
+grid_size: 5
+cell_px: 16
+
+training_layouts:
+
+  - name: open_5x5
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    num_fire_tiles: 2
+    n_demos: 80
+
+  - name: center_block
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 1, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    num_fire_tiles: 2
+    n_demos: 60
+
+  - name: top_bottom_corridor
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 1, 1, 1, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 1, 1, 1, 0]
+      - [0, 0, 0, 0, 0]
+    num_fire_tiles: 2
+    n_demos: 60
+
+  - name: zigzag
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 1, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 1, 0, 0]
+      - [0, 0, 0, 0, 0]
+    num_fire_tiles: 2
+    n_demos: 60
+
+  - name: side_walls
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [1, 0, 0, 0, 1]
+      - [1, 0, 0, 0, 1]
+      - [1, 0, 0, 0, 1]
+      - [0, 0, 0, 0, 0]
+    num_fire_tiles: 2
+    n_demos: 60

@@ -1,0 +1,39 @@
+# Held-out test layouts for the CNN+MLP policy.
+#
+# These two configurations are NEVER part of the training distribution. They
+# exist only to evaluate generalisation and to exercise the P4 LLM analysis
+# pipeline on the resulting failures.
+
+img_size: 80
+grid_size: 5
+cell_px: 16
+
+test_layouts:
+
+  - name: left_corridor_three_fires
+    description: >
+      Three fire tiles stacked in the left corridor. The agent must navigate
+      around them via the right side of the grid.
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    start_pos: [0, 0]
+    goal_pos: [4, 4]
+    fire_positions: [[1, 0], [2, 0], [3, 0]]
+
+  - name: top_left_goal_bottom_right_start
+    description: >
+      Goal sits at the top-left corner; the agent spawns at the bottom-right
+      corner. Tests reverse-direction generalisation.
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    start_pos: [4, 4]
+    goal_pos: [0, 0]
+    fire_positions: [[2, 2]]
