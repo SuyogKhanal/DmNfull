@@ -6,14 +6,15 @@ exposes one (image, state, action) triple per recorded transition.
 
 Demo schema (matches play_maze.save_demo):
     {
-        "observations": [{"state": [...], "image": [[H][W][3]]}, ...],
-        "actions":      [int, ...],
+        "observations": [[state_dim_floats], ...],          # length T+1
+        "images":       [[[[uint8]*3]*W]*H, ...],            # length T+1
+        "actions":      [int, ...],                          # length T
         ...
     }
 
-Order of fields:
-    len(observations) == len(actions) + 1
-The dataset emits (obs[t], action[t]) — i.e. drops the terminal observation.
+len(observations) == len(images) == len(actions) + 1
+The dataset emits (image[t], state[t], action[t]) — i.e. drops the
+terminal observation.
 """
 from __future__ import annotations
 
@@ -71,11 +72,13 @@ class CNNMLPDemoDataset(Dataset):
             with open(fpath, "r") as f:
                 demo = json.load(f)
             obs_seq = demo.get("observations") or []
+            img_seq = demo.get("images") or []
             act_seq = demo.get("actions") or []
-            if not obs_seq or not act_seq:
+            if not obs_seq or not act_seq or not img_seq:
+                print(f"[cnn-dataset] skipping {fpath}: missing observations/images/actions")
                 continue
 
-            n_pairs = min(len(obs_seq) - 1, len(act_seq))
+            n_pairs = min(len(obs_seq) - 1, len(img_seq) - 1, len(act_seq))
             if n_pairs <= 0:
                 continue
 
@@ -83,8 +86,8 @@ class CNNMLPDemoDataset(Dataset):
             per_layout_counts[layout_id] = per_layout_counts.get(layout_id, 0) + n_pairs
 
             for t in range(n_pairs):
-                state = np.asarray(obs_seq[t]["state"], dtype=np.float32)
-                image = np.asarray(obs_seq[t]["image"], dtype=np.uint8)
+                state = np.asarray(obs_seq[t], dtype=np.float32)
+                image = np.asarray(img_seq[t], dtype=np.uint8)
                 action = int(act_seq[t])
                 self._records.append((image, state, action))
 
