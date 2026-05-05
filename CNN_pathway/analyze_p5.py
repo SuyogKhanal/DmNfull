@@ -1,6 +1,6 @@
-"""Run the existing P4 LLM analysis pipeline on a CNN+MLP test rollout.
+"""Run the existing P5 LLM analysis pipeline on a CNN+MLP test rollout.
 
-P4 = VLM + Reasoning + KAG + Cross-Episode Reasoning + Plain LLM Aggregator.
+P5 = P4 + RAG (retrieval-augmented context across past episodes).
 The shared logic lives in CNN_pathway/_analysis_common.py.
 """
 from __future__ import annotations
@@ -10,9 +10,9 @@ from pathlib import Path
 
 from CNN_pathway._analysis_common import run_profile_analysis, MASTER_CONFIG
 
-PROFILE_YAML = "p4_vlm_reasoning_kag_cross_plain_llm.yaml"
-LABEL = "p4"
-OUT_SUBDIR = "p4_analysis"
+PROFILE_YAML = "p5_vlm_reasoning_kag_rag_cross_plain_llm.yaml"
+LABEL = "p5"
+OUT_SUBDIR = "p5_analysis"
 
 
 def parse_args():
