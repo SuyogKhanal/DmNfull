@@ -60,7 +60,7 @@ def parse_args():
                    default=str(REPO_ROOT / "CNN_pathway" / "training_layouts.yaml"),
                    help="Training layouts YAML — only used to read img_size / "
                         "grid_size / cell_px for model construction.")
-    p.add_argument("--epochs", type=int, default=100)
+    p.add_argument("--epochs", type=int, default=1000)
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--seed", type=int, default=0)

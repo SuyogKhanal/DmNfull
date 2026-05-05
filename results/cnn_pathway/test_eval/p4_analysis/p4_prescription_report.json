@@ -1,0 +1,214 @@
+{
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/results/cnn_pathway/test_eval",
+  "p4_run_dir": "/vast/s226137394/DmN/DmNfull/results/cnn_pathway/test_eval/p4_analysis",
+  "n_failures": 2,
+  "test_layout_failures": [
+    {
+      "episode_id": 0,
+      "maze_name": "left_corridor_three_fires",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        4,
+        4
+      ],
+      "fire_positions": [
+        [
+          "1",
+          "0"
+        ],
+        [
+          "2",
+          "0"
+        ],
+        [
+          "3",
+          "0"
+        ]
+      ],
+      "success": false,
+      "total_steps": 1
+    },
+    {
+      "episode_id": 1,
+      "maze_name": "top_left_goal_bottom_right_start",
+      "start_pos": [
+        4,
+        4
+      ],
+      "goal_pos": [
+        0,
+        0
+      ],
+      "fire_positions": [
+        [
+          "2",
+          "2"
+        ],
+        [
+          "2",
+          "3"
+        ],
+        [
+          "2",
+          "4"
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "p4_prescription": {
+    "total_demonstrations_needed": 4,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": null,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              4,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                3,
+                0
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "This layout mirrors Episode 0's fire placement and validates adherence to the Top-edge corridor route despite blocked downward options."
+          }
+        ],
+        "rationale": ""
+      },
+      {
+        "cluster": null,
+        "n_demos_needed": null,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              4,
+              4
+            ],
+            "goal_pos": [
+              0,
+              0
+            ],
+            "fire_positions": [
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                2,
+                4
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Baseline left-edge routing with fires in the central row; reinforces staying on column 0 then moving along the bottom row to reach the goal."
+          },
+          {
+            "start_pos": [
+              4,
+              3
+            ],
+            "goal_pos": [
+              0,
+              0
+            ],
+            "fire_positions": [
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                2,
+                4
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Offset start position to stress maintaining left-edge adherence when near the bottom boundary."
+          },
+          {
+            "start_pos": [
+              3,
+              4
+            ],
+            "goal_pos": [
+              0,
+              0
+            ],
+            "fire_positions": [
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                2,
+                4
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Another variation that requires committing to the left-edge corridor despite proximity to the bottom-right corner."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_top_edge_fire_collision",
+        "episodes_in_cluster": [
+          0
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "top_edge",
+        "where_it_fails": "In Episode 0, fires occupy the first column below the start, blocking downward progress. The intended Top-edge corridor path (stay on row 0 then descend along column 4) is blocked if the agent chooses to move down into (1,0).",
+        "what_it_does_wrong": "Agent attempts to move DOWN from the start into a FIRE tile instead of staying on the top edge; this triggers immediate termination due to fire_collision.",
+        "source_final_recs": [
+          "top_edge"
+        ]
+      },
+      {
+        "cluster_label": "cluster_left_edge_fire_collision",
+        "episodes_in_cluster": [
+          1
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "In Episode 1, central fires block the central area forcing a left-edge routing; the agent initially explores toward the center instead of committing to the left-edge corridor path.",
+        "what_it_does_wrong": "Agent fails to commit to the left-edge corridor routing early, risking contact with central fires and triggering a fire_collision.",
+        "source_final_recs": [
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}
