@@ -75,6 +75,17 @@ def _expected_layout_for_failure(episode: Dict) -> Dict:
     }
 
 
+def _deep_merge(base: Dict, override: Dict) -> Dict:
+    import copy
+    out = copy.deepcopy(base)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 def run_profile_analysis(
     profile_yaml_name: str,
     rollout_dir: str,
@@ -82,6 +93,7 @@ def run_profile_analysis(
     out_dir_override: Optional[str] = None,
     master_config_path: Optional[str] = None,
     label: str = "p?",
+    extra_overrides: Optional[Dict] = None,
 ) -> Dict:
     """Run a single profile's analysis on an existing rollout directory.
 
@@ -91,6 +103,8 @@ def run_profile_analysis(
     out_dir_override  : explicit out dir, takes precedence over the default.
     master_config_path: path to the master experiment config.
     label             : short tag (e.g. 'p4') used in print/report headers.
+    extra_overrides   : extra config overrides merged on top of the profile
+                        (e.g. {'tkf': {'demo_dir': 'CNN_pathway/demos'}}).
     """
     rollout = Path(rollout_dir).resolve()
     if not rollout.exists():
@@ -103,6 +117,8 @@ def run_profile_analysis(
     if not profile_path.exists():
         raise SystemExit(f"profile not found: {profile_path}")
     overrides = _load_yaml(profile_path)
+    if extra_overrides:
+        overrides = _deep_merge(overrides, extra_overrides)
     master_path = master_config_path or str(MASTER_CONFIG)
 
     print(f"[{label}] rollout_dir : {rollout}")
