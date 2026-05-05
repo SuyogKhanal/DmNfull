@@ -52,6 +52,9 @@ def parse_args():
                         "results/cnn_pathway/run_<timestamp>.")
     p.add_argument("--max_steps", type=int, default=60)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--gif_duration_ms", type=int, default=250,
+                   help="Per-frame duration (ms) used when stitching the rollout gif. "
+                        "Lower = faster playback.")
     return p.parse_args()
 
 
@@ -100,6 +103,33 @@ def _serialise_info(info: Dict) -> Dict:
         else:
             out[k] = v
     return out
+
+
+def _save_trajectory_gif(steps: List[Dict], episode_dir: Path,
+                         duration_ms: int = 250) -> str:
+    """Stitch every step's rendered frame into a single .gif so the full
+    trajectory is replayable without rerunning the rollout. Returns the
+    absolute path to the saved gif (or empty string when no frames were
+    captured)."""
+    frames: List[Image.Image] = []
+    for s in steps:
+        rgb = s.get("rgb")
+        if rgb is None:
+            continue
+        frames.append(Image.fromarray(np.asarray(rgb)))
+    if not frames:
+        return ""
+    episode_dir.mkdir(parents=True, exist_ok=True)
+    gif_path = episode_dir / "trajectory.gif"
+    frames[0].save(
+        str(gif_path),
+        save_all=True,
+        append_images=frames[1:],
+        duration=duration_ms,
+        loop=0,
+        optimize=False,
+    )
+    return str(gif_path)
 
 
 def _save_key_frames(steps: List[Dict], key_frames: List[Dict], episode_dir: Path) -> Dict[str, str]:
@@ -308,6 +338,10 @@ def main():
                           max_steps=args.max_steps, device=device)
         episode_dir = episodes_dir / f"episode_{ep_idx}"
         ed["frame_paths"] = _save_key_frames(ed["steps"], ed["key_frames"], episode_dir)
+        gif_path = _save_trajectory_gif(ed["steps"], episode_dir, duration_ms=args.gif_duration_ms)
+        if gif_path:
+            ed["frame_paths"]["trajectory_gif"] = gif_path
+            print(f"[cnn-rollout]   trajectory gif → {gif_path}")
         episode_dir.mkdir(parents=True, exist_ok=True)
         with open(episode_dir / "episode_data.json", "w") as f:
             json.dump(_strip_rgb(ed), f, indent=2, default=str)
