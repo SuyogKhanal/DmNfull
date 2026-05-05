@@ -111,13 +111,30 @@ def _save_key_frames(steps: List[Dict], key_frames: List[Dict], episode_dir: Pat
         "highest_loss_frame": "high_loss.png",
         "end_frame": "end.png",
     }
+    saved_arrays: Dict[str, np.ndarray] = {}
     for kf in key_frames:
         rgb = steps[kf["step_idx"]]["rgb"]
         if rgb is None:
             continue
         p = frames_dir / role_to_file[kf["role"]]
-        Image.fromarray(np.asarray(rgb)).save(str(p))
+        arr = np.asarray(rgb)
+        Image.fromarray(arr).save(str(p))
         frame_paths[kf["role"]] = str(p)
+        saved_arrays[kf["role"]] = arr
+    # Diagnostic: when the agent never moves the rendered frames are
+    # visually identical at every step. Log it so the VLM downstream
+    # isn't misled into thinking three different states were captured.
+    pairs = [
+        ("start_frame", "highest_loss_frame"),
+        ("highest_loss_frame", "end_frame"),
+        ("start_frame", "end_frame"),
+    ]
+    for a, b in pairs:
+        if a in saved_arrays and b in saved_arrays:
+            if saved_arrays[a].shape == saved_arrays[b].shape and \
+               np.array_equal(saved_arrays[a], saved_arrays[b]):
+                print(f"[cnn-rollout] WARNING: {a} == {b} (agent did not produce a "
+                      f"distinguishable frame for this episode).")
     return frame_paths
 
 
@@ -127,18 +144,54 @@ def _strip_rgb(episode: Dict) -> Dict:
     return out
 
 
-def _pick_high_loss_step(rewards: List[float]) -> int:
-    if len(rewards) <= 2:
-        return max(0, len(rewards) // 2)
-    s0, se = 0, len(rewards) - 1
-    sl = int(np.argmin(rewards))
-    if sl == s0 or sl == se:
-        for c in np.argsort(rewards):
-            ci = int(c)
-            if ci != s0 and ci != se:
-                sl = ci
-                break
-    return sl
+def _pick_high_loss_step(steps: List[Dict]) -> int:
+    """Pick a representative 'highest-loss' step for VLM analysis.
+
+    Preference order:
+      1. An intermediate step whose agent_pos differs from BOTH the start and
+         end positions — gives a visually distinct frame from start/end. Tie
+         broken by lowest reward (so wall-hits / fire-encounters win).
+      2. Otherwise the lowest-reward intermediate step (still meaningful — it
+         pinpoints the worst transition even if the rendered frame happens to
+         match start/end).
+      3. For very short episodes (<= 2 steps), the middle index.
+
+    The previous implementation looked at rewards alone, which produced
+    visually identical start / high-loss / end frames whenever the agent
+    failed by repeatedly bumping into a wall and never moving (e.g. the
+    bottom-right-start test layout when the policy hadn't generalised).
+    """
+    n = len(steps)
+    if n <= 2:
+        return max(0, n // 2)
+
+    def _pos(i: int):
+        info = steps[i].get("info") or {}
+        ap = info.get("agent_pos")
+        if ap is None:
+            return None
+        try:
+            return (int(ap[0]), int(ap[1]))
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    start_pos = _pos(0)
+    end_pos   = _pos(n - 1)
+
+    best_idx: int = -1
+    best_key = None  # (differs_from_endpoints, -reward)
+    for i in range(1, n - 1):
+        pos = _pos(i)
+        differs = (pos is not None) and (pos != start_pos) and (pos != end_pos)
+        rwd = float(steps[i].get("reward") or 0.0)
+        key = (1 if differs else 0, -rwd)
+        if best_key is None or key > best_key:
+            best_key = key
+            best_idx = i
+
+    if best_idx < 0:
+        return (n - 1) // 2
+    return best_idx
 
 
 def _run_episode(model: CNNMLPPolicy, layout: Dict, episode_id: int,
@@ -183,8 +236,7 @@ def _run_episode(model: CNNMLPPolicy, layout: Dict, episode_id: int,
 
     success = bool(steps[-1]["info"].get("success", False))
     total_reward = sum(s["reward"] for s in steps)
-    rewards = [s["reward"] for s in steps]
-    sl = _pick_high_loss_step(rewards)
+    sl = _pick_high_loss_step(steps)
     key_frames = [
         {"role": "start_frame", "step_idx": 0},
         {"role": "highest_loss_frame", "step_idx": sl},
