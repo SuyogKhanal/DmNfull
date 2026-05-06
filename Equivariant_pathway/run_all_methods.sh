@@ -96,9 +96,17 @@ mkdir -p slurm_logs "${CYCLE_DIR}"
 # ---- Phase 1: setup (sequential, GPU 0) ----------------------------------
 # Run only the bootstrap part of the cycle: layout generation, BFS demo
 # collection, initial training. We pass --methods='' so run_full_cycle.py
-# performs setup but skips every method loop. EXTRA_SETUP_ARGS are
-# forwarded so the caller can opt into --force_retrain etc. without
-# editing this script.
+# performs setup but skips every method loop.
+#
+# We ALWAYS pass --force_retrain so every sbatch submission redoes the
+# initial demo collection and initial training from scratch — otherwise
+# Phase 1 would skip training whenever Equivariant_pathway/checkpoints/
+# already contains best_eq_policy.pth from a previous run, and every
+# per-method folder would silently inherit a stale model. With fixed seeds
+# the regenerated layout YAMLs are bit-identical, so this is a no-op for
+# layouts but a hard reset for demos + initial weights. EXTRA_SETUP_ARGS
+# are appended after, so a caller passing --force_retrain again is still
+# accepted by argparse (action="store_true" is idempotent).
 echo "[$(date)] PHASE 1 — setup on GPU 0  -> ${CYCLE_DIR}"
 echo "[$(date)]   forwarding extra args: ${EXTRA_SETUP_ARGS[*]}"
 CUDA_VISIBLE_DEVICES=0 python -u -m Equivariant_pathway.run_full_cycle \
@@ -109,6 +117,7 @@ CUDA_VISIBLE_DEVICES=0 python -u -m Equivariant_pathway.run_full_cycle \
     --heldout_n "${HELDOUT_N}" \
     --seed "${SEED}" \
     --skip_charts \
+    --force_retrain \
     "${EXTRA_SETUP_ARGS[@]}" \
     > "${CYCLE_DIR}/setup.log" 2>&1
 
