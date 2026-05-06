@@ -68,6 +68,14 @@ set --
 module purge
 module load Anaconda3
 source /home/s226137394/.bashrc
+
+# Initialize conda for this shell session, then activate the env.
+# `eval "$(conda shell.bash hook)"` is the modern, $@-safe replacement
+# for the legacy `source activate` step (which was needed before
+# `conda activate maze` could work but happily ate $1 as an env name —
+# the very bug we worked around above). The hook just registers the
+# `conda` shell function and never reads positional parameters.
+eval "$(conda shell.bash hook)"
 conda activate maze
 
 # ---- Cycle configuration ----
