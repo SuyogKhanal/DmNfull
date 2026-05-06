@@ -133,13 +133,34 @@ echo "[$(date)]   layout snapshots: ${CYCLE_DIR}/{training,test,heldout}/"
 # into the per-method subtree on first invocation and writes nothing to
 # the shared dirs after that.
 echo "[$(date)] PHASE 2 — launching ${#METHODS[@]} methods in parallel"
+
+# Detect the number of GPUs actually available. Prefer $CUDA_VISIBLE_DEVICES
+# (set by SLURM/the user); fall back to nvidia-smi. If fewer than 4 GPUs are
+# present we still launch all four methods, but clamp the per-method GPU
+# index with `i % N_GPUS` so we never pass an invalid index that would crash
+# the worker with no clear error.
+if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+    N_GPUS=$(echo "${CUDA_VISIBLE_DEVICES}" | awk -F',' '{print NF}')
+elif command -v nvidia-smi >/dev/null 2>&1; then
+    N_GPUS=$(nvidia-smi --list-gpus 2>/dev/null | wc -l)
+else
+    N_GPUS=0
+fi
+if [ -z "${N_GPUS}" ] || [ "${N_GPUS}" -lt 1 ]; then
+    N_GPUS=1
+fi
+if [ "${N_GPUS}" -lt 4 ]; then
+    echo "[$(date)] WARNING: only ${N_GPUS} GPU(s) detected; ${#METHODS[@]} methods will share them via i % N_GPUS."
+fi
+
 PIDS=()
 for i in 0 1 2 3; do
     method=${METHODS[$i]}
     method_log="${CYCLE_DIR}/${method}/method.log"
     mkdir -p "${CYCLE_DIR}/${method}"
-    echo "[$(date)]   launch ${method} on GPU ${i}  -> ${method_log}"
-    CUDA_VISIBLE_DEVICES=${i} python -u -m Equivariant_pathway.run_full_cycle \
+    device=$(( i % N_GPUS ))
+    echo "[$(date)]   launch ${method} on GPU ${device}  -> ${method_log}"
+    CUDA_VISIBLE_DEVICES=${device} python -u -m Equivariant_pathway.run_full_cycle \
         --methods "${method}" \
         --cycle_dir "${CYCLE_DIR}" \
         --round_epochs "${ROUND_EPOCHS}" \

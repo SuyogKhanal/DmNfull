@@ -222,22 +222,27 @@ def setup_cycle(args, cycle_dir: Path) -> Dict:
     # 1B: Initial expert demo collection.
     # ------------------------------------------------------------------
     _section("PHASE 1B: INITIAL EXPERT (A*) DEMO COLLECTION", char="-")
-    pre_existing = _list_dir(DEFAULT_INIT_DEMO_DIR, "*.json")
     _info(f"  layouts source : {train_yaml}")
     _info(f"  demos target   : {DEFAULT_INIT_DEMO_DIR}")
     _info(f"  target count   : {args.initial_demos} demos")
     _info(f"  expert         : A* / BFS optimal-action mask (Equivariant_pathway/expert.py)")
-    _info(f"  files already in target: {len(pre_existing)}")
-    for n in pre_existing[:5]:
-        _info(f"    - {n}")
-    if len(pre_existing) > 5:
-        _info(f"    ... and {len(pre_existing) - 5} more")
 
     if args.force_retrain:
         _info("  --force_retrain set: deleting existing demos to redo from scratch.")
         for f in DEFAULT_INIT_DEMO_DIR.glob("*.json"):
             f.unlink()
-        pre_existing = []
+
+    # Compute these AFTER the deletion block so they reflect the
+    # post-deletion state of DEFAULT_INIT_DEMO_DIR. Otherwise --force_retrain
+    # would delete the demos but leave `enough_already` stuck at True from
+    # the pre-deletion snapshot, causing collection to be skipped and every
+    # method to start from an empty initial demo set.
+    pre_existing = _list_dir(DEFAULT_INIT_DEMO_DIR, "*.json")
+    _info(f"  files already in target: {len(pre_existing)}")
+    for n in pre_existing[:5]:
+        _info(f"    - {n}")
+    if len(pre_existing) > 5:
+        _info(f"    ... and {len(pre_existing) - 5} more")
     enough_already = len(pre_existing) >= args.initial_demos
 
     if args.skip_initial_collect:
@@ -579,7 +584,7 @@ def _run_profile_round(
     round_demo_dir.mkdir(parents=True, exist_ok=True)
     if rec_path.exists():
         rc = _run([
-            sys.executable, "-u", str(PATHWAY_ROOT / "collect_demos.py"),
+            sys.executable, "-u", "-m", "Equivariant_pathway.collect_demos",
             "--layouts_from", str(rec_path),
             "--demo_dir",     str(round_demo_dir),
             "--seed",         str(args.seed + 1000 + rnd),
@@ -610,7 +615,7 @@ def _run_profile_round(
     demos_after = _glob_demo_count(demo_dir)
     if demos_after > n_initial_demos + cumulative_demos_added:
         rc = _run([
-            sys.executable, "-u", str(PATHWAY_ROOT / "train.py"),
+            sys.executable, "-u", "-m", "Equivariant_pathway.train",
             "--demo_dir",      str(demo_dir),
             "--checkpoint_dir", str(ckpt_dir),
             "--epochs",         str(args.round_epochs),
