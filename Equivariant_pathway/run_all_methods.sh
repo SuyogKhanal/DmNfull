@@ -2,7 +2,7 @@
 #SBATCH --job-name=eq_full_cycle
 #SBATCH --partition=gpu
 #SBATCH --qos=batch-long
-#SBATCH --gpus=4
+#SBATCH --gpus=2
 #SBATCH --mem=80G
 #SBATCH --cpus-per-gpu=8
 #SBATCH --time=68:00:00
@@ -81,15 +81,16 @@ conda activate maze
 # ---- Cycle configuration ----
 INITIAL_DEMOS=20            # 20 unique random training layouts, 1 demo each
 INITIAL_EPOCHS=200
-ROUND_EPOCHS=60
+ROUND_EPOCHS=200
 HELDOUT_N=50
-DAGGER_EPISODES=50          # rollouts per round (same for ALL methods)
+DAGGER_EPISODES=50        # rollouts per round (same for ALL methods)
 SEED=0
 TARGET_SR=0.90
 MAX_ROUNDS=50               # runaway guard only — there is NO 5-round cap
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 CYCLE_DIR="results/equivariant_pathway/cycle_${TIMESTAMP}"
-METHODS=(baseline_dagger p4 p5 p6)
+# METHODS=(baseline_dagger p4 p5 p6)
+METHODS=(baseline_dagger p4)
 
 mkdir -p slurm_logs "${CYCLE_DIR}"
 
@@ -189,7 +190,7 @@ if [ "${N_GPUS}" -lt 4 ]; then
 fi
 
 PIDS=()
-for i in 0 1 2 3; do
+for i in 0 1; do
     method=${METHODS[$i]}
     method_log="${CYCLE_DIR}/${method}/method.log"
     mkdir -p "${CYCLE_DIR}/${method}"
