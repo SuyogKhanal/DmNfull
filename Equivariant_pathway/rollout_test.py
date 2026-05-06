@@ -293,7 +293,10 @@ def main():
         raise SystemExit(f"No layouts list in {args.layouts}")
     print(f"[eq-rollout] {len(layouts)} layouts from {args.layouts}")
 
-    ckpt = torch.load(args.checkpoint, map_location=device)
+    # weights_only=False is correct here: our checkpoints contain non-tensor
+    # state (the args dict + the channels tuple). Setting it explicitly also
+    # silences the FutureWarning torch will emit on the next major version.
+    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
     channels = tuple(ckpt.get("channels", (16, 32, 64)))
     model = EquivariantUNetPolicy(
         in_channels=int(ckpt.get("in_channels", 5)),

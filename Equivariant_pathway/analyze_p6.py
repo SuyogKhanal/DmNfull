@@ -5,8 +5,16 @@ P6 = P5 + TKF.
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
-from Equivariant_pathway._analysis_common import run_profile_analysis, MASTER_CONFIG
+# Repo root must be on sys.path so the shared helper resolves when this
+# script is launched directly (subprocess invocation by run_full_cycle.py).
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from Equivariant_pathway._analysis_common import run_profile_analysis, MASTER_CONFIG  # noqa: E402
 
 PROFILE_YAML = "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml"
 LABEL = "p6"
