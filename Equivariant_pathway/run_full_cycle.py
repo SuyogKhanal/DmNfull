@@ -278,14 +278,20 @@ def _run_profile_round(
     )
 
     # 2. Analyze with the LLM pipeline.
-    analyze_script = {
-        "p4": "analyze_p4.py",
-        "p5": "analyze_p5.py",
-        "p6": "analyze_p6.py",
+    # Launch via `-m Equivariant_pathway.analyze_p<N>` (NOT as a file path).
+    # File-path launch puts Equivariant_pathway/ on sys.path[0], which
+    # makes Equivariant_pathway/model.py shadow the top-level model/
+    # package — `from model.diffusion_policy import ...` then fails with
+    # "model is not a package". `-m` invocation keeps only the CWD on
+    # sys.path[0], so the right `model/` package wins.
+    analyze_module = {
+        "p4": "Equivariant_pathway.analyze_p4",
+        "p5": "Equivariant_pathway.analyze_p5",
+        "p6": "Equivariant_pathway.analyze_p6",
     }[method]
     analysis_dir = round_dir / f"{method}_analysis"
     cmd = [
-        sys.executable, "-u", str(PATHWAY_ROOT / analyze_script),
+        sys.executable, "-u", "-m", analyze_module,
         "--rollout_dir", str(test_rollout_dir),
         "--out_dir",     str(analysis_dir),
     ]
@@ -425,11 +431,12 @@ def _run_baseline_round(
         checkpoint=ckpt_dir / "best_eq_policy.pth",
         demo_dir=demo_dir,
         out_dir=round_dir / "dagger_pass",
-        seed=args.seed + rnd,
+        seed=args.seed + rnd * 1000,
         max_steps=60,
         train_every_n=4,
         train_demo_paths=None,  # use --demo_dir
         epochs=args.round_epochs,
+        n_episodes=args.dagger_episodes,
     )
 
     demos_after = _glob_demo_count(demo_dir)
@@ -550,6 +557,13 @@ def parse_args():
     p.add_argument("--max_rounds", type=int, default=MAX_ROUNDS_GUARD,
                    help="Hard guard against infinite loops. There is NO 5-round "
                         "cap — this is the explicit anti-runaway, default 50.")
+    p.add_argument("--dagger_episodes", type=int, default=50,
+                   help="Episodes per baseline-DAgger pass. Layouts are drawn "
+                        "round-robin from test_layouts.yaml with rotating seeds; "
+                        "retraining fires every 4 corrective demos accumulated "
+                        "GLOBALLY (across all passes). Profile methods (P4/P5/P6) "
+                        "ignore this flag — they always rollout exactly the "
+                        "test_layouts.yaml count.")
     p.add_argument("--cycle_dir", type=str, default=None,
                    help="Top-level dir for this cycle's artefacts. Defaults to "
                         "results/equivariant_pathway/cycle_<timestamp>/.")
