@@ -296,6 +296,22 @@ def build_prescription_prompt(
         "Your job is to produce the FINAL_REC structured block by combining the upstream",
         "components (analysis, KAG, RAG, TKF) and then explain it in plain English.",
         "",
+        "BUDGET GUIDANCE (read carefully — the orchestrator runs until heldout SR >= 90%,",
+        "so over-prescribing wastes BFS-collection time and under-prescribing prolongs",
+        "the loop). Pick n_demos and the layout count that BEST address the failure",
+        "without padding:",
+        "  - n_demos: any integer in [1, 20]. Use 1-2 when the failure is local (one",
+        "    corridor, one direction); use 3-5 for genuinely multi-modal failures (two",
+        "    valid paths, both must be taught); use 6-10 only when KAG/RAG/TKF jointly",
+        "    show several distinct gaps; >10 is reserved for cases where TKF reports",
+        "    NOT_FOUND on multiple corridors at once.",
+        "  - recommended_layouts: 1-5 concrete layouts per cluster. Prefer fewer, more",
+        "    targeted layouts over many redundant ones. Each layout must teach something",
+        "    the others don't (different start, different fire pattern, etc.).",
+        "Be honest with these numbers — a too-conservative n_demos that misses the",
+        "failure mode is just as expensive as an inflated one, because the loop will",
+        "have to run another round.",
+        "",
         "INPUTS YOU MUST USE (each one materially changes FINAL_REC):",
         "  1. ROOT-CAUSE ANALYSIS  — sections 1-5 from the reasoning LLM (always present).",
         f"  2. KAG CORRIDOR / FAILURE GRAPH  — {'PRESENT' if have_kag else 'absent'}.",
@@ -322,7 +338,7 @@ def build_prescription_prompt(
         "<<<FINAL_REC>>>",
         enum_line,
         "steps: <(r,c)->(r,c)->...->(r,c)>",
-        "n_demos: <integer 1-10>",
+        "n_demos: <integer 1-20 — pick the smallest count that genuinely addresses the failure>",
         "demo_variations: <one-line description (must satisfy R1/T1 if applicable)>",
         "rationale: <one sentence (must satisfy K1 if KAG present)>",
         "<<<END_FINAL_REC>>>",
@@ -482,7 +498,7 @@ def run_plain_prescription(
         "RULES:\n"
         "  - corridor MUST be one of: left_edge | top_edge | right_edge | bottom_edge | central_mixed\n"
         "  - steps MUST be a coordinate path using arrow notation, e.g. (0,1)->(0,0)->(1,0)\n"
-        "  - n_demos MUST be an integer between 1 and 10\n"
+        "  - n_demos MUST be an integer between 1 and 20 (pick the SMALLEST that addresses the failure)\n"
         "  - demo_variations MUST be a single line\n"
         "  - rationale MUST be a single sentence and reference what the VLM observed\n\n"
         "OUTPUT FORMAT — produce EXACTLY this structure (no preamble before the markers):\n\n"

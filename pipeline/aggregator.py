@@ -182,16 +182,21 @@ def cross_episode_reasoning(
     "2. WHERE DOES THE POLICY STRUGGLE? Refer to regions / corridors using KAG names.\n"
     "3. WHAT DEMONSTRATIONS ARE NEEDED? For each cluster, name the corridor (from FINAL_REC)\n"
     "   and aggregate the n_demos values (median rounded up) for that cluster.\n"
-    "4. WHAT LAYOUTS COVER EACH CLUSTER? For each cluster, propose 1-3 concrete maze\n"
+    "4. WHAT LAYOUTS COVER EACH CLUSTER? For each cluster, propose 1-5 concrete maze\n"
     "   layouts (start_pos, goal_pos, fire_positions) within the 5x5 grid that exercise\n"
-    "   the failure mode. The layouts must lie inside the cluster's corridor where\n"
-    "   possible, place fires that block the failed direct path, and respect:\n"
+    "   the failure mode. Pick the SMALLEST set that genuinely covers the cluster — if\n"
+    "   one well-chosen layout teaches the corridor, do not pad with three. The layouts\n"
+    "   must lie inside the cluster's corridor where possible, place fires that block the\n"
+    "   failed direct path, and respect:\n"
     "     - all positions in [0..4] x [0..4]\n"
     "     - start_pos != goal_pos and Manhattan(start, goal) >= 4\n"
     "     - fire_positions disjoint from start_pos and goal_pos\n"
     "     - exactly 3 fire cells per layout\n"
     "5. HOW MANY AND HOW DIVERSE? Total n_demos should reflect the sum across clusters.\n"
-    "   Each recommended layout should be demonstrated 1-3 times to cover variation."},
+    "   Each recommended layout should be demonstrated 1-5 times to cover variation;\n"
+    "   pick the count that matches how multi-modal the failure actually is, not a fixed\n"
+    "   number. The orchestrator stops when held-out SR >= 90%, so neither over- nor\n"
+    "   under-prescribing helps — be honest about the gap each layout closes."},
             ],
             max_tokens, effort,
         )
@@ -315,12 +320,15 @@ def final_structured_prescription(
                     "n_demos values for the episodes in the matching cluster (use the cluster median, "
                     "rounded up; never less than 1).\n"
                     "  - demonstration_prescriptions[].recommended_layouts is REQUIRED and is a list\n"
-                    "    of 1-3 concrete layouts the human should record. Each layout MUST satisfy:\n"
+                    "    of 1-5 concrete layouts the human should record. Pick the SMALLEST list\n"
+                    "    that addresses the cluster — padding hurts, because the orchestrator runs\n"
+                    "    until held-out SR >= 90% and every extra demo is more BFS-collection time.\n"
+                    "    Each layout MUST satisfy:\n"
                     "      * start_pos and goal_pos are integer [r, c] with 0<=r,c<=4\n"
                     "      * Manhattan(start_pos, goal_pos) >= 4\n"
                     "      * fire_positions is exactly 3 distinct [r,c] cells, none equal to start or goal\n"
                     "      * the layout exercises the cluster's failure mode in the named corridor\n"
-                    "    Each layout has its own n_repetitions (1-3) describing how many demos to\n"
+                    "    Each layout has its own n_repetitions (1-5) describing how many demos to\n"
                     "    record on that exact layout. The sum of layout n_repetitions across a\n"
                     "    prescription's recommended_layouts MUST equal that prescription's n_repetitions.\n"
                     "  - total_demonstrations_needed MUST equal the sum of all "
@@ -355,7 +363,7 @@ def final_structured_prescription(
                     '          "start_pos": [<int 0-4>, <int 0-4>],\n'
                     '          "goal_pos":  [<int 0-4>, <int 0-4>],\n'
                     '          "fire_positions": [[<int>,<int>], [<int>,<int>], [<int>,<int>]],\n'
-                    '          "n_repetitions": <int 1-3>,\n'
+                    '          "n_repetitions": <int 1-5>,\n'
                     '          "rationale": "<one sentence tying this layout to the cluster failure>"\n'
                     '        }\n'
                     '      ]\n'
