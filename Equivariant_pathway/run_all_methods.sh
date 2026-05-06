@@ -56,12 +56,18 @@
 set -eo pipefail
 
 # Pass-through flags from the caller (e.g. --force_retrain) go to Phase 1.
+# IMPORTANT: capture them BEFORE sourcing conda activation scripts, because
+# `source` inherits the script's positional parameters — `source activate`
+# with no explicit env arg will pick up $1 (e.g. "--force_retrain") and try
+# to activate it as a conda env, producing
+#   "EnvironmentNameNotFound: Could not find conda environment: --force_retrain".
+# After capture we `set --` to wipe $@ so the sourced scripts see no args.
 EXTRA_SETUP_ARGS=("$@")
+set --
 
 module purge
 module load Anaconda3
 source /home/s226137394/.bashrc
-source activate
 conda activate maze
 
 # ---- Cycle configuration ----
