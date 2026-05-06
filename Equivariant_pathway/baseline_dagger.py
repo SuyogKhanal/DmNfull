@@ -258,8 +258,9 @@ def run_dagger_correction_pass(
     `train_every_n` corrective demos counted *globally* (across all
     passes — see _count_corrective_demos).
 
-    Returns a dict with: n_episodes, n_failures, n_corrected,
-    n_demos_added, n_train_calls, success_rate, demo_paths (list[str]).
+    Returns a dict with: n_episodes, n_failures, n_corrected_in_pass,
+    cum_corrections_before, cum_corrections_after, n_demos_added,
+    n_train_calls, success_rate, demo_paths (list[str]).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     demo_dir.mkdir(parents=True, exist_ok=True)
