@@ -107,8 +107,26 @@ mkdir -p slurm_logs "${CYCLE_DIR}"
 # layouts but a hard reset for demos + initial weights. EXTRA_SETUP_ARGS
 # are appended after, so a caller passing --force_retrain again is still
 # accepted by argparse (action="store_true" is idempotent).
-echo "[$(date)] PHASE 1 — setup on GPU 0  -> ${CYCLE_DIR}"
-echo "[$(date)]   forwarding extra args: ${EXTRA_SETUP_ARGS[*]}"
+echo "[$(date)] ============================================================"
+echo "[$(date)] PHASE 1 — INITIAL DEMO COLLECTION + INITIAL TRAINING (GPU 0)"
+echo "[$(date)] ============================================================"
+echo "[$(date)]   cycle dir         : ${CYCLE_DIR}"
+echo "[$(date)]   forwarding extras : ${EXTRA_SETUP_ARGS[*]}"
+echo "[$(date)]   demo dir (target) : Equivariant_pathway/demos"
+echo "[$(date)]   ckpt dir (target) : Equivariant_pathway/checkpoints"
+echo "[$(date)]   --force_retrain is ALWAYS on: existing demos and checkpoints"
+echo "[$(date)]   in Equivariant_pathway/{demos,checkpoints} are wiped and"
+echo "[$(date)]   regenerated from scratch on every sbatch submission."
+echo "[$(date)]   Initial training output is streamed to BOTH this slurm log"
+echo "[$(date)]   AND ${CYCLE_DIR}/setup.log so the run is auditable from"
+echo "[$(date)]   either place."
+echo "[$(date)]   ----- BEGIN setup output -----"
+# `tee` so the slurm .out captures everything (layouts, demo collection,
+# training epochs, best/last checkpoint writes). `set -o pipefail` is on,
+# so the rc of the python process is preserved through tee.
+# Wrap the pipeline in `|| true` so `set -e` doesn't abort before we read
+# PIPESTATUS[0]. We surface the python process's actual rc explicitly via
+# the check below so a real setup failure still stops the script.
 CUDA_VISIBLE_DEVICES=0 python -u -m Equivariant_pathway.run_full_cycle \
     --methods "" \
     --cycle_dir "${CYCLE_DIR}" \
@@ -119,10 +137,12 @@ CUDA_VISIBLE_DEVICES=0 python -u -m Equivariant_pathway.run_full_cycle \
     --skip_charts \
     --force_retrain \
     "${EXTRA_SETUP_ARGS[@]}" \
-    > "${CYCLE_DIR}/setup.log" 2>&1
+    2>&1 | tee "${CYCLE_DIR}/setup.log" || true
+setup_rc=${PIPESTATUS[0]}
+echo "[$(date)]   ----- END setup output (rc=${setup_rc}) -----"
 
-if [ ! -f "Equivariant_pathway/checkpoints/best_eq_policy.pth" ]; then
-    echo "[$(date)] ERROR: setup phase did not produce best_eq_policy.pth"
+if [ "${setup_rc}" -ne 0 ] || [ ! -f "Equivariant_pathway/checkpoints/best_eq_policy.pth" ]; then
+    echo "[$(date)] ERROR: setup phase did not produce best_eq_policy.pth (rc=${setup_rc})"
     echo "[$(date)] tail of setup log:"
     tail -40 "${CYCLE_DIR}/setup.log" || true
     exit 1
@@ -132,6 +152,12 @@ echo "[$(date)]   files in Equivariant_pathway/demos/:"
 ls -la Equivariant_pathway/demos/ | head -30 || true
 echo "[$(date)]   files in Equivariant_pathway/checkpoints/:"
 ls -la Equivariant_pathway/checkpoints/ | head -10 || true
+# Print a sha256 of the shared starting checkpoint so the slurm log
+# captures the exact hash every method copies into its own folder.
+# This makes it trivial to verify in Phase 2 logs (or post-mortem) that
+# every method started from the same byte-identical weights.
+echo "[$(date)]   sha256 of shared best_eq_policy.pth:"
+sha256sum Equivariant_pathway/checkpoints/best_eq_policy.pth || true
 echo "[$(date)]   layout snapshots: ${CYCLE_DIR}/{training,test,heldout}/"
 
 # ---- Phase 2: parallel methods (one per GPU) -----------------------------
