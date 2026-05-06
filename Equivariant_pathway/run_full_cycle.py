@@ -86,10 +86,25 @@ def _glob_demo_count(demo_dir: Path) -> int:
 # ---------------------------------------------------------------------------
 # Setup phase: layouts, initial demos, initial checkpoint.
 # ---------------------------------------------------------------------------
+def _list_dir(p: Path, pattern: str = "*") -> List[str]:
+    if not p.exists():
+        return []
+    return sorted(x.name for x in p.glob(pattern) if x.is_file())
+
+
 def setup_cycle(args, cycle_dir: Path) -> Dict:
-    from Equivariant_pathway.layout_tracker import (
-        save_layouts_from_yaml, save_layouts,
-    )
+    """Phase 1 of the cycle. Three sub-phases, each loudly logged so
+    nothing is "magic" — the user always sees:
+       1A. Layout YAMLs (training, test, held-out 50 random)
+       1B. Initial expert demo collection
+       1C. Initial training -> shared checkpoint
+
+    Decisions about whether to re-collect demos / retrain are made
+    EXPLICITLY: every code path prints a [setup] line stating what it
+    decided and WHY, so an empty run dir is never confused with a
+    "skipping because previous artefacts exist" run.
+    """
+    from Equivariant_pathway.layout_tracker import save_layouts_from_yaml
     from Equivariant_pathway.layout_sampler import (
         sample_layouts, write_yaml, _load_blocked_signatures,
     )
@@ -98,28 +113,144 @@ def setup_cycle(args, cycle_dir: Path) -> Dict:
     test_yaml    = PATHWAY_ROOT / "test_layouts.yaml"
     heldout_yaml = PATHWAY_ROOT / "heldout_test_layouts.yaml"
 
-    if not heldout_yaml.exists() or args.regen_heldout:
-        _info(f"sampling {args.heldout_n} held-out layouts -> {heldout_yaml}")
-        blocked = _load_blocked_signatures([str(test_yaml), str(train_yaml)])
-        layouts = sample_layouts(
+    _section("PHASE 1A: LAYOUT YAMLS", char="-")
+    _info(f"  training_layouts.yaml    : {train_yaml}")
+    _info(f"  test_layouts.yaml        : {test_yaml}")
+    _info(f"  heldout_test_layouts.yaml: {heldout_yaml}")
+
+    # ----- training layouts (20 random, dmnpol-style) ----------------
+    # Generate when the file is missing, when its `training_layouts:` list
+    # is shorter than --initial_demos, when the user explicitly asked
+    # for --regen_training, or when --force_retrain is set. We
+    # IMPORTANTLY exclude test_layouts.yaml + heldout_test_layouts.yaml
+    # signatures so the training distribution never overlaps the
+    # evaluation sets.
+    def _yaml_layout_count(path: Path) -> int:
+        if not path.exists():
+            return 0
+        try:
+            with open(path, "r") as f:
+                spec = yaml.safe_load(f) or {}
+            for k in ("training_layouts", "test_layouts",
+                      "heldout_test_layouts", "layouts"):
+                lst = spec.get(k)
+                if isinstance(lst, list):
+                    return len(lst)
+        except Exception:
+            return 0
+        return 0
+
+    train_existing = _yaml_layout_count(train_yaml)
+    need_train = (
+        args.force_retrain
+        or args.regen_training
+        or not train_yaml.exists()
+        or train_existing < args.initial_demos
+    )
+    if need_train:
+        why = []
+        if args.force_retrain:    why.append("--force_retrain")
+        if args.regen_training:   why.append("--regen_training")
+        if not train_yaml.exists(): why.append("file missing")
+        if train_existing < args.initial_demos:
+            why.append(f"file has {train_existing} layouts < {args.initial_demos}")
+        _info(f"  DECISION: regenerating training layouts (because: {', '.join(why)})")
+        # Heldout must already be sampled BEFORE we can exclude its
+        # signatures; if it doesn't exist yet we'll generate that first.
+        # The block below handles it.
+    else:
+        _info(f"  DECISION: using existing training file ({train_existing} layouts, "
+              f"{train_yaml.stat().st_size} bytes)")
+
+    # ----- heldout layouts (50 random) -------------------------------
+    if (not heldout_yaml.exists()) or args.regen_heldout or args.force_retrain:
+        why = []
+        if args.force_retrain:           why.append("--force_retrain")
+        if args.regen_heldout:           why.append("--regen_heldout")
+        if not heldout_yaml.exists():    why.append("file missing")
+        _info(f"  DECISION: regenerating held-out {args.heldout_n} layouts "
+              f"(because: {', '.join(why)})")
+        # Held-out is sampled WITHOUT the training file as exclusion
+        # (the training file may not exist yet on first run); we rely
+        # on disjoint sampling later (training will exclude heldout).
+        blocked = _load_blocked_signatures([str(test_yaml)])
+        h_layouts = sample_layouts(
             n=args.heldout_n, grid_size=5, num_fires=3,
+            min_manhattan=4, seed=args.seed + 7919, blocked_signatures=blocked,
+        )
+        write_yaml(h_layouts, heldout_yaml, grid_size=5)
+        _info(f"  wrote {len(h_layouts)} held-out layouts -> {heldout_yaml}")
+    else:
+        _info(f"  using existing held-out file ({heldout_yaml.stat().st_size} bytes)")
+
+    if need_train:
+        # Now that heldout is on disk, training generation can safely
+        # exclude both test AND heldout signatures so the training
+        # distribution is fully disjoint from evaluation.
+        blocked = _load_blocked_signatures([str(test_yaml), str(heldout_yaml)])
+        t_layouts = sample_layouts(
+            n=args.initial_demos, grid_size=5, num_fires=3,
             min_manhattan=4, seed=args.seed, blocked_signatures=blocked,
         )
-        write_yaml(layouts, heldout_yaml, grid_size=5)
-    else:
-        _info(f"using existing {heldout_yaml}")
+        # n_repetitions = 1 per layout — exactly one demo per random
+        # layout, per the user's spec ("no repetitions").
+        for L in t_layouts:
+            L["n_repetitions"] = 1
+        # Write under the `training_layouts:` key (which both
+        # collect_demos.py and dmnpol's loader recognise). We use
+        # write_yaml with our own key by rewriting the payload.
+        payload = {
+            "img_size":          80,
+            "grid_size":         5,
+            "cell_px":           16,
+            "num_fires":         3,
+            "min_manhattan":     4,
+            "n_repetitions":     1,
+            "training_layouts":  t_layouts,
+        }
+        with open(train_yaml, "w") as f:
+            yaml.safe_dump(payload, f, sort_keys=False)
+        _info(f"  wrote {len(t_layouts)} random training layouts (each with "
+              f"unique start/goal/fires) -> {train_yaml}")
 
+    _info(f"  persisting layout JSON+PNG snapshots into {cycle_dir}/")
     save_layouts_from_yaml(train_yaml,   cycle_dir / "training",   "training")
     save_layouts_from_yaml(test_yaml,    cycle_dir / "test",       "test")
     save_layouts_from_yaml(heldout_yaml, cycle_dir / "heldout",    "heldout")
 
-    # Initial 10 demos.
-    if args.skip_initial_collect or _glob_demo_count(DEFAULT_INIT_DEMO_DIR) >= args.initial_demos:
-        _info(f"initial demo dir already has {_glob_demo_count(DEFAULT_INIT_DEMO_DIR)} demos; "
-              f"--skip_initial_collect={args.skip_initial_collect}")
+    # ------------------------------------------------------------------
+    # 1B: Initial expert demo collection.
+    # ------------------------------------------------------------------
+    _section("PHASE 1B: INITIAL EXPERT (A*) DEMO COLLECTION", char="-")
+    pre_existing = _list_dir(DEFAULT_INIT_DEMO_DIR, "*.json")
+    _info(f"  layouts source : {train_yaml}")
+    _info(f"  demos target   : {DEFAULT_INIT_DEMO_DIR}")
+    _info(f"  target count   : {args.initial_demos} demos")
+    _info(f"  expert         : A* / BFS optimal-action mask (Equivariant_pathway/expert.py)")
+    _info(f"  files already in target: {len(pre_existing)}")
+    for n in pre_existing[:5]:
+        _info(f"    - {n}")
+    if len(pre_existing) > 5:
+        _info(f"    ... and {len(pre_existing) - 5} more")
+
+    if args.force_retrain:
+        _info("  --force_retrain set: deleting existing demos to redo from scratch.")
+        for f in DEFAULT_INIT_DEMO_DIR.glob("*.json"):
+            f.unlink()
+        pre_existing = []
+    enough_already = len(pre_existing) >= args.initial_demos
+
+    if args.skip_initial_collect:
+        _info(f"  DECISION: SKIP collection (--skip_initial_collect=True). "
+              f"Using {len(pre_existing)} pre-existing demos.")
+    elif enough_already and not args.force_retrain:
+        _info(f"  DECISION: SKIP collection — folder already has "
+              f"{len(pre_existing)} >= {args.initial_demos} demos. "
+              f"To force fresh collection, pass --force_retrain.")
     else:
+        _info(f"  DECISION: COLLECT {args.initial_demos} demos from {train_yaml}")
         rc = _run([
-            sys.executable, "-u", str(PATHWAY_ROOT / "collect_demos.py"),
+            sys.executable, "-u", "-m", "Equivariant_pathway.collect_demos",
             "--layouts", str(train_yaml),
             "--demo_dir", str(DEFAULT_INIT_DEMO_DIR),
             "--num_demos", str(args.initial_demos),
@@ -127,14 +258,42 @@ def setup_cycle(args, cycle_dir: Path) -> Dict:
         ])
         if rc != 0:
             raise RuntimeError(f"initial collect_demos exited rc={rc}")
+    final_demos = _list_dir(DEFAULT_INIT_DEMO_DIR, "*.json")
+    _info(f"  final demo count: {len(final_demos)}  (target was {args.initial_demos})")
+    _info(f"  files in {DEFAULT_INIT_DEMO_DIR}/:")
+    for n in final_demos:
+        _info(f"    - {n}")
 
-    # Initial checkpoint.
-    if args.skip_initial_train or (DEFAULT_INIT_CKPT_DIR / "best_eq_policy.pth").exists():
-        _info(f"initial checkpoint dir already has best_eq_policy.pth; "
-              f"--skip_initial_train={args.skip_initial_train}")
+    # ------------------------------------------------------------------
+    # 1C: Initial training of the shared checkpoint.
+    # ------------------------------------------------------------------
+    _section("PHASE 1C: INITIAL TRAINING -> SHARED CHECKPOINT", char="-")
+    pre_ckpts = _list_dir(DEFAULT_INIT_CKPT_DIR)
+    best_path = DEFAULT_INIT_CKPT_DIR / "best_eq_policy.pth"
+    _info(f"  demo dir       : {DEFAULT_INIT_DEMO_DIR}")
+    _info(f"  checkpoint dir : {DEFAULT_INIT_CKPT_DIR}")
+    _info(f"  epochs         : {args.initial_epochs}")
+    _info(f"  files already in checkpoint dir: {pre_ckpts}")
+
+    if args.force_retrain:
+        _info("  --force_retrain set: deleting existing checkpoints to retrain from scratch.")
+        for f in DEFAULT_INIT_CKPT_DIR.glob("*"):
+            if f.is_file():
+                f.unlink()
+        pre_ckpts = []
+
+    if args.skip_initial_train:
+        _info(f"  DECISION: SKIP training (--skip_initial_train=True). "
+              f"Using whatever is in {DEFAULT_INIT_CKPT_DIR}.")
+    elif best_path.exists() and not args.force_retrain:
+        _info(f"  DECISION: SKIP training — best_eq_policy.pth already exists at "
+              f"{best_path} ({best_path.stat().st_size} bytes). To force retraining, "
+              f"pass --force_retrain (or delete the file manually).")
     else:
+        _info(f"  DECISION: TRAIN from scratch on {len(final_demos)} demos for "
+              f"{args.initial_epochs} epochs")
         rc = _run([
-            sys.executable, "-u", str(PATHWAY_ROOT / "train.py"),
+            sys.executable, "-u", "-m", "Equivariant_pathway.train",
             "--demo_dir", str(DEFAULT_INIT_DEMO_DIR),
             "--checkpoint_dir", str(DEFAULT_INIT_CKPT_DIR),
             "--epochs", str(args.initial_epochs),
@@ -143,6 +302,11 @@ def setup_cycle(args, cycle_dir: Path) -> Dict:
         ])
         if rc != 0:
             raise RuntimeError(f"initial train exited rc={rc}")
+    final_ckpts = _list_dir(DEFAULT_INIT_CKPT_DIR)
+    _info(f"  files in {DEFAULT_INIT_CKPT_DIR}/:")
+    for n in final_ckpts:
+        sz = (DEFAULT_INIT_CKPT_DIR / n).stat().st_size
+        _info(f"    - {n}  ({sz} bytes)")
 
     return {
         "train_yaml":   str(train_yaml),
@@ -156,37 +320,89 @@ def setup_cycle(args, cycle_dir: Path) -> Dict:
 
 # ---------------------------------------------------------------------------
 # Per-method setup: copy initial demos + initial checkpoint into the
-# method's isolated subfolder.
+# method's isolated subfolder. Only P5/P6 get a rag_bank — neither
+# baseline DAgger nor P4 use RAG (their profile YAMLs have use_rag=false),
+# so creating the directory for them is just clutter.
 # ---------------------------------------------------------------------------
+USES_RAG = {"p5", "p6"}
+
+
 def _bootstrap_method_dir(method: str, cycle_dir: Path,
                           setup: Dict) -> Dict[str, Path]:
+    _section(f"BOOTSTRAP method={method}", char="-")
     method_dir = cycle_dir / method
-    demo_dir = method_dir / "demos"
-    ckpt_dir = method_dir / "checkpoints"
-    rag_bank = method_dir / "rag_bank"
+    demo_dir   = method_dir / "demos"
+    ckpt_dir   = method_dir / "checkpoints"
     rounds_dir = method_dir / "rounds"
-    for p in (demo_dir, ckpt_dir, rag_bank, rounds_dir):
+    for p in (demo_dir, ckpt_dir, rounds_dir):
         p.mkdir(parents=True, exist_ok=True)
 
-    # Copy the initial 10 demos verbatim — every method starts from the
-    # exact same demonstration set.
-    init_demos = list(Path(setup["init_demo_dir"]).rglob("*.json"))
+    # rag_bank is only created (and only used) by methods that actually
+    # consult it. Profile P4 has use_rag=false; baseline DAgger uses no
+    # LLM at all. Only P5 and P6 need a per-method bank.
+    rag_bank: Optional[Path] = None
+    if method in USES_RAG:
+        rag_bank = method_dir / "rag_bank"
+        rag_bank.mkdir(parents=True, exist_ok=True)
+        _info(f"  rag_bank: created at {rag_bank} (method uses RAG)")
+    else:
+        _info(f"  rag_bank: SKIPPED (method '{method}' does not use RAG)")
+
+    # 1. Copy initial demos. Skipping anything already present in the
+    #    target (which would only happen if a previous run left them
+    #    behind), but logging the copied count so the user always
+    #    knows how many demos this method's loop is starting with.
+    init_demo_dir = Path(setup["init_demo_dir"])
+    init_demos = sorted(init_demo_dir.rglob("*.json"))
+    n_pre = sum(1 for _ in demo_dir.rglob("*.json"))
+    n_copied = 0
     for src in init_demos:
         dst = demo_dir / src.name
         if not dst.exists():
             shutil.copy2(src, dst)
+            n_copied += 1
+    n_now = sum(1 for _ in demo_dir.rglob("*.json"))
+    _info(f"  demos: src={init_demo_dir}  -> dst={demo_dir}")
+    _info(f"         pre-existing in dst: {n_pre};  copied {n_copied} files;  now total: {n_now}")
 
-    # Copy the initial checkpoint -> best_eq_policy.pth + last_eq_policy.pth.
-    init_best = Path(setup["init_ckpt_dir"]) / "best_eq_policy.pth"
+    # 2. Copy initial checkpoint(s) — BOTH last_eq_policy.pth (which
+    #    has the optim/sched state needed for warm-start training)
+    #    AND best_eq_policy.pth (which has just model weights for
+    #    rollout / eval).  The previous version copied best.pt to both
+    #    slots, which made train.py --resume crash with KeyError on
+    #    optim_state_dict.
+    init_ckpt_dir = Path(setup["init_ckpt_dir"])
+    init_best = init_ckpt_dir / "best_eq_policy.pth"
+    init_last = init_ckpt_dir / "last_eq_policy.pth"
+    copied = []
     if init_best.exists():
-        shutil.copy2(init_best, ckpt_dir / "best_eq_policy.pth")
-        shutil.copy2(init_best, ckpt_dir / "last_eq_policy.pth")
+        dst = ckpt_dir / "best_eq_policy.pth"
+        shutil.copy2(init_best, dst)
+        copied.append(("best_eq_policy.pth", dst.stat().st_size))
+    else:
+        _info(f"  WARNING: source best_eq_policy.pth not found at {init_best}")
+    if init_last.exists():
+        dst = ckpt_dir / "last_eq_policy.pth"
+        shutil.copy2(init_last, dst)
+        copied.append(("last_eq_policy.pth", dst.stat().st_size))
+    elif init_best.exists():
+        # Fallback: only best is available (e.g. user ran with
+        # --skip_initial_train and never produced last.pt). Copy best
+        # under the last name so train.py --resume has SOMETHING to
+        # warm-start from. train.py's warm-start logic now handles a
+        # last.pt missing optim/sched gracefully.
+        dst = ckpt_dir / "last_eq_policy.pth"
+        shutil.copy2(init_best, dst)
+        copied.append(("last_eq_policy.pth (=best fallback)", dst.stat().st_size))
+    _info(f"  checkpoints: src={init_ckpt_dir}  -> dst={ckpt_dir}")
+    for name, sz in copied:
+        _info(f"               copied {name}  ({sz} bytes)")
 
     return {
         "method_dir": method_dir,
         "demo_dir":   demo_dir,
         "ckpt_dir":   ckpt_dir,
-        "rag_bank":   rag_bank,
+        "rag_bank":   rag_bank,  # may be None for methods that don't use RAG
         "rounds_dir": rounds_dir,
     }
 
@@ -272,10 +488,15 @@ def _run_profile_round(
     method_dir = paths["method_dir"]
     demo_dir   = paths["demo_dir"]
     ckpt_dir   = paths["ckpt_dir"]
-    rag_bank   = paths["rag_bank"]
+    rag_bank   = paths["rag_bank"]  # Optional[Path] — None for non-RAG methods
 
     round_dir = paths["rounds_dir"] / f"round_{rnd}"
     round_dir.mkdir(parents=True, exist_ok=True)
+
+    n_demos_now = sum(1 for _ in demo_dir.rglob("*.json"))
+    best_pt = ckpt_dir / "best_eq_policy.pth"
+    _info(f"[{method}] round={rnd}  demos_in_method_dir={n_demos_now}  "
+          f"checkpoint={best_pt.name} ({best_pt.stat().st_size if best_pt.exists() else 0} bytes)")
 
     # 1. Rollout on the fixed test set with the SAME 50-episode schedule
     # the baseline DAgger uses, so the comparison across methods is
@@ -310,6 +531,13 @@ def _run_profile_round(
         "--out_dir",     str(analysis_dir),
     ]
     if method in ("p5", "p6"):
+        # rag_bank was only created for these methods (USES_RAG); for
+        # safety re-check that paths actually has it before using.
+        if rag_bank is None:
+            raise RuntimeError(
+                f"{method} expects a rag_bank but _bootstrap_method_dir didn't "
+                f"create one — bug in USES_RAG / _bootstrap_method_dir."
+            )
         cmd += ["--rag_bank", str(rag_bank / f"round_{rnd}")]
     if method in ("p4", "p5", "p6"):
         cmd += ["--demo_dir", str(demo_dir)]
@@ -440,6 +668,11 @@ def _run_baseline_round(
     round_dir = paths["rounds_dir"] / f"round_{rnd}"
     round_dir.mkdir(parents=True, exist_ok=True)
 
+    n_demos_now = sum(1 for _ in demo_dir.rglob("*.json"))
+    best_pt = ckpt_dir / "best_eq_policy.pth"
+    _info(f"[baseline_dagger] round={rnd}  demos_in_method_dir={n_demos_now}  "
+          f"checkpoint={best_pt.name} ({best_pt.stat().st_size if best_pt.exists() else 0} bytes)")
+
     pass_summary = run_dagger_correction_pass(
         layouts_yaml=Path(setup["test_yaml"]),
         checkpoint=ckpt_dir / "best_eq_policy.pth",
@@ -558,9 +791,19 @@ def parse_args():
                    help="Comma-separated method list. Order matters only when "
                         "running them sequentially in this process.")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--initial_demos", type=int, default=10,
+    p.add_argument("--initial_demos", type=int, default=20,
                    help="Number of expert demos collected to start the cycle "
-                        "(matched to training_layouts.yaml: 5 layouts x 2 reps).")
+                        "(matched to training_layouts.yaml: 5 layouts x 4 reps "
+                        "= 20). Every method (baseline + P4/P5/P6) starts from "
+                        "the same set, copied verbatim into the per-method "
+                        "demos/ subfolder during bootstrap.")
+    p.add_argument("--force_retrain", action="store_true",
+                   help="Wipe Equivariant_pathway/demos/, "
+                        "Equivariant_pathway/checkpoints/, AND "
+                        "training_layouts.yaml (so it gets re-sampled with "
+                        "fresh random layouts) before setup. Use this when "
+                        "you want a 100% from-scratch run, with no risk of "
+                        "stale artefacts from a previous invocation.")
     p.add_argument("--initial_epochs", type=int, default=200,
                    help="Epochs for the initial training run on the 10 demos.")
     p.add_argument("--round_epochs", type=int, default=60,
@@ -588,6 +831,12 @@ def parse_args():
                         "results/equivariant_pathway/cycle_<timestamp>/.")
     p.add_argument("--regen_heldout", action="store_true",
                    help="Force-regenerate heldout_test_layouts.yaml even if it exists.")
+    p.add_argument("--regen_training", action="store_true",
+                   help="Force-regenerate training_layouts.yaml even if it has "
+                        ">= --initial_demos entries. The 20 training layouts are "
+                        "sampled fresh (each with random start/goal/fire), "
+                        "deduplicated by signature, and excluded against "
+                        "test_layouts.yaml + heldout_test_layouts.yaml.")
     p.add_argument("--skip_initial_collect", action="store_true")
     p.add_argument("--skip_initial_train", action="store_true")
     p.add_argument("--skip_charts", action="store_true")

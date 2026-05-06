@@ -1,76 +1,24 @@
-# Equivariant_pathway training layouts.
+# Equivariant_pathway training layouts — AUTO-GENERATED.
 #
-# Five hand-designed 5x5 layouts; the BFS expert collects two demos per
-# layout = 10 initial expert demonstrations exactly. All four learners
-# (Baseline DAgger, P4, P5, P6) start from these 10 demos and the
-# checkpoint that comes out of training on them.
+# This file is rewritten by Equivariant_pathway/run_full_cycle.py at
+# setup time using the dmnpol-style random sampler:
+#   - sample 20 unique solvable 5x5 layouts
+#   - each layout has a randomly-drawn start_pos, goal_pos, and
+#     fire_positions (3 fires)
+#   - signatures are deduplicated AND excluded against
+#     test_layouts.yaml + heldout_test_layouts.yaml so the training
+#     distribution never overlaps the held-out evaluation set
+#   - n_repetitions: 1 — one demo per layout (no repetitions)
 #
-# Grid key: 0 = free, 1 = wall. Fire / goal cells are added on top by
-# the env at runtime from start_pos / goal_pos / fire_positions.
-
+# DO NOT HAND-EDIT. Re-generate via:
+#   python -m Equivariant_pathway.run_full_cycle --regen_training ...
+# or by passing --force_retrain (which also wipes demos/ and checkpoints/).
+#
+# When this file is empty (no `training_layouts:` key) or has fewer than
+# --initial_demos entries, run_full_cycle.py samples a fresh batch.
 img_size: 80
 grid_size: 5
 cell_px: 16
-num_fire_tiles: 3
-min_manhattan_dist: 4
-
-training_layouts:
-  - name: open_5x5
-    grid:
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-    start_pos: [0, 0]
-    goal_pos:  [4, 4]
-    fire_positions: [[2, 1], [2, 2], [2, 3]]
-    n_repetitions: 2
-
-  - name: center_block
-    grid:
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-    start_pos: [0, 1]
-    goal_pos:  [4, 0]
-    fire_positions: [[1, 2], [3, 2], [2, 0]]
-    n_repetitions: 2
-
-  - name: top_bottom_corridor
-    grid:
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-    start_pos: [0, 0]
-    goal_pos:  [4, 4]
-    fire_positions: [[2, 1], [2, 2], [2, 3]]
-    n_repetitions: 2
-
-  - name: zigzag
-    grid:
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-    start_pos: [0, 0]
-    goal_pos:  [4, 4]
-    fire_positions: [[0, 2], [2, 2], [4, 2]]
-    n_repetitions: 2
-
-  - name: side_walls
-    grid:
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-      - [0, 0, 0, 0, 0]
-    start_pos: [0, 0]
-    goal_pos:  [4, 4]
-    fire_positions: [[1, 2], [2, 2], [3, 2]]
-    n_repetitions: 2
+num_fires: 3
+min_manhattan: 4
+training_layouts: []

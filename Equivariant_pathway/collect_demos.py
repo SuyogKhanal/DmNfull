@@ -170,12 +170,21 @@ def collect_from_yaml(
                 print(f"[eq-collect] {layout_id} rep{rep+1}: unsolvable; skipping")
                 env.close()
                 continue
+            # dmnpol convention: only suffix the demo filename with
+            # _repN when the layout actually has reps > 1. With the
+            # new "20 unique layouts, 1 demo each" mode the suffix is
+            # empty so the demo name stays clean.
+            suffix = f"_rep{rep+1}" if reps > 1 else ""
             path = _record_one(env, expert, rng, layout_id, demo_dir,
-                               suffix=f"_rep{rep+1}")
+                               suffix=suffix)
             env.close()
             if path is not None:
                 saved.append(path)
-                print(f"[eq-collect] saved {path.name}")
+                print(f"[eq-collect] saved {path.name}  "
+                      f"(layout {li+1}/{len(layouts)}, "
+                      f"start={layout['start_pos']}, "
+                      f"goal={layout['goal_pos']}, "
+                      f"fires={layout['fire_positions']})")
         if num_demos is not None and len(saved) >= num_demos:
             break
 
