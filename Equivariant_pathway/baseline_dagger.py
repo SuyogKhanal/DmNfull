@@ -157,7 +157,8 @@ def _save_corrective_demo(
 
 
 def _load_model(checkpoint: Path, device: torch.device) -> EquivariantUNetPolicy:
-    ckpt = torch.load(str(checkpoint), map_location=device)
+    # weights_only=False — checkpoints contain non-tensor state (args, channels tuple).
+    ckpt = torch.load(str(checkpoint), map_location=device, weights_only=False)
     model = EquivariantUNetPolicy(
         in_channels=int(ckpt.get("in_channels", 5)),
         channels=tuple(ckpt.get("channels", (16, 32, 64))),

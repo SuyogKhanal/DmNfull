@@ -6,8 +6,19 @@ Shared logic in Equivariant_pathway/_analysis_common.py.
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 
-from Equivariant_pathway._analysis_common import run_profile_analysis, MASTER_CONFIG
+# When this module is launched as a standalone script (e.g. by
+# run_full_cycle.py via subprocess), Python only adds Equivariant_pathway/
+# to sys.path, NOT the repo root. The shared analysis helper lives at the
+# repo level (`Equivariant_pathway._analysis_common`), so import would
+# fail with ModuleNotFoundError. Prepend REPO_ROOT before the import.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from Equivariant_pathway._analysis_common import run_profile_analysis, MASTER_CONFIG  # noqa: E402
 
 PROFILE_YAML = "p4_vlm_reasoning_kag_cross_plain_llm.yaml"
 LABEL = "p4"

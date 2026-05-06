@@ -224,7 +224,9 @@ def main():
     last_path = ckpt_dir / "last_eq_policy.pth"
     best_path = ckpt_dir / "best_eq_policy.pth"
     if args.resume and last_path.exists():
-        ckpt = torch.load(last_path, map_location=device)
+        # weights_only=False — checkpoint contains optimizer + scheduler state dicts
+        # plus an args dict, none of which load under weights_only=True.
+        ckpt = torch.load(last_path, map_location=device, weights_only=False)
         model.load_state_dict(ckpt["model_state_dict"], strict=True)
         optim.load_state_dict(ckpt["optim_state_dict"])
         if "sched_state_dict" in ckpt:
