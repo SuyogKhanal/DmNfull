@@ -1,0 +1,67 @@
+# Equivariant_pathway held-out test layouts.
+#
+# Hand-designed generalisation tests — the policy never sees these during
+# training. Used by every learner (Baseline DAgger, P4, P5, P6) at every
+# round to track progress on the same fixed eval set.
+
+img_size: 80
+grid_size: 5
+cell_px: 16
+
+test_layouts:
+
+  - name: left_corridor_three_fires
+    description: >
+      Three fire tiles stacked in the left corridor. Agent must navigate
+      around them via the right side of the grid.
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    start_pos: [0, 0]
+    goal_pos:  [4, 4]
+    fire_positions: [[1, 0], [2, 0], [3, 0]]
+
+  - name: top_left_goal_bottom_right_start
+    description: >
+      Goal sits at the top-left corner; agent spawns at bottom-right.
+      Tests reverse-direction generalisation.
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    start_pos: [4, 4]
+    goal_pos:  [0, 0]
+    fire_positions: [[2, 2], [2, 3], [2, 4]]
+
+  - name: right_corridor_three_fires
+    description: >
+      Three fires stacked in the right corridor. Symmetric to layout 1;
+      the equivariant model should solve both with no extra demos.
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    start_pos: [0, 4]
+    goal_pos:  [4, 0]
+    fire_positions: [[1, 4], [2, 4], [3, 4]]
+
+  - name: middle_row_block
+    description: >
+      Fires across the middle row except for one gap on the right edge.
+      The agent must squeeze through that gap.
+    grid:
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0]
+    start_pos: [0, 0]
+    goal_pos:  [4, 4]
+    fire_positions: [[2, 0], [2, 1], [2, 2]]
