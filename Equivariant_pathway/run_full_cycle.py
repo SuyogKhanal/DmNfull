@@ -114,21 +114,104 @@ def setup_cycle(args, cycle_dir: Path) -> Dict:
     heldout_yaml = PATHWAY_ROOT / "heldout_test_layouts.yaml"
 
     _section("PHASE 1A: LAYOUT YAMLS", char="-")
-    _info(f"  training_layouts.yaml   : {train_yaml}")
-    _info(f"  test_layouts.yaml       : {test_yaml}")
+    _info(f"  training_layouts.yaml    : {train_yaml}")
+    _info(f"  test_layouts.yaml        : {test_yaml}")
     _info(f"  heldout_test_layouts.yaml: {heldout_yaml}")
-    if (not heldout_yaml.exists()) or args.regen_heldout:
-        _info(f"  DECISION: regenerating held-out 50 layouts (--regen_heldout={args.regen_heldout}, "
-              f"file_exists={heldout_yaml.exists()})")
-        blocked = _load_blocked_signatures([str(test_yaml), str(train_yaml)])
-        layouts = sample_layouts(
+
+    # ----- training layouts (20 random, dmnpol-style) ----------------
+    # Generate when the file is missing, when its `training_layouts:` list
+    # is shorter than --initial_demos, when the user explicitly asked
+    # for --regen_training, or when --force_retrain is set. We
+    # IMPORTANTLY exclude test_layouts.yaml + heldout_test_layouts.yaml
+    # signatures so the training distribution never overlaps the
+    # evaluation sets.
+    def _yaml_layout_count(path: Path) -> int:
+        if not path.exists():
+            return 0
+        try:
+            with open(path, "r") as f:
+                spec = yaml.safe_load(f) or {}
+            for k in ("training_layouts", "test_layouts",
+                      "heldout_test_layouts", "layouts"):
+                lst = spec.get(k)
+                if isinstance(lst, list):
+                    return len(lst)
+        except Exception:
+            return 0
+        return 0
+
+    train_existing = _yaml_layout_count(train_yaml)
+    need_train = (
+        args.force_retrain
+        or args.regen_training
+        or not train_yaml.exists()
+        or train_existing < args.initial_demos
+    )
+    if need_train:
+        why = []
+        if args.force_retrain:    why.append("--force_retrain")
+        if args.regen_training:   why.append("--regen_training")
+        if not train_yaml.exists(): why.append("file missing")
+        if train_existing < args.initial_demos:
+            why.append(f"file has {train_existing} layouts < {args.initial_demos}")
+        _info(f"  DECISION: regenerating training layouts (because: {', '.join(why)})")
+        # Heldout must already be sampled BEFORE we can exclude its
+        # signatures; if it doesn't exist yet we'll generate that first.
+        # The block below handles it.
+    else:
+        _info(f"  DECISION: using existing training file ({train_existing} layouts, "
+              f"{train_yaml.stat().st_size} bytes)")
+
+    # ----- heldout layouts (50 random) -------------------------------
+    if (not heldout_yaml.exists()) or args.regen_heldout or args.force_retrain:
+        why = []
+        if args.force_retrain:           why.append("--force_retrain")
+        if args.regen_heldout:           why.append("--regen_heldout")
+        if not heldout_yaml.exists():    why.append("file missing")
+        _info(f"  DECISION: regenerating held-out {args.heldout_n} layouts "
+              f"(because: {', '.join(why)})")
+        # Held-out is sampled WITHOUT the training file as exclusion
+        # (the training file may not exist yet on first run); we rely
+        # on disjoint sampling later (training will exclude heldout).
+        blocked = _load_blocked_signatures([str(test_yaml)])
+        h_layouts = sample_layouts(
             n=args.heldout_n, grid_size=5, num_fires=3,
+            min_manhattan=4, seed=args.seed + 7919, blocked_signatures=blocked,
+        )
+        write_yaml(h_layouts, heldout_yaml, grid_size=5)
+        _info(f"  wrote {len(h_layouts)} held-out layouts -> {heldout_yaml}")
+    else:
+        _info(f"  using existing held-out file ({heldout_yaml.stat().st_size} bytes)")
+
+    if need_train:
+        # Now that heldout is on disk, training generation can safely
+        # exclude both test AND heldout signatures so the training
+        # distribution is fully disjoint from evaluation.
+        blocked = _load_blocked_signatures([str(test_yaml), str(heldout_yaml)])
+        t_layouts = sample_layouts(
+            n=args.initial_demos, grid_size=5, num_fires=3,
             min_manhattan=4, seed=args.seed, blocked_signatures=blocked,
         )
-        write_yaml(layouts, heldout_yaml, grid_size=5)
-        _info(f"  wrote {len(layouts)} layouts -> {heldout_yaml}")
-    else:
-        _info(f"  DECISION: using existing held-out file ({heldout_yaml.stat().st_size} bytes)")
+        # n_repetitions = 1 per layout — exactly one demo per random
+        # layout, per the user's spec ("no repetitions").
+        for L in t_layouts:
+            L["n_repetitions"] = 1
+        # Write under the `training_layouts:` key (which both
+        # collect_demos.py and dmnpol's loader recognise). We use
+        # write_yaml with our own key by rewriting the payload.
+        payload = {
+            "img_size":          80,
+            "grid_size":         5,
+            "cell_px":           16,
+            "num_fires":         3,
+            "min_manhattan":     4,
+            "n_repetitions":     1,
+            "training_layouts":  t_layouts,
+        }
+        with open(train_yaml, "w") as f:
+            yaml.safe_dump(payload, f, sort_keys=False)
+        _info(f"  wrote {len(t_layouts)} random training layouts (each with "
+              f"unique start/goal/fires) -> {train_yaml}")
 
     _info(f"  persisting layout JSON+PNG snapshots into {cycle_dir}/")
     save_layouts_from_yaml(train_yaml,   cycle_dir / "training",   "training")
@@ -715,12 +798,12 @@ def parse_args():
                         "the same set, copied verbatim into the per-method "
                         "demos/ subfolder during bootstrap.")
     p.add_argument("--force_retrain", action="store_true",
-                   help="Delete the contents of Equivariant_pathway/demos/ "
-                        "and Equivariant_pathway/checkpoints/ before setup, "
-                        "forcing a fresh A* demo collection AND a fresh "
-                        "initial training run. Use this when you want to "
-                        "verify the cycle isn't silently reusing artefacts "
-                        "from a previous invocation.")
+                   help="Wipe Equivariant_pathway/demos/, "
+                        "Equivariant_pathway/checkpoints/, AND "
+                        "training_layouts.yaml (so it gets re-sampled with "
+                        "fresh random layouts) before setup. Use this when "
+                        "you want a 100% from-scratch run, with no risk of "
+                        "stale artefacts from a previous invocation.")
     p.add_argument("--initial_epochs", type=int, default=200,
                    help="Epochs for the initial training run on the 10 demos.")
     p.add_argument("--round_epochs", type=int, default=60,
@@ -748,6 +831,12 @@ def parse_args():
                         "results/equivariant_pathway/cycle_<timestamp>/.")
     p.add_argument("--regen_heldout", action="store_true",
                    help="Force-regenerate heldout_test_layouts.yaml even if it exists.")
+    p.add_argument("--regen_training", action="store_true",
+                   help="Force-regenerate training_layouts.yaml even if it has "
+                        ">= --initial_demos entries. The 20 training layouts are "
+                        "sampled fresh (each with random start/goal/fire), "
+                        "deduplicated by signature, and excluded against "
+                        "test_layouts.yaml + heldout_test_layouts.yaml.")
     p.add_argument("--skip_initial_collect", action="store_true")
     p.add_argument("--skip_initial_train", action="store_true")
     p.add_argument("--skip_charts", action="store_true")
