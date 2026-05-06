@@ -59,6 +59,15 @@ def parse_args():
                    help="Save per-step Q-maps (cell -> action logits) under each "
                         "episode dir. Useful for visualising equivariance; off "
                         "by default to keep run dirs small.")
+    p.add_argument("--n_episodes", type=int, default=None,
+                   help="Total number of rollouts. When >len(layouts) the "
+                        "layouts list is round-robined (with each episode "
+                        "getting its own seed = base_seed + ep_idx). When None "
+                        "(default), exactly one rollout per layout is run — "
+                        "i.e. n_episodes = len(layouts). Set this to 50 for "
+                        "the active-loop test rollout so every method "
+                        "(baseline DAgger, P4, P5, P6) sees the same fixed "
+                        "50 (layout, seed) pairs per round.")
     return p.parse_args()
 
 
@@ -291,7 +300,21 @@ def main():
     )
     if not layouts:
         raise SystemExit(f"No layouts list in {args.layouts}")
-    print(f"[eq-rollout] {len(layouts)} layouts from {args.layouts}")
+
+    # Resolve the actual rollout schedule. With --n_episodes=None we keep
+    # the historical "one rollout per layout" behaviour (used by the
+    # heldout eval which has 50 distinct layouts). With --n_episodes=N
+    # > len(layouts) we round-robin through `layouts` so every method
+    # in the active loop can be told "rollout 50 episodes" and get the
+    # same (layout, seed) sequence regardless of how many layouts the
+    # input YAML happens to contain (e.g. test_layouts.yaml has 4).
+    if args.n_episodes is None or args.n_episodes <= 0:
+        episodes_schedule = list(layouts)
+    else:
+        episodes_schedule = [layouts[i % len(layouts)] for i in range(args.n_episodes)]
+    print(f"[eq-rollout] {len(layouts)} unique layouts in {args.layouts}; "
+          f"running {len(episodes_schedule)} episodes "
+          f"(round-robin={args.n_episodes is not None and args.n_episodes > len(layouts)})")
 
     # weights_only=False is correct here: our checkpoints contain non-tensor
     # state (the args dict + the channels tuple). Setting it explicitly also
@@ -320,7 +343,7 @@ def main():
     success_ids: List[int] = []
     failure_ids: List[int] = []
 
-    for ep_idx, layout in enumerate(layouts):
+    for ep_idx, layout in enumerate(episodes_schedule):
         ed = _run_episode(model, layout, ep_idx, seed=args.seed + ep_idx,
                           max_steps=args.max_steps, device=device,
                           save_q_maps=args.save_q_maps)
@@ -354,25 +377,27 @@ def main():
             "frame_paths":    ed.get("frame_paths", {}),
         })
 
+    n_episodes_run = len(episodes_schedule)
     full_output = {
         "metadata": {
-            "run_id":       run_dir.name,
-            "timestamp":    datetime.now().isoformat(),
-            "n_episodes":   len(layouts),
-            "seed_base":    args.seed,
-            "n_successes":  len(success_ids),
-            "n_failures":   len(failure_ids),
-            "phase_a_only": True,
-            "model_type":   "equivariant_unet",
-            "checkpoint":   args.checkpoint,
-            "layouts_yaml": args.layouts,
+            "run_id":          run_dir.name,
+            "timestamp":       datetime.now().isoformat(),
+            "n_episodes":      n_episodes_run,
+            "n_unique_layouts": len(layouts),
+            "seed_base":       args.seed,
+            "n_successes":     len(success_ids),
+            "n_failures":      len(failure_ids),
+            "phase_a_only":    True,
+            "model_type":      "equivariant_unet",
+            "checkpoint":      args.checkpoint,
+            "layouts_yaml":    args.layouts,
         },
         "config": {
             "maze":    {"name": _HOST_MAZE,
                         "randomize_start": False,
                         "randomize_goal":  False,
                         "randomize_fire":  False},
-            "rollout": {"n_episodes": len(layouts),
+            "rollout": {"n_episodes": n_episodes_run,
                         "seed": args.seed,
                         "checkpoint_path": args.checkpoint},
         },
@@ -387,7 +412,7 @@ def main():
 
     cfg_used = {
         "maze":     {"name": _HOST_MAZE},
-        "rollout":  {"n_episodes": len(layouts),
+        "rollout":  {"n_episodes": n_episodes_run,
                      "seed": args.seed,
                      "checkpoint_path": args.checkpoint},
         "tracking": {"output_dir": str(run_dir.parent)},

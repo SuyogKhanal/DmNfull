@@ -199,7 +199,7 @@ def _eval_heldout(checkpoint: Path, heldout_yaml: Path,
                   out_dir: Path, seed: int = 0) -> Dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     rc = _run([
-        sys.executable, "-u", str(PATHWAY_ROOT / "rollout_test.py"),
+        sys.executable, "-u", "-m", "Equivariant_pathway.rollout_test",
         "--checkpoint", str(checkpoint),
         "--layouts",    str(heldout_yaml),
         "--out_dir",    str(out_dir),
@@ -220,15 +220,24 @@ def _eval_heldout(checkpoint: Path, heldout_yaml: Path,
 
 
 def _eval_test_set(checkpoint: Path, test_yaml: Path, out_dir: Path,
-                   seed: int = 0) -> Dict:
+                   seed: int = 0, n_episodes: Optional[int] = None) -> Dict:
+    """Run the active-loop test rollout. When `n_episodes` is set,
+    rollout_test.py round-robins through the test_yaml's layouts so
+    every method (baseline DAgger, P4, P5, P6) sees the SAME
+    `(layout, seed)` schedule per round. The schedule is determined
+    entirely by (test_yaml, seed, n_episodes) — passing identical
+    values across methods guarantees identical rollout starts."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    rc = _run([
-        sys.executable, "-u", str(PATHWAY_ROOT / "rollout_test.py"),
+    cmd = [
+        sys.executable, "-u", "-m", "Equivariant_pathway.rollout_test",
         "--checkpoint", str(checkpoint),
         "--layouts",    str(test_yaml),
         "--out_dir",    str(out_dir),
         "--seed",       str(seed),
-    ])
+    ]
+    if n_episodes is not None and n_episodes > 0:
+        cmd += ["--n_episodes", str(n_episodes)]
+    rc = _run(cmd)
     if rc != 0:
         raise RuntimeError(f"test rollout exited rc={rc}")
     full = json.load(open(out_dir / "full_output.json"))
@@ -268,24 +277,35 @@ def _run_profile_round(
     round_dir = paths["rounds_dir"] / f"round_{rnd}"
     round_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Rollout on the fixed test set.
+    # 1. Rollout on the fixed test set with the SAME 50-episode schedule
+    # the baseline DAgger uses, so the comparison across methods is
+    # apples-to-apples (same layouts, same per-episode seeds, same
+    # number of rollouts). The seed formula matches _run_baseline_round
+    # exactly.
     test_rollout_dir = round_dir / "test_rollout"
     test_metrics = _eval_test_set(
         checkpoint=ckpt_dir / "best_eq_policy.pth",
         test_yaml=Path(setup["test_yaml"]),
         out_dir=test_rollout_dir,
-        seed=args.seed + rnd,
+        seed=args.seed + rnd * 1000,
+        n_episodes=args.dagger_episodes,
     )
 
     # 2. Analyze with the LLM pipeline.
-    analyze_script = {
-        "p4": "analyze_p4.py",
-        "p5": "analyze_p5.py",
-        "p6": "analyze_p6.py",
+    # Launch via `-m Equivariant_pathway.analyze_p<N>` (NOT as a file path).
+    # File-path launch puts Equivariant_pathway/ on sys.path[0], which
+    # makes Equivariant_pathway/model.py shadow the top-level model/
+    # package — `from model.diffusion_policy import ...` then fails with
+    # "model is not a package". `-m` invocation keeps only the CWD on
+    # sys.path[0], so the right `model/` package wins.
+    analyze_module = {
+        "p4": "Equivariant_pathway.analyze_p4",
+        "p5": "Equivariant_pathway.analyze_p5",
+        "p6": "Equivariant_pathway.analyze_p6",
     }[method]
     analysis_dir = round_dir / f"{method}_analysis"
     cmd = [
-        sys.executable, "-u", str(PATHWAY_ROOT / analyze_script),
+        sys.executable, "-u", "-m", analyze_module,
         "--rollout_dir", str(test_rollout_dir),
         "--out_dir",     str(analysis_dir),
     ]
@@ -425,11 +445,12 @@ def _run_baseline_round(
         checkpoint=ckpt_dir / "best_eq_policy.pth",
         demo_dir=demo_dir,
         out_dir=round_dir / "dagger_pass",
-        seed=args.seed + rnd,
+        seed=args.seed + rnd * 1000,
         max_steps=60,
         train_every_n=4,
         train_demo_paths=None,  # use --demo_dir
         epochs=args.round_epochs,
+        n_episodes=args.dagger_episodes,
     )
 
     demos_after = _glob_demo_count(demo_dir)
@@ -550,6 +571,18 @@ def parse_args():
     p.add_argument("--max_rounds", type=int, default=MAX_ROUNDS_GUARD,
                    help="Hard guard against infinite loops. There is NO 5-round "
                         "cap — this is the explicit anti-runaway, default 50.")
+    p.add_argument("--dagger_episodes", type=int, default=50,
+                   help="Episodes per round, applied UNIFORMLY to every "
+                        "method (baseline DAgger AND P4/P5/P6). Layouts are "
+                        "drawn round-robin from test_layouts.yaml with "
+                        "seed = args.seed + rnd*1000 + ep_idx, so all four "
+                        "methods see the EXACT same (layout, seed) schedule "
+                        "per round and the only thing that differs across "
+                        "methods is what each one does with the failures it "
+                        "observes (BFS-correct in-line for baseline; LLM "
+                        "analyse + prescribe + BFS-collect for profiles). "
+                        "For baseline DAgger, retraining additionally fires "
+                        "every 4 corrective demos accumulated GLOBALLY.")
     p.add_argument("--cycle_dir", type=str, default=None,
                    help="Top-level dir for this cycle's artefacts. Defaults to "
                         "results/equivariant_pathway/cycle_<timestamp>/.")

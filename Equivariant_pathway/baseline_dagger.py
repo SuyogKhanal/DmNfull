@@ -3,33 +3,52 @@
 How this differs from the P4/P5/P6 active loop
 ==============================================
 P4/P5/P6 follow this cycle:
-  rollout 50 episodes -> LLM analyses every failure -> LLM prescribes
-  layouts to record demos on -> BFS expert records them -> retrain.
+  rollout on test_layouts.yaml -> LLM analyses every failure -> LLM
+  prescribes layouts to record demos on -> BFS expert records them
+  -> retrain. One round = one such cycle; eval on heldout at end.
 
-Baseline DAgger doesn't ask any LLM. Instead, during the 50-episode test
-rollout (run on test_layouts.yaml), every time the agent is about to
-fail (hits fire OR runs out of steps), the BFS expert immediately
-"completes" the episode in-place: starting from one step BEFORE the
-failure step, BFS plans a fire-free path to the goal and walks it. The
-recovered trajectory (states + actions) is appended as a corrective
-demo to baseline_dagger/demos/. After every 4 corrective demos written,
-the equivariant policy is retrained on (initial 10 demos UNION
-accumulated corrective demos), and the loop continues.
+Baseline DAgger doesn't ask any LLM. It implements the classical
+DAgger correction loop:
 
-The cycle terminates when held-out random success rate >= TARGET_SR
-(default 0.90). There is no fixed round cap — by design.
-
-Why "one step before the failure" rather than the fire-hit step itself?
-The failure step terminates the episode in-state, so the agent never
-got to make a recovery decision there. Backing up by one step gives
-the demonstrator a real navigation choice from a still-alive state,
-which is what the policy actually needs to learn from.
+  1. Train the model on the current demo set (the initial 10, plus
+     every corrective demo collected so far).
+  2. Run 50 rollouts (round-robin through `layouts_yaml`, rotating
+     seeds) using the freshly-trained policy.
+  3. For each FAILED episode (fire-collision OR step-budget timeout):
+       - Identify the *deviation point*: the first step where the
+         policy chose an action that is NOT in the BFS-optimal set
+         for that state. For fire collisions this is typically the
+         step that walked into the fire; for timeouts it can be much
+         earlier (the first wrong-direction step that doomed the run).
+       - Replay the policy's actions up to (but not including) the
+         deviation step in a fresh env so we capture the policy
+         prefix verbatim.
+       - From the pre-deviation state, BFS-plan a fire-free path to
+         the goal and execute it — the expert "completes" the
+         trajectory.
+       - Save the FULL resulting trajectory (start_pos -> ...
+         policy actions ... -> deviation_pos -> ... expert actions
+         ... -> goal) as a corrective demo.
+  4. After every 4 corrective demos accumulated *globally* (i.e.
+     across all DAgger passes; counted by listing files in the demo
+     dir), retrain the policy on (initial demos UNION every
+     corrective demo) and reload the model so subsequent rollouts in
+     the same pass use the freshly-trained weights. This is the key
+     correctness fix vs. the previous version, which used a per-pass
+     counter and therefore never retrained when a pass collected
+     fewer than 4 corrections (the common case on a small layouts
+     yaml).
+  5. After the 50 rollouts, return the pass summary; the caller
+     (run_full_cycle.py) evaluates on the held-out 50-layout set and
+     decides whether to terminate (heldout SR >= 0.90) or run another
+     pass.
 
 Invocation
 ----------
-The expected caller is run_full_cycle.py; running this module directly
-performs ONE rollout-and-correct + retrain pass on whatever the current
-checkpoint is. run_full_cycle wraps it in the until-90% loop.
+The expected caller is run_full_cycle.py; running this module
+directly performs ONE 50-episode rollout-and-correct pass on whatever
+the current checkpoint is. The pass-level retraining (every 4
+corrections) is internal to run_dagger_correction_pass.
 """
 from __future__ import annotations
 
@@ -169,6 +188,53 @@ def _load_model(checkpoint: Path, device: torch.device) -> EquivariantUNetPolicy
     return model
 
 
+def _find_deviation_step(
+    layout: Dict,
+    actions: List[int],
+    trajectory: List[Tuple[int, int]],
+) -> int:
+    """Index of the first action that is NOT in the BFS-optimal set.
+
+    `trajectory[t]` is the agent's position BEFORE `actions[t]` is taken.
+    For fire collisions this typically pinpoints the step that walked
+    into the fire. For timeouts it can be far earlier — e.g. the policy
+    walked LEFT at step 0 when only RIGHT and DOWN were optimal. Either
+    way, this is the position from which the expert should take over.
+
+    Returns -1 if every recorded action was optimal (which shouldn't
+    happen on a deterministic env if the episode failed; defensive).
+    """
+    fires = [tuple(f) for f in layout["fire_positions"]]
+    goal = tuple(layout["goal_pos"])
+    gs = len(layout.get("grid", [[0] * 5] * 5))
+    grid = build_grid(grid_size=gs, fire_positions=fires, goal_pos=goal)
+    expert = AStarExpert(grid, goal)
+    for t, a in enumerate(actions):
+        if t >= len(trajectory):
+            break
+        pos = trajectory[t]
+        opt = expert.optimal_actions(pos)
+        if opt.sum() == 0:
+            # already at goal or unreachable; treat as deviation here
+            return t
+        if opt[a] < 0.5:
+            return t
+    return -1
+
+
+def _count_corrective_demos(demo_dir: Path) -> int:
+    """Return how many corrective demos have been collected so far.
+
+    The cumulative count is what drives `train every 4 corrections`. We
+    use the demo dir's file count rather than an in-memory counter so
+    the state survives across passes (each pass starts from whatever
+    cumulative count the previous pass left behind).
+    """
+    if not demo_dir.exists():
+        return 0
+    return sum(1 for p in demo_dir.rglob("*.json") if "_correct_" in p.name)
+
+
 def run_dagger_correction_pass(
     layouts_yaml: Path,
     checkpoint: Path,
@@ -180,11 +246,20 @@ def run_dagger_correction_pass(
     train_demo_paths: Optional[str] = None,
     epochs: int = 50,
     skip_train: bool = False,
+    n_episodes: int = 50,
 ) -> Dict:
-    """One full rollout-and-correct pass.
+    """One full DAgger rollout-and-correct pass over `n_episodes` rollouts.
 
-    Returns a dict with: n_episodes, n_failures, n_corrected, n_demos_added,
-    n_train_calls, success_rate, demo_paths (list[str]).
+    Layouts are drawn round-robin from `layouts_yaml` (with rotating
+    seeds so successive episodes on the same layout still have a unique
+    timestamp / signature when saved). Failures are corrected by
+    re-running the policy in a fresh env up to the deviation step,
+    then BFS-finishing from there. Retraining fires every
+    `train_every_n` corrective demos counted *globally* (across all
+    passes — see _count_corrective_demos).
+
+    Returns a dict with: n_episodes, n_failures, n_corrected,
+    n_demos_added, n_train_calls, success_rate, demo_paths (list[str]).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     demo_dir.mkdir(parents=True, exist_ok=True)
@@ -201,24 +276,38 @@ def run_dagger_correction_pass(
     )
     if not layouts:
         raise SystemExit(f"No layouts in {layouts_yaml}")
-    print(f"[dagger] {len(layouts)} layouts from {layouts_yaml}")
+    print(f"[dagger] {len(layouts)} layouts in pool from {layouts_yaml}")
+    print(f"[dagger] running {n_episodes} episodes (round-robin)")
     print(f"[dagger] checkpoint={checkpoint}")
     print(f"[dagger] demo_dir  ={demo_dir}")
     print(f"[dagger] out_dir   ={out_dir}")
-    print(f"[dagger] train every {train_every_n} corrective demos")
+    print(f"[dagger] train every {train_every_n} corrective demos (CUMULATIVE)")
 
     model = _load_model(checkpoint, device)
 
-    n_corrected_total = 0
-    n_demos_pending_train = 0
+    # Cumulative counter — counts every corrective demo ever collected
+    # by this method, NOT just the ones from this pass. The next train
+    # is triggered when this counter crosses the next multiple of
+    # train_every_n.
+    cum_corrections_at_start = _count_corrective_demos(demo_dir)
+    cum_corrections = cum_corrections_at_start
+    next_train_at = ((cum_corrections // train_every_n) + 1) * train_every_n
+    print(f"[dagger] cumulative corrections so far: {cum_corrections} "
+          f"(next train at {next_train_at})")
+
     n_train_calls = 0
     saved_demos: List[Path] = []
     episode_log: List[Dict] = []
     success_count = 0
+    n_corrected_in_pass = 0
 
-    for ep_idx, layout in enumerate(layouts):
-        env = _build_env_from_layout(layout, seed=seed + ep_idx)
-        obs_seq = [{"state": env._get_obs()["state"], "image": env._get_obs()["image"]}]
+    for ep_idx in range(n_episodes):
+        layout = layouts[ep_idx % len(layouts)]
+        ep_seed = seed + ep_idx
+
+        env = _build_env_from_layout(layout, seed=ep_seed)
+        obs_seq = [{"state": env._get_obs()["state"],
+                    "image": env._get_obs()["image"]}]
         actions: List[int] = []
         rewards: List[float] = []
         terminated = truncated = False
@@ -240,37 +329,48 @@ def run_dagger_correction_pass(
         if success:
             success_count += 1
 
-        # Detect "about to fail" — fire hit OR step-budget exhausted.
-        # When success, no correction is needed.
-        about_to_fail = not success
+        # Pre-failure trajectory (positions BEFORE each action). Length
+        # is len(actions) + 1; index t is the agent's pose before
+        # actions[t]. Last entry is the post-final-action pose, which
+        # we don't index into during deviation detection.
+        traj_positions = [tuple(p) for p in env.get_trajectory()]
+        env.close()
+
         corrected_here = False
-        if about_to_fail:
-            # Roll back ONE step so the demonstrator picks a recovery action
-            # from a still-alive state (the fire-hit step is terminal).
-            if len(env.get_trajectory()) >= 2:
-                # Reset the env to the pre-failure pose.
-                pre_fail_pos = tuple(env.get_trajectory()[-2])
-                # Rebuild env on the same layout, then walk the policy's
-                # actions one shy of the failure step so visited / step_count
-                # match what the policy actually saw.
-                env2 = _build_env_from_layout(layout, seed=seed + ep_idx)
-                obs_seq2 = [{"state": env2._get_obs()["state"],
-                             "image": env2._get_obs()["image"]}]
+        deviation_step: Optional[int] = None
+        if not success and actions:
+            # Find where the policy first stepped off the BFS-optimal
+            # set. For fire-hits this is typically the fire step; for
+            # timeouts it can be much earlier.
+            deviation_step = _find_deviation_step(layout, actions, traj_positions)
+            if deviation_step < 0:
+                # Defensive: episode failed but every action looked
+                # optimal. Skip rather than fabricate a "correction".
+                print(f"[dagger] ep {ep_idx} ({layout.get('name')}): "
+                      f"failed but no deviation detected; skipping correction.")
+            else:
+                # Replay actions[:deviation_step] in a fresh env to put
+                # the agent at the pre-deviation pose with the correct
+                # visited mask + step count.
+                env2 = _build_env_from_layout(layout, seed=ep_seed)
+                obs2 = env2._get_obs()
+                obs_seq2 = [{"state": obs2["state"], "image": obs2["image"]}]
                 actions2: List[int] = []
                 rewards2: List[float] = []
-                # Replay all but the last action.
-                for a in actions[:-1]:
-                    obs, r, term, trunc, _ = env2.step(a)
+                for a in actions[:deviation_step]:
+                    obs, r, _, _, _ = env2.step(a)
                     obs_seq2.append({"state": obs["state"], "image": obs["image"]})
                     actions2.append(int(a))
                     rewards2.append(float(r))
-                # Now plan a BFS path from current pos to goal and execute.
-                grid_now = env2.grid.copy()
-                plan = _bfs_path(grid_now, tuple(env2.agent_pos), tuple(env2.goal_pos))
+                # Now expert takes over from env2.agent_pos to goal.
+                plan = _bfs_path(env2.grid.copy(),
+                                 tuple(env2.agent_pos),
+                                 tuple(env2.goal_pos))
                 if plan:
                     for a in plan:
                         obs, r, term, trunc, _ = env2.step(a)
-                        obs_seq2.append({"state": obs["state"], "image": obs["image"]})
+                        obs_seq2.append({"state": obs["state"],
+                                         "image": obs["image"]})
                         actions2.append(int(a))
                         rewards2.append(float(r))
                         if term or trunc:
@@ -279,38 +379,40 @@ def run_dagger_correction_pass(
                         env2, obs_seq2, actions2, rewards2,
                         demo_dir=demo_dir,
                         layout_name=layout.get("name", f"ep{ep_idx}"),
-                        suffix=f"correct_ep{ep_idx}",
+                        suffix=f"correct_ep{ep_idx}_dev{deviation_step}",
                     )
                     saved_demos.append(out_path)
-                    n_corrected_total += 1
-                    n_demos_pending_train += 1
+                    cum_corrections += 1
+                    n_corrected_in_pass += 1
                     corrected_here = True
                     print(f"[dagger] ep {ep_idx} ({layout.get('name')}): "
-                          f"failed -> recovered with BFS plan len={len(plan)} "
-                          f"-> saved {out_path.name}")
+                          f"failed at deviation_step={deviation_step}; "
+                          f"expert took over (plan len={len(plan)}); "
+                          f"saved {out_path.name}  "
+                          f"[cum corrections={cum_corrections}]")
                 else:
                     print(f"[dagger] ep {ep_idx} ({layout.get('name')}): "
-                          f"failed AND BFS found no recovery path; skipping.")
+                          f"deviation at step {deviation_step} but BFS "
+                          f"found no fire-free path; skipping.")
                 env2.close()
-            else:
-                print(f"[dagger] ep {ep_idx} ({layout.get('name')}): "
-                      f"failed at step 0; cannot back up. skipping.")
-        env.close()
 
         episode_log.append({
-            "episode_id":     ep_idx,
-            "layout_name":    layout.get("name"),
-            "policy_success": success,
-            "corrected":      corrected_here,
-            "policy_steps":   si,
+            "episode_id":      ep_idx,
+            "layout_name":     layout.get("name"),
+            "policy_success":  success,
+            "corrected":       corrected_here,
+            "deviation_step":  deviation_step,
+            "policy_steps":    si,
         })
 
-        # Retrain after every N corrective demos.
-        if (not skip_train) and n_demos_pending_train >= train_every_n:
-            print(f"[dagger] retraining after {n_demos_pending_train} corrective demos "
-                  f"(total corrected so far: {n_corrected_total})")
+        # Cumulative retrain trigger: once we cross the next multiple
+        # of train_every_n corrective demos (across all passes),
+        # retrain on the full demo set.
+        if (not skip_train) and cum_corrections >= next_train_at:
+            print(f"[dagger] cumulative={cum_corrections} >= {next_train_at}; "
+                  f"retraining (initial demos UNION every correction so far)")
             cmd = [
-                sys.executable, "-u", str(REPO_ROOT / "Equivariant_pathway" / "train.py"),
+                sys.executable, "-u", "-m", "Equivariant_pathway.train",
                 "--checkpoint_dir", str(checkpoint.parent),
                 "--epochs", str(epochs),
                 "--resume",
@@ -318,37 +420,42 @@ def run_dagger_correction_pass(
             if train_demo_paths:
                 cmd += ["--demo_paths", train_demo_paths]
             else:
-                cmd += ["--demo_dir", str(demo_dir.parent / "demos")]
+                cmd += ["--demo_dir", str(demo_dir)]
             print(f"[dagger] $ {' '.join(cmd)}")
             rc = subprocess.call(cmd, cwd=str(REPO_ROOT))
             if rc != 0:
                 print(f"[dagger] WARNING: retrain exited rc={rc}")
             n_train_calls += 1
-            n_demos_pending_train = 0
-            # Reload policy weights into the eval model so subsequent rollouts
-            # in this same pass use the freshly-trained policy.
+            next_train_at += train_every_n
+            # Reload weights so subsequent rollouts in this pass use
+            # the freshly-trained policy.
             best_path = checkpoint.parent / "best_eq_policy.pth"
             reload_path = best_path if best_path.exists() else checkpoint
             model = _load_model(reload_path, device)
 
     summary = {
-        "layouts_yaml":     str(layouts_yaml),
-        "n_episodes":       len(layouts),
-        "n_successes":      success_count,
-        "n_failures":       len(layouts) - success_count,
-        "success_rate":     success_count / len(layouts) if layouts else 0.0,
-        "n_corrected":      n_corrected_total,
-        "n_demos_added":    len(saved_demos),
-        "n_train_calls":    n_train_calls,
-        "demo_paths":       [str(p) for p in saved_demos],
-        "episode_log":      episode_log,
-        "checkpoint":       str(checkpoint),
-        "demo_dir":         str(demo_dir),
+        "layouts_yaml":           str(layouts_yaml),
+        "n_layouts_in_pool":      len(layouts),
+        "n_episodes":             n_episodes,
+        "n_successes":            success_count,
+        "n_failures":             n_episodes - success_count,
+        "success_rate":           success_count / n_episodes if n_episodes else 0.0,
+        "n_corrected_in_pass":    n_corrected_in_pass,
+        "cum_corrections_before": cum_corrections_at_start,
+        "cum_corrections_after":  cum_corrections,
+        "n_demos_added":          len(saved_demos),
+        "n_train_calls":          n_train_calls,
+        "demo_paths":             [str(p) for p in saved_demos],
+        "episode_log":            episode_log,
+        "checkpoint":             str(checkpoint),
+        "demo_dir":               str(demo_dir),
     }
     with open(out_dir / "dagger_pass_summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=str)
     print(f"[dagger] PASS DONE  policy_sr={summary['success_rate']:.2f}  "
-          f"corrected={n_corrected_total}  trains_in_pass={n_train_calls}")
+          f"corrected_this_pass={n_corrected_in_pass}  "
+          f"trains_in_pass={n_train_calls}  "
+          f"cum_corrections={cum_corrections}")
     return summary
 
 
@@ -366,6 +473,9 @@ def parse_args():
     p.add_argument("--train_every_n", type=int, default=TRAIN_EVERY_N_DEMOS)
     p.add_argument("--demo_paths", type=str, default=None)
     p.add_argument("--epochs", type=int, default=50)
+    p.add_argument("--n_episodes", type=int, default=50,
+                   help="Number of rollouts per pass. Layouts are drawn "
+                        "round-robin from --layouts with rotating seeds.")
     p.add_argument("--skip_train", action="store_true")
     return p.parse_args()
 
@@ -385,6 +495,7 @@ def main():
         train_demo_paths=args.demo_paths,
         epochs=args.epochs,
         skip_train=args.skip_train,
+        n_episodes=args.n_episodes,
     )
 
 
