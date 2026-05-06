@@ -75,6 +75,40 @@ cycle_<ts>/
 
 ## End-to-end run
 
+The recommended entry point is the shell script — it mirrors
+`dmnpol/scripts/run_all_models.sh`: one method per GPU, fully parallel,
+with a single shared setup phase up front so every method starts from
+the same initial 10 demos and the same initial checkpoint.
+
+```bash
+sbatch Equivariant_pathway/run_all_methods.sh
+```
+
+Or, for an interactive run on a 4-GPU box:
+
+```bash
+bash Equivariant_pathway/run_all_methods.sh
+```
+
+What the script does:
+
+1. **Phase 1 — setup (sequential, GPU 0):** generates
+   `heldout_test_layouts.yaml` if missing, persists train/test/heldout
+   layouts as JSON+PNG, BFS-collects the initial 10 expert demos,
+   trains the SHARED initial checkpoint
+   (`Equivariant_pathway/checkpoints/best_eq_policy.pth`).
+2. **Phase 2 — methods (parallel, one per GPU):** launches
+   `run_full_cycle.py` for each of `{baseline_dagger, p4, p5, p6}`
+   under its own `CUDA_VISIBLE_DEVICES`, each with
+   `--skip_initial_collect --skip_initial_train --skip_charts` so the
+   four runs share the bootstrap artefacts but write only into their
+   own subtree.
+3. **Phase 3 — charts (sequential):** runs `charts.py` on the cycle
+   directory once all four parallel methods finish.
+
+The single-process equivalent (no GPU parallelism) still works for
+debugging:
+
 ```bash
 python -m Equivariant_pathway.run_full_cycle \
     --methods baseline_dagger,p4,p5,p6 \
