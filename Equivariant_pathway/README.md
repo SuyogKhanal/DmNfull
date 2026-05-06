@@ -94,9 +94,17 @@ What the script does:
 
 1. **Phase 1 — setup (sequential, GPU 0):** generates
    `heldout_test_layouts.yaml` if missing, persists train/test/heldout
-   layouts as JSON+PNG, BFS-collects the initial 10 expert demos,
-   trains the SHARED initial checkpoint
-   (`Equivariant_pathway/checkpoints/best_eq_policy.pth`).
+   layouts as JSON+PNG, BFS-collects the initial **20** expert demos
+   from `training_layouts.yaml` (5 hand-designed layouts × 4
+   repetitions), then trains the SHARED initial checkpoint
+   (`Equivariant_pathway/checkpoints/best_eq_policy.pth` and
+   `last_eq_policy.pth`). Each sub-phase logs a clearly-marked
+   `[setup] PHASE 1A/1B/1C` banner and prints, for every decision,
+   *what was on disk*, *what was decided*, and *why* — so a "skipping
+   collection because folder already has 20 demos" is never silently
+   confused with a from-scratch run. Pass `--force_retrain` to nuke
+   `Equivariant_pathway/{demos,checkpoints}/` before setup so the
+   collection + initial training are guaranteed to actually run.
 2. **Phase 2 — methods (parallel, one per GPU):** launches
    `run_full_cycle.py` for each of `{baseline_dagger, p4, p5, p6}`
    under its own `CUDA_VISIBLE_DEVICES`, each with

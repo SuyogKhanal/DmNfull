@@ -223,18 +223,29 @@ def main():
     best_epoch = -1
     last_path = ckpt_dir / "last_eq_policy.pth"
     best_path = ckpt_dir / "best_eq_policy.pth"
-    if args.resume and last_path.exists():
-        # weights_only=False — checkpoint contains optimizer + scheduler state dicts
-        # plus an args dict, none of which load under weights_only=True.
-        ckpt = torch.load(last_path, map_location=device, weights_only=False)
-        model.load_state_dict(ckpt["model_state_dict"], strict=True)
-        optim.load_state_dict(ckpt["optim_state_dict"])
-        if "sched_state_dict" in ckpt:
-            sched.load_state_dict(ckpt["sched_state_dict"])
-        start_epoch = int(ckpt.get("epoch", 0))
-        best_val_loss = float(ckpt.get("best_val_loss", float("inf")))
-        best_epoch = int(ckpt.get("best_epoch", -1))
-        print(f"[eq-train] resumed from {last_path} @ epoch {start_epoch}")
+    if args.resume:
+        # Warm-start semantics: load model weights from whichever
+        # checkpoint exists in this dir (prefer last_eq_policy.pth which
+        # has full state, fall back to best_eq_policy.pth which has
+        # weights only). We DO NOT load optim_state_dict /
+        # sched_state_dict / epoch — every retraining round in the
+        # active loop is a fresh training run with the cumulative
+        # dataset, just warm-started from the previous best weights.
+        # Loading optim/sched state would also break when the source
+        # checkpoint is best_eq_policy.pth (which deliberately omits
+        # them to keep the file small) — see the run_full_cycle.py
+        # bootstrap path that copies the initial best.pt into the
+        # per-method dir.
+        src = last_path if last_path.exists() else (best_path if best_path.exists() else None)
+        if src is None:
+            print(f"[eq-train] --resume passed but no checkpoint in {ckpt_dir}; "
+                  f"training from scratch.")
+        else:
+            ckpt = torch.load(str(src), map_location=device, weights_only=False)
+            model.load_state_dict(ckpt["model_state_dict"], strict=True)
+            print(f"[eq-train] WARM START from {src.name} "
+                  f"(model weights only; optim/sched/epoch reset for this run; "
+                  f"prior epoch={ckpt.get('epoch','?')})")
 
     history = []
     t0 = time.time()
