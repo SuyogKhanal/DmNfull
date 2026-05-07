@@ -155,19 +155,7 @@ def cross_episode_reasoning(
             f"{kag_context}\n\n"
         )
 
-    try:
-        text = _chat_reasoning(
-            client, model,
-            [
-                {"role": "system", "content":
-                    "You are a cross-episode failure analyst for imitation learning in a "
-                    "RANDOMISED 5x5 maze (start, goal, and fire placements all vary per episode). "
-                    "Identify patterns across failures and prescribe demonstrations. The KAG "
-                    "corridor / failure-mode vocabulary, when provided, is HIGH PRIORITY and "
-                    "your clusters MUST use those exact corridor names. "
-                    "IMPORTANT: Only use the episode IDs listed in CONFIRMED FAILURE EPISODES. "
-                    "Do NOT invent or include any other episode IDs."},
-                {"role": "user", "content":
+    user_content = (
     f"Below are summaries from {n} FAILED episodes in a 5x5 dynamic maze.\n\n"
     f"{kag_block}"
     f"REPRESENTATIVE MAZE ASCII (one episode):\n{maze_ascii}\n\n"
@@ -196,7 +184,30 @@ def cross_episode_reasoning(
     "   Each recommended layout should be demonstrated 1-5 times to cover variation;\n"
     "   pick the count that matches how multi-modal the failure actually is, not a fixed\n"
     "   number. The orchestrator stops when held-out SR >= 90%, so neither over- nor\n"
-    "   under-prescribing helps — be honest about the gap each layout closes."},
+    "   under-prescribing helps — be honest about the gap each layout closes."
+    )
+
+    # Optional gated addendum: callers (e.g. Equivariant_pathway/p4_only) may
+    # supply llm_cfg["prompt_addendum_aggregator"] to add a run-specific
+    # directive (e.g. holistic sample-efficiency emphasis). Empty / missing
+    # leaves the legacy prompt untouched.
+    addendum = str(llm_cfg.get("prompt_addendum_aggregator", "") or "").strip()
+    if addendum:
+        user_content = f"{user_content}\n\n{addendum}"
+
+    try:
+        text = _chat_reasoning(
+            client, model,
+            [
+                {"role": "system", "content":
+                    "You are a cross-episode failure analyst for imitation learning in a "
+                    "RANDOMISED 5x5 maze (start, goal, and fire placements all vary per episode). "
+                    "Identify patterns across failures and prescribe demonstrations. The KAG "
+                    "corridor / failure-mode vocabulary, when provided, is HIGH PRIORITY and "
+                    "your clusters MUST use those exact corridor names. "
+                    "IMPORTANT: Only use the episode IDs listed in CONFIRMED FAILURE EPISODES. "
+                    "Do NOT invent or include any other episode IDs."},
+                {"role": "user", "content": user_content},
             ],
             max_tokens, effort,
         )
@@ -291,6 +302,23 @@ def final_structured_prescription(
             f"{kag_context}\n\n"
         )
 
+    user_lead = (
+        f"A diffusion policy failed across {n} episodes in a RANDOMISED 5x5 maze.\n\n"
+        f"{kag_block}"
+        f"CROSS-EPISODE REASONING (primary source):\n{cross_reasoning}\n\n"
+        f"PER-EPISODE FINAL_REC TABLE (authoritative, do not contradict):\n{rec_table}\n\n"
+        f"AGGREGATED n_demos (median rounded up across the FINAL_RECs above): {aggregated_n}\n\n"
+        f"CONFIRMED FAILURE EPISODE IDs: [{valid_ids_str}]\n"
+        f"Each cluster's episodes_in_cluster MUST only contain IDs from that list.\n\n"
+    )
+    # Optional gated addendum: callers (e.g. Equivariant_pathway/p4_only) may
+    # supply llm_cfg["prompt_addendum_aggregator"] to inject a run-specific
+    # directive (holistic / sample-efficiency / minimum-layouts framing).
+    # Inserted between the context block and the legacy RULES so it informs
+    # how the LLM reads the rules. Empty / missing = identical legacy prompt.
+    addendum = str(llm_cfg.get("prompt_addendum_aggregator", "") or "").strip()
+    if addendum:
+        user_lead = f"{user_lead}{addendum}\n\n"
     try:
         raw = _chat_plain(
             client, model,
@@ -303,13 +331,7 @@ def final_structured_prescription(
                     "different n_demos, or different episode IDs. "
                     "When a KAG block is provided, corridor names MUST come from it."},
                 {"role": "user", "content":
-                    f"A diffusion policy failed across {n} episodes in a RANDOMISED 5x5 maze.\n\n"
-                    f"{kag_block}"
-                    f"CROSS-EPISODE REASONING (primary source):\n{cross_reasoning}\n\n"
-                    f"PER-EPISODE FINAL_REC TABLE (authoritative, do not contradict):\n{rec_table}\n\n"
-                    f"AGGREGATED n_demos (median rounded up across the FINAL_RECs above): {aggregated_n}\n\n"
-                    f"CONFIRMED FAILURE EPISODE IDs: [{valid_ids_str}]\n"
-                    f"Each cluster's episodes_in_cluster MUST only contain IDs from that list.\n\n"
+                    user_lead +
                     "RULES:\n"
                     "  - failure_clusters[].corridor MUST be one of left_edge, top_edge, "
                     "right_edge, bottom_edge, central_mixed, or 'mixed' if the cluster spans corridors.\n"
