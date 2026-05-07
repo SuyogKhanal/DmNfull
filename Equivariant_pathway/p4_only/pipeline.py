@@ -234,7 +234,7 @@ def _bootstrap(seed: int, initial_epochs: int, initial_demos: int) -> None:
     _info(f"initial checkpoint trained at {dst_best} ({dst_best.stat().st_size} bytes)")
 
 
-def _rollout_for_analysis(seed: int, rollout_dir: Path) -> None:
+def _rollout_for_analysis(seed: int, rollout_dir: Path, max_steps: int = 60) -> None:
     rollout_dir.mkdir(parents=True, exist_ok=True)
     rc = _run([
         sys.executable, "-u", "-m", "Equivariant_pathway.rollout_test",
@@ -242,6 +242,7 @@ def _rollout_for_analysis(seed: int, rollout_dir: Path) -> None:
         "--layouts",    str(BO_HELDOUT_YAML),
         "--out_dir",    str(rollout_dir),
         "--seed",       str(seed),
+        "--max_steps",  str(max_steps),
     ])
     if rc != 0:
         raise RuntimeError(f"rollout for analysis failed (rc={rc})")
@@ -315,37 +316,75 @@ def _collect_prescribed(rec_path: Path, round_demo_dir: Path, seed: int) -> int:
     return post - pre
 
 
-def _retrain(seed: int, epochs: int) -> None:
-    rc = _run([
+def _retrain(seed: int, epochs: int, train_from_scratch: bool) -> None:
+    cmd = [
         sys.executable, "-u", "-m", "Equivariant_pathway.train",
         "--demo_dir",       str(DEMO_DIR),
         "--checkpoint_dir", str(CKPT_DIR),
         "--epochs",         str(epochs),
         "--seed",           str(seed),
-        "--resume",
-    ])
+    ]
+    if not train_from_scratch:
+        cmd.append("--resume")
+    rc = _run(cmd)
     if rc != 0:
         raise RuntimeError(f"retrain failed (rc={rc})")
 
 
+CONFIG_PATH = ROOT / "config.yml"
+
+
+def _load_config() -> Dict:
+    if not CONFIG_PATH.exists():
+        return {}
+    import yaml as _yaml
+    with open(CONFIG_PATH, "r") as f:
+        return _yaml.safe_load(f) or {}
+
+
+def _to_bool(x) -> bool:
+    if isinstance(x, bool):
+        return x
+    return str(x).strip().lower() in ("1", "true", "yes", "on")
+
+
 def main():
+    global TARGET_SR  # must precede the read in p.add_argument(default=...)
+    cfg = _load_config()
     p = argparse.ArgumentParser(description="P4-only equivariant pipeline.")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--round_epochs", type=int, default=DEFAULT_ROUND_EPOCHS)
-    p.add_argument("--initial_epochs", type=int, default=500,
+    p.add_argument("--seed", type=int,
+                   default=int(cfg.get("seed", 0)))
+    p.add_argument("--round_epochs", type=int,
+                   default=int(cfg.get("round_epochs", DEFAULT_ROUND_EPOCHS)))
+    p.add_argument("--initial_epochs", type=int,
+                   default=int(cfg.get("initial_epochs", 500)),
                    help="Epochs used ONLY when baseline_only's initial_*_eq_policy.pth "
                         "snapshot is missing and p4_only must train its own initial "
                         "model from scratch. Match baseline_only's --initial_epochs.")
-    p.add_argument("--initial_demos", type=int, default=20,
+    p.add_argument("--initial_demos", type=int,
+                   default=int(cfg.get("initial_demos", 20)),
                    help="Number of initial demos cap for the fallback initial training "
                         "(matches baseline_only's --initial_demos).")
-    p.add_argument("--max_rounds", type=int, default=50,
+    p.add_argument("--max_rounds", type=int,
+                   default=int(cfg.get("max_rounds", 50)),
                    help="Hard guard against infinite loops; the loop normally exits "
-                        "when heldout success rate >= 0.90.")
+                        "when heldout success rate >= target_sr.")
+    p.add_argument("--max_steps", type=int,
+                   default=int(cfg.get("max_steps", 60)),
+                   help="Per-episode step cap during the rollout the LLM analyses.")
+    p.add_argument("--target_sr", type=float,
+                   default=float(cfg.get("target_sr", TARGET_SR)),
+                   help="Stop the loop when heldout success rate >= this.")
+    p.add_argument("--train_from_scratch", type=_to_bool,
+                   default=_to_bool(cfg.get("train_from_scratch", True)),
+                   help="true = retrain from RANDOM INIT every round on the cumulative "
+                        "demo set (no warm start). Match baseline_only's setting for "
+                        "an apples-to-apples comparison.")
     p.add_argument("--force_restart", action="store_true",
                    help="Wipe p4_only/{demos,checkpoints,results} before running. "
                         "baseline_only/ artefacts are NEVER touched.")
     args = p.parse_args()
+    TARGET_SR = args.target_sr
 
     _section("P4-ONLY EQUIVARIANT PIPELINE")
     _info(f"p4_only root: {ROOT}")
@@ -366,7 +405,7 @@ def main():
 
     _section("PHASE 2: ROUND 0 — HELDOUT EVAL ON SHARED STARTING MODEL", char="-")
     round0_dir = RESULTS_DIR / "round_000_rollout"
-    _rollout_for_analysis(args.seed, round0_dir)
+    _rollout_for_analysis(args.seed, round0_dir, max_steps=args.max_steps)
     init_metrics = _read_sr(round0_dir)
     cum_demos = _count_demos()
     _info(f"INITIAL: cum_demos={cum_demos}  "
@@ -401,7 +440,7 @@ def main():
             rollout_dir = round0_dir
         else:
             rollout_dir = round_dir / "rollout"
-            _rollout_for_analysis(args.seed + rnd * 1000, rollout_dir)
+            _rollout_for_analysis(args.seed + rnd * 1000, rollout_dir, max_steps=args.max_steps)
             pre_metrics = _read_sr(rollout_dir)
             _info(f"round {rnd} rollout sr={pre_metrics['success_rate']:.3f}")
 
@@ -423,12 +462,12 @@ def main():
         _info(f"round {rnd}: prescribed_layouts={n_prescribed}  new_demos={n_new_demos}")
 
         if n_new_demos > 0:
-            _retrain(args.seed, args.round_epochs)
+            _retrain(args.seed, args.round_epochs, args.train_from_scratch)
         else:
             _info(f"round {rnd}: no new demos; skipping retrain.")
 
         post_dir = round_dir / "heldout_eval"
-        _rollout_for_analysis(args.seed + rnd, post_dir)
+        _rollout_for_analysis(args.seed + rnd, post_dir, max_steps=args.max_steps)
         post_metrics = _read_sr(post_dir)
         cum_demos = _count_demos()
         history.append({

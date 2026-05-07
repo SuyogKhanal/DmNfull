@@ -1,0 +1,34 @@
+# p4_only configuration.
+#
+# Every value here can be overridden on the command line. When unset on
+# the CLI, the value below is used. For a fair head-to-head against
+# baseline_only, KEEP these values aligned with
+# Equivariant_pathway/baseline_only/config.yml — particularly
+# initial_demos, initial_epochs, round_epochs, target_sr, and
+# train_from_scratch.
+
+# ---- Initial-training fallback ----
+# These are used ONLY when baseline_only/checkpoints/initial_best_eq_policy.pth
+# is missing (i.e. baseline_only was completed before the snapshot fix). When
+# the snapshot exists, p4_only copies it verbatim and skips initial training.
+initial_demos: 20
+initial_epochs: 500
+
+# ---- Per-round retrain ----
+round_epochs: 500         # epochs PER RETRAIN after each LLM-prescribed batch
+                          # is BFS-collected. See baseline_only/config.yml for
+                          # the train_from_scratch trade-off — match that
+                          # setting here for an apples-to-apples comparison.
+
+# ---- Loop ----
+max_rounds: 50            # hard guard against infinite loops.
+max_steps: 60             # per-episode step cap during rollout.
+target_sr: 0.90           # stop when heldout success rate >= this.
+
+# ---- Training mode ----
+# Same semantics as baseline_only. For a comparison where method-induced
+# divergence is the only variable, set this identical to baseline_only.
+train_from_scratch: true
+
+# ---- Misc ----
+seed: 0

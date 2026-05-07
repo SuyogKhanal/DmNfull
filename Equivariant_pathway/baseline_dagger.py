@@ -247,6 +247,7 @@ def run_dagger_correction_pass(
     epochs: int = 50,
     skip_train: bool = False,
     n_episodes: int = 50,
+    train_from_scratch: bool = False,
 ) -> Dict:
     """One full DAgger rollout-and-correct pass over `n_episodes` rollouts.
 
@@ -410,14 +411,16 @@ def run_dagger_correction_pass(
         # of train_every_n corrective demos (across all passes),
         # retrain on the full demo set.
         if (not skip_train) and cum_corrections >= next_train_at:
+            mode = "FROM SCRATCH (random init)" if train_from_scratch else "warm-start (resume)"
             print(f"[dagger] cumulative={cum_corrections} >= {next_train_at}; "
-                  f"retraining (initial demos UNION every correction so far)")
+                  f"retraining [{mode}] on (initial demos UNION every correction so far)")
             cmd = [
                 sys.executable, "-u", "-m", "Equivariant_pathway.train",
                 "--checkpoint_dir", str(checkpoint.parent),
                 "--epochs", str(epochs),
-                "--resume",
             ]
+            if not train_from_scratch:
+                cmd.append("--resume")
             if train_demo_paths:
                 cmd += ["--demo_paths", train_demo_paths]
             else:
