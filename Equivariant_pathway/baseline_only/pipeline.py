@@ -244,6 +244,24 @@ def main():
     else:
         _info(f"best_eq_policy.pth already exists at {CKPT_DIR}; skipping initial training")
 
+    # Snapshot the initial-trained weights into immutable files BEFORE the
+    # DAgger loop touches anything. Without this snapshot, any sibling
+    # method (p4_only / p5_only / p6_only) that later wants to start from
+    # baseline's actual STARTING point would be forced to copy
+    # best_eq_policy.pth, which gets overwritten by every DAgger-round
+    # retrain — so by the end of a run, "best" is the converged post-DAgger
+    # model, not the initial one. Fair-comparison across methods requires
+    # all of them to begin from these initial_* files, which never change
+    # after this point.
+    initial_best = CKPT_DIR / "initial_best_eq_policy.pth"
+    initial_last = CKPT_DIR / "initial_last_eq_policy.pth"
+    if not initial_best.exists() and (CKPT_DIR / "best_eq_policy.pth").exists():
+        shutil.copy2(CKPT_DIR / "best_eq_policy.pth", initial_best)
+        _info(f"snapshot: wrote {initial_best.name} ({initial_best.stat().st_size} bytes)")
+    if not initial_last.exists() and (CKPT_DIR / "last_eq_policy.pth").exists():
+        shutil.copy2(CKPT_DIR / "last_eq_policy.pth", initial_last)
+        _info(f"snapshot: wrote {initial_last.name} ({initial_last.stat().st_size} bytes)")
+
     _section("PHASE 4: HELDOUT EVAL ON INITIAL MODEL", char="-")
     init_metrics = _eval_heldout(args.seed, tag="round_0")
     n_demos = _count_demos()
