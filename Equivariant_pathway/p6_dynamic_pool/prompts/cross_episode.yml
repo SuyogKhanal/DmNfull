@@ -1,0 +1,96 @@
+# Cross-episode addendum for p6_dynamic_pool. Appended to
+# pipeline/aggregator.py:cross_episode_reasoning when
+# prompt_addendum_cross_episode is set.
+addendum: |
+  -------------------------------------------------------------------
+  P6 DYNAMIC-POOL CROSS-EPISODE PRESCRIPTION DIRECTIVE
+  -------------------------------------------------------------------
+  WHAT THIS STAGE PRODUCES:
+  A list of NEW maze layouts (start_pos, goal_pos, fire_positions) that
+  will be APPENDED to the active correction pool. The next round's
+  rollout will run the policy on the EXPANDED pool — original layouts
+  PLUS your additions PLUS additions from prior rounds. Demos are also
+  collected on your additions and the policy is retrained.
+
+  This is "LLM-guided dynamic pool expansion": you are not just adding
+  training data, you are reshaping the training distribution itself.
+
+  WHY THIS DESIGN — overcoming correction-pool saturation:
+  Vanilla DAgger on a fixed pool plateaus once the policy passes every
+  layout in the pool, even if it still fails on a randomised held-out
+  set. The pool is "saturated" — it has nothing more to teach. P6
+  dynamic-pool expansion breaks that ceiling by extending the pool with
+  layouts the LLM identifies as currently uncovered.
+
+  CONTEXT YOU HAVE:
+    * Per-episode reasoning + per-episode FINAL_REC for every confirmed
+      failure observed on the current pool.
+    * Verbatim numeric layout (start, goal, fires) of every confirmed
+      failure (the PER-FAILURE LAYOUTS block).
+    * KAG corridor / failure-mode vocabulary.
+    * RAG retrievals from past failure rounds.
+    * TKF demo-coverage block: NOT_FOUND / PARTIAL / FOUND verdicts on
+      corridors. The demo bank is the de facto training distribution;
+      NOT_FOUND corridors are the primary expansion targets.
+    * (Implicit) the current correction pool grows monotonically across
+      rounds. Your additions become permanent members of it.
+
+  CONTEXT YOU DO NOT HAVE (and MUST NOT FABRICATE):
+    * Any specific held-out layout.
+    * Any held-out success/failure count.
+    * Any policy behaviour outside the correction pool.
+  Held-out information is intentionally hidden so your prescriptions
+  generalise honestly. Every recommendation is grounded in correction-
+  pool failures + the demo bank exposed via TKF / RAG / KAG.
+
+  HARD GUARDRAILS — every recommended layout MUST satisfy:
+    1. SOLVABLE — the BFS expert that will collect the demo must reach
+       the goal:
+         * start_pos and goal_pos in [0..4] x [0..4]
+         * Manhattan(start, goal) >= 4
+         * EXACTLY 3 distinct fire cells, none equal to start or goal
+         * at least one fire-free path from start to goal
+       The orchestrator runs an A* solvability check and silently skips
+       unsolvable layouts. Do not propose layouts where every path is
+       fire-blocked.
+    2. UNIQUE WITHIN YOUR OUTPUT — each recommended layout must teach
+       something the others do not. Two layouts with the same corridor
+       and fire-blocking pattern that differ only by one cell are
+       duplicates.
+    3. NOT IDENTICAL to a layout already in the failures list above
+       (those are listed as the GROUND for cluster reasoning, not as
+       prescriptions to retrace one-for-one). The whole point of
+       dynamic-pool expansion is to grow the distribution, not duplicate
+       what is already there.
+    4. INFORMATIVE WRT THE HIDDEN HELD-OUT DISTRIBUTION — the held-out
+       set is drawn from the same family (5x5, 3 randomised fires,
+       randomised start/goal with Manhattan >= 4). Pick layouts whose
+       failure-mode coverage is broad: a layout teaching the policy to
+       route around a left-edge fire cluster will help on any held-out
+       configuration with a similar pattern.
+
+  COUNT GUARDRAIL — minimum but ADEQUATE:
+    * Do NOT prescribe just 1 or 2 layouts in total. Single-digit
+      additions almost never close the held-out gap on a randomised
+      distribution; the policy will memorise them and fail on
+      neighbouring configs.
+    * Do NOT pad to look thorough. Each layout costs one expert query
+      + one retraining sample + one extra rollout episode every future
+      round (because it stays in the pool).
+    * Aim for the SMALLEST set that genuinely covers every distinct
+      failure mode you have identified, with enough variety per mode
+      (typically 2-4 layouts per mode) that the policy cannot memorise
+      individual configurations.
+
+  HOW TO USE THE TKF / KAG / RAG SIGNALS TOGETHER:
+    * TKF NOT_FOUND on corridor X -> add at least 2 layouts targeting X.
+    * TKF PARTIAL on corridor X with one demo angle -> add at least 1
+      layout targeting a DIFFERENT angle.
+    * RAG shows this failure recurred over multiple rounds -> stronger
+      evidence the corridor is genuinely under-covered; lean toward
+      more layouts there, not fewer.
+    * KAG corridor name disagrees with what the cluster looks like ->
+      still use the KAG name and explain why.
+
+  Output is consumed by the JSON-formatting aggregator that is told not
+  to contradict you. Be specific so the JSON stage has nothing to invent.

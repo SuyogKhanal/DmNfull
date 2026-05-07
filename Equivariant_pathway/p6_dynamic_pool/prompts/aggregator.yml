@@ -1,0 +1,65 @@
+# Final structured prescription addendum for p6_dynamic_pool. Appended to
+# pipeline/aggregator.py:final_structured_prescription when
+# prompt_addendum_aggregator is set.
+addendum: |
+  -------------------------------------------------------------------
+  P6 DYNAMIC-POOL STRUCTURED PRESCRIPTION DIRECTIVE
+  -------------------------------------------------------------------
+  ROLE OF THIS STAGE:
+  Format the cross-episode reasoning's prescription as JSON. You are NOT
+  inventing prescriptions — every layout must be derivable from the
+  cross-episode reasoning, the per-episode FINAL_REC table, the per-
+  failure layouts block, and the KAG / RAG / TKF context blocks.
+
+  WHY THIS PIPELINE EXISTS — dynamic-pool expansion against saturation:
+  Layouts in `recommended_layouts` will be APPENDED to the active
+  correction pool. Next round the policy will be rolled out on the
+  expanded pool. Demos are also collected on these layouts and the
+  policy is retrained from scratch on the cumulative bank. The held-out
+  50 layouts remain untouched until final eval.
+
+  HARD GUARDRAILS — every layout in `recommended_layouts` MUST satisfy:
+    1. SOLVABLE: bounds (0..4 x 0..4), Manhattan(start, goal) >= 4,
+       exactly 3 distinct fire cells none equal to start/goal, at least
+       one fire-free path. Invalid layouts are dropped + warned by
+       _validate_layout, and unsolvable layouts are skipped at BFS-
+       collection time. Either way they are wasted slots that also
+       wasted a future rollout episode (because the dynamic pool grows
+       monotonically).
+    2. UNIQUE WITHIN THIS OUTPUT: no two layouts in your JSON should
+       share corridor + fire-blocking pattern unless their start/goal
+       directions differ.
+    3. NOT a verbatim copy of any failure layout in the PER-FAILURE
+       LAYOUTS block above. Those are listed there to ground your
+       cluster reasoning, NOT as prescriptions.
+    4. INSIDE the failure-mode envelope identified by cross-episode
+       reasoning. If cross-episode reasoning says cluster A is a left-
+       edge fire-block failure, your layouts for cluster A must
+       exercise that.
+
+  COUNT DISCIPLINE — mirror cross-episode reasoning:
+    * Cross-episode reasoning is responsible for the holistic minimum.
+      If it prescribed N layouts across K clusters, do NOT collapse to
+      fewer.
+    * Do NOT shrink to 1-2 layouts overall — that does not close the
+      held-out gap on a randomised distribution.
+    * Do NOT pad either. Every extra layout costs one expert query, one
+      retraining sample, and one extra rollout episode every future
+      round (the pool grows monotonically).
+    * total_demonstrations_needed MUST equal the sum of all
+      `demonstration_prescriptions[].n_repetitions`.
+
+  HOW TO CITE TKF / KAG / RAG IN THE JSON:
+    * cluster.corridor: KAG corridor name when KAG is provided.
+    * cluster.source_final_recs: corridor strings from the FINAL_REC
+      table for episodes in that cluster, IN ORDER.
+    * demonstration_prescriptions[].rationale: name the TKF verdict
+      (NOT_FOUND / PARTIAL / FOUND) when TKF is provided, OR the RAG
+      retrieval ranks (when RAG is provided), OR both. The point is to
+      make the JSON output auditable — every layout traceable to a
+      specific signal.
+
+  INFORMATION YOU DO NOT HAVE:
+    No held-out layouts. No held-out success counts. Do NOT mention
+    held-out information in any field. Every grounded statement comes
+    from correction-pool failures + the demo-bank context blocks above.
