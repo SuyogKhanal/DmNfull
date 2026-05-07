@@ -149,15 +149,17 @@ def _initial_train(seed: int, epochs: int, max_demos: int) -> None:
         raise RuntimeError(f"initial training failed (rc={rc})")
 
 
-def _force_retrain(seed: int, epochs: int) -> None:
-    rc = _run([
+def _force_retrain(seed: int, epochs: int, train_from_scratch: bool) -> None:
+    cmd = [
         sys.executable, "-u", "-m", "Equivariant_pathway.train",
         "--demo_dir", str(DEMO_DIR),
         "--checkpoint_dir", str(CKPT_DIR),
         "--epochs", str(epochs),
         "--seed", str(seed),
-        "--resume",
-    ])
+    ]
+    if not train_from_scratch:
+        cmd.append("--resume")
+    rc = _run(cmd)
     if rc != 0:
         raise RuntimeError(f"forced retrain failed (rc={rc})")
 
@@ -190,26 +192,66 @@ def _eval_heldout(seed: int, tag: str) -> Dict:
     }
 
 
+CONFIG_PATH = ROOT / "config.yml"
+
+
+def _load_config() -> Dict:
+    """Load <method>/config.yml if present. Returns {} otherwise so the
+    hard-coded DEFAULT_* values become the defaults. Values from this
+    file act as argparse defaults; CLI flags override them."""
+    if not CONFIG_PATH.exists():
+        return {}
+    with open(CONFIG_PATH, "r") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _to_bool(x) -> bool:
+    if isinstance(x, bool):
+        return x
+    return str(x).strip().lower() in ("1", "true", "yes", "on")
+
+
 def main():
+    global TARGET_SR  # must precede the read in p.add_argument(default=...)
+    cfg = _load_config()
     p = argparse.ArgumentParser(description="Baseline-DAgger-only equivariant pipeline.")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--initial_demos", type=int, default=DEFAULT_INITIAL_DEMOS)
-    p.add_argument("--heldout_n", type=int, default=DEFAULT_HELDOUT_N)
-    p.add_argument("--initial_epochs", type=int, default=DEFAULT_INITIAL_EPOCHS)
-    p.add_argument("--round_epochs", type=int, default=DEFAULT_ROUND_EPOCHS)
-    p.add_argument("--train_every_n", type=int, default=DEFAULT_TRAIN_EVERY_N,
+    p.add_argument("--seed", type=int,
+                   default=int(cfg.get("seed", 0)))
+    p.add_argument("--initial_demos", type=int,
+                   default=int(cfg.get("initial_demos", DEFAULT_INITIAL_DEMOS)))
+    p.add_argument("--heldout_n", type=int,
+                   default=int(cfg.get("heldout_n", DEFAULT_HELDOUT_N)))
+    p.add_argument("--initial_epochs", type=int,
+                   default=int(cfg.get("initial_epochs", DEFAULT_INITIAL_EPOCHS)))
+    p.add_argument("--round_epochs", type=int,
+                   default=int(cfg.get("round_epochs", DEFAULT_ROUND_EPOCHS)))
+    p.add_argument("--train_every_n", type=int,
+                   default=int(cfg.get("train_every_n", DEFAULT_TRAIN_EVERY_N)),
                    help="Retrain after every N corrective demos collected GLOBALLY. "
                         "If a rollout pass ends with corrections >0 but no train fired, "
                         "one retrain is forced on the accumulated demo set.")
-    p.add_argument("--max_rounds", type=int, default=50,
+    p.add_argument("--max_rounds", type=int,
+                   default=int(cfg.get("max_rounds", 50)),
                    help="Hard guard against infinite loops; the loop normally exits "
-                        "when heldout success rate >= 0.90.")
-    p.add_argument("--max_steps", type=int, default=60,
+                        "when heldout success rate >= target_sr.")
+    p.add_argument("--max_steps", type=int,
+                   default=int(cfg.get("max_steps", 60)),
                    help="Per-episode step cap during rollout.")
+    p.add_argument("--target_sr", type=float,
+                   default=float(cfg.get("target_sr", TARGET_SR)),
+                   help="Stop the loop when heldout success rate >= this.")
+    p.add_argument("--train_from_scratch", type=_to_bool,
+                   default=_to_bool(cfg.get("train_from_scratch", True)),
+                   help="true = retrain from RANDOM INIT every round on the cumulative "
+                        "demo set (no warm start). false = warm-start from "
+                        "last_eq_policy.pth (faster, but inherits previous round's weights).")
     p.add_argument("--force_restart", action="store_true",
                    help="Wipe demos/, checkpoints/, results/, and the layout YAMLs "
                         "before running so every submission starts from scratch.")
     args = p.parse_args()
+    # The module-level TARGET_SR is referenced in a couple of places; the CLI
+    # value is what we actually compare against during the loop.
+    TARGET_SR = args.target_sr
 
     _section("BASELINE-DAGGER-ONLY EQUIVARIANT PIPELINE")
     _info(f"baseline_only root: {ROOT}")
@@ -299,6 +341,7 @@ def main():
             train_demo_paths=None,
             epochs=args.round_epochs,
             n_episodes=args.heldout_n,
+            train_from_scratch=args.train_from_scratch,
         )
         n_corr = int(summary.get("n_corrected_in_pass", 0) or 0)
         n_train = int(summary.get("n_train_calls", 0) or 0)
@@ -311,7 +354,7 @@ def main():
         if n_corr > 0 and n_train == 0:
             _info(f"pass collected {n_corr} corrections (< {args.train_every_n}); "
                   f"forcing one retrain on the accumulated demo set.")
-            _force_retrain(args.seed, args.round_epochs)
+            _force_retrain(args.seed, args.round_epochs, args.train_from_scratch)
 
         post_metrics = _eval_heldout(args.seed + rnd, tag=f"round_{rnd:03d}")
         n_demos = _count_demos()

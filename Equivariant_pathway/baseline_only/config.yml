@@ -1,0 +1,45 @@
+# baseline_only configuration.
+#
+# Every value here can be overridden on the command line (e.g.
+# `--initial_epochs 300`). When unset on the CLI, the value below is used.
+# Anything not listed here falls back to the hard-coded default in
+# Equivariant_pathway/baseline_only/pipeline.py.
+
+# ---- Layouts ----
+initial_demos: 20         # number of training layouts (one BFS demo each)
+heldout_n: 50             # number of heldout layouts (eval set)
+
+# ---- Training epochs ----
+initial_epochs: 500       # epochs for the initial train on the 20 demos
+round_epochs: 500         # epochs PER RETRAIN once the DAgger loop kicks in.
+                          # Must be tuned alongside `train_from_scratch`:
+                          #   - train_from_scratch=true  -> set this near
+                          #     initial_epochs (e.g. 500); each retrain
+                          #     starts from random init and must converge.
+                          #   - train_from_scratch=false -> 100-150 is
+                          #     usually enough since each retrain warm-
+                          #     starts from the previous best weights.
+
+# ---- DAgger loop ----
+train_every_n: 10         # retrain after every N corrective demos collected
+                          # globally; if a pass ends with fewer than N fresh
+                          # corrections, one retrain is forced anyway.
+max_rounds: 50            # hard guard against infinite loops; the loop
+                          # normally exits when heldout_sr >= target_sr.
+max_steps: 60             # per-episode step cap during rollout.
+target_sr: 0.90           # stop when heldout success rate >= this.
+
+# ---- Training mode ----
+# true  = fully retrain from RANDOM INIT every round on the cumulative
+#         demo set. No warm start, no inherited optimizer/scheduler state.
+#         This is what you want when comparing methods because it removes
+#         the "previous round's good weights" confound, but every retrain
+#         needs roughly initial_epochs epochs to converge from scratch.
+# false = warm-start from last_eq_policy.pth, reset optimizer/scheduler/
+#         epoch counter, train for `round_epochs` on the cumulative set.
+#         This is technically fine-tuning; it converges faster but the
+#         model state carries information from the previous round.
+train_from_scratch: true
+
+# ---- Misc ----
+seed: 0

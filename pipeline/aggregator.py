@@ -293,6 +293,26 @@ def final_structured_prescription(
     )
     aggregated_n = _aggregate_n_demos(per_ep_recs)
 
+    # Authoritative per-failure layout coordinates. The cross-episode
+    # reasoning text already discusses these layouts in prose, but the
+    # JSON producer would otherwise have to extract numeric coordinates
+    # from natural language — a known source of hallucinations. Giving
+    # it the verbatim start_pos / goal_pos / fire_positions for every
+    # confirmed failure removes that ambiguity. The block is appended
+    # whether or not an addendum is set, so legacy callers also benefit.
+    dyn_lines = []
+    for es in failure_summaries:
+        eid = es.get("episode_id")
+        if eid not in failure_ids_set:
+            continue
+        dyn = es.get("dynamic_config", {}) or {}
+        dyn_lines.append(
+            f"  ep={eid}  start={dyn.get('start_pos','?')}  "
+            f"goal={dyn.get('goal_pos','?')}  "
+            f"fires={dyn.get('fire_positions','?')}"
+        )
+    dyn_table = "\n".join(dyn_lines)
+
     kag_block = ""
     if kag_context and kag_context.strip():
         kag_block = (
@@ -307,6 +327,9 @@ def final_structured_prescription(
         f"{kag_block}"
         f"CROSS-EPISODE REASONING (primary source):\n{cross_reasoning}\n\n"
         f"PER-EPISODE FINAL_REC TABLE (authoritative, do not contradict):\n{rec_table}\n\n"
+        f"PER-FAILURE LAYOUTS (verbatim coordinates — use these directly when grounding\n"
+        f"recommended_layouts in a specific failure rather than re-extracting from prose):\n"
+        f"{dyn_table}\n\n"
         f"AGGREGATED n_demos (median rounded up across the FINAL_RECs above): {aggregated_n}\n\n"
         f"CONFIRMED FAILURE EPISODE IDs: [{valid_ids_str}]\n"
         f"Each cluster's episodes_in_cluster MUST only contain IDs from that list.\n\n"
