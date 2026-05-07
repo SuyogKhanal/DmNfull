@@ -187,11 +187,16 @@ def cross_episode_reasoning(
     "   under-prescribing helps — be honest about the gap each layout closes."
     )
 
-    # Optional gated addendum: callers (e.g. Equivariant_pathway/p4_only) may
-    # supply llm_cfg["prompt_addendum_aggregator"] to add a run-specific
-    # directive (e.g. holistic sample-efficiency emphasis). Empty / missing
-    # leaves the legacy prompt untouched.
-    addendum = str(llm_cfg.get("prompt_addendum_aggregator", "") or "").strip()
+    # Optional gated addendum. The cross-episode stage prefers
+    # llm_cfg["prompt_addendum_cross_episode"] (so callers like
+    # Equivariant_pathway/p6_only can address this stage independently
+    # of the final JSON aggregator below). For backward compatibility
+    # with callers that only set prompt_addendum_aggregator (e.g.
+    # Equivariant_pathway/p4_only), we fall back to that key when
+    # prompt_addendum_cross_episode is unset.
+    addendum = str(llm_cfg.get("prompt_addendum_cross_episode", "") or "").strip()
+    if not addendum:
+        addendum = str(llm_cfg.get("prompt_addendum_aggregator", "") or "").strip()
     if addendum:
         user_content = f"{user_content}\n\n{addendum}"
 

@@ -1,0 +1,95 @@
+# P6 cross-episode reasoning addendum. Appended verbatim to the user prompt of
+# pipeline/aggregator.py:cross_episode_reasoning when
+# llm_cfg["prompt_addendum_cross_episode"] is set. Edit freely.
+addendum: |
+  -------------------------------------------------------------------
+  P6 CROSS-EPISODE PRESCRIPTION DIRECTIVE
+  -------------------------------------------------------------------
+  GOAL OF THIS STAGE:
+  Produce a HOLISTIC, MINIMAL set of NEW maze layouts the orchestrator
+  should hand to the BFS expert. Those demos will be added to the demo
+  bank and the policy will be retrained from scratch on the cumulative
+  set. Your output is NOT a path or a set of actions — it is a list of
+  layouts (start_pos, goal_pos, fire_positions) that, taken together,
+  close the failure modes you have identified across the failures above.
+
+  WHY P6 EXISTS — overcoming correction-pool saturation:
+  Vanilla DAgger collects exactly one corrective demo per failed episode
+  in the correction pool. Once the policy passes that pool but still
+  fails on randomised held-out layouts, DAgger has nothing more to teach
+  — it is "saturated". P6 breaks the ceiling by prescribing layouts that
+  do NOT already exist in the correction pool but exercise the same
+  failure modes from fresh angles, so the policy learns the underlying
+  recovery behaviour instead of memorising correction-pool-specific
+  layouts.
+
+  CONTEXT YOU HAVE:
+    * Per-episode reasoning + per-episode FINAL_REC (corridor / steps /
+      n_demos) for every confirmed failure.
+    * Verbatim numeric layout (start, goal, fires) of every confirmed
+      failure — use these as ground truth when describing clusters.
+    * KAG corridor / failure-mode vocabulary (HIGH PRIORITY when present
+      — your cluster.corridor field MUST come from it).
+    * RAG retrievals exposing similar past failures.
+    * TKF demo-coverage block: tells you which corridors are NOT_FOUND
+      / PARTIAL / FOUND in the existing demo bank. The bank is the de
+      facto training distribution; NOT_FOUND corridors are where new
+      layouts will pay off most.
+
+  CONTEXT YOU DO NOT HAVE (and MUST NOT FABRICATE):
+    * Any specific held-out layout.
+    * Any test-time success/failure count outside the correction pool.
+    * Any information about the policy's behaviour beyond what these
+      failure summaries report.
+  Every recommendation is grounded in correction-pool failures + the
+  demo bank exposed via TKF / RAG / KAG. The held-out set is the same
+  environment family (5x5 grid, 3 randomised fires, randomised start /
+  goal with Manhattan >= 4) — that is ALL you may assume about it.
+
+  GUARDRAILS — every recommended layout MUST satisfy:
+    1. SOLVABLE — the BFS expert that will collect the demo must reach
+       the goal:
+         * start_pos and goal_pos in [0..4] x [0..4]
+         * Manhattan(start, goal) >= 4
+         * EXACTLY 3 distinct fire cells, none equal to start or goal
+         * at least one fire-free path from start to goal exists
+       The orchestrator runs an A* solvability check and silently skips
+       unsolvable layouts (= wasted prescription slot), so do not
+       propose layouts where every path is fire-blocked.
+    2. UNIQUE — each recommended layout must teach something the others
+       do not. Two layouts with the same corridor and same fire-blocking
+       pattern that differ only by one cell are duplicates.
+    3. INFORMATIVE WRT THE HELD-OUT DISTRIBUTION — vary corridors,
+       fire arrangements, start/goal directions. Pick layouts whose
+       generalisation surface is broad: a layout that teaches the policy
+       to route around a fire cluster on the LEFT edge will help on any
+       held-out layout with a similar fire pattern.
+    4. NOT a copy of any specific correction-pool failure layout. The
+       point of P6 is to generalise away from the pool, not to retrace
+       its failures one by one.
+
+  COUNT GUARDRAIL — minimum but ADEQUATE:
+    * Do NOT prescribe just 1 or 2 layouts in total. One or two demos
+      almost never closes the held-out gap on a randomised distribution
+      — the policy will memorise them and fail on neighbouring configs.
+    * Do NOT pad to look thorough. Each extra layout costs one BFS
+      expert query + one retraining sample.
+    * Aim for the SMALLEST set that genuinely covers every distinct
+      failure mode you have identified, with enough variety per mode
+      (typically 2-4 layouts per mode) that the policy cannot memorise
+      individual configurations.
+
+  HOW TO USE THE TKF / KAG / RAG SIGNALS TOGETHER:
+    * TKF NOT_FOUND on corridor X -> add at least 2 layouts targeting
+      corridor X.
+    * TKF PARTIAL on corridor X with one demo angle -> add at least 1
+      layout targeting a DIFFERENT angle of corridor X.
+    * KAG corridor name disagrees with what the failure cluster looks
+      like -> still use the KAG name and explain why.
+    * RAG retrievals show this failure recurred across multiple past
+      runs -> stronger evidence the corridor is genuinely under-covered;
+      lean toward more layouts there, not fewer.
+
+  Output is consumed by the JSON-formatting aggregator, which is told
+  not to contradict you. Be specific so the JSON stage has nothing to
+  invent.
