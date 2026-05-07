@@ -68,6 +68,7 @@ RESULTS_DIR = ROOT / "results"
 BO_ROOT = PATHWAY_ROOT / "baseline_only"
 BO_TRAIN_YAML = BO_ROOT / "training_layouts.yaml"
 BO_HELDOUT_YAML = BO_ROOT / "heldout_layouts.yaml"
+BO_CORRECTION_YAML = BO_ROOT / "correction_layouts.yaml"
 BO_DEMOS = BO_ROOT / "demos"
 BO_CKPT = BO_ROOT / "checkpoints"
 
@@ -102,9 +103,10 @@ def _check_baseline_artifacts() -> None:
     demos in _bootstrap()."""
     missing = []
     for path, label in [
-        (BO_TRAIN_YAML,    "training_layouts.yaml"),
-        (BO_HELDOUT_YAML,  "heldout_layouts.yaml"),
-        (BO_DEMOS,         "demos/"),
+        (BO_TRAIN_YAML,      "training_layouts.yaml"),
+        (BO_HELDOUT_YAML,    "heldout_layouts.yaml"),
+        (BO_CORRECTION_YAML, "correction_layouts.yaml"),
+        (BO_DEMOS,           "demos/"),
     ]:
         if not path.exists():
             missing.append((label, str(path)))
@@ -234,18 +236,22 @@ def _bootstrap(seed: int, initial_epochs: int, initial_demos: int) -> None:
     _info(f"initial checkpoint trained at {dst_best} ({dst_best.stat().st_size} bytes)")
 
 
-def _rollout_for_analysis(seed: int, rollout_dir: Path, max_steps: int = 60) -> None:
+def _rollout(seed: int, layouts_yaml: Path, rollout_dir: Path,
+             max_steps: int = 60) -> None:
+    """Pure policy rollout on the given layouts. Writes full_output.json
+    + per-episode trajectories. Caller decides whether the result feeds
+    LLM analysis (correction pool) or just an SR readout (heldout)."""
     rollout_dir.mkdir(parents=True, exist_ok=True)
     rc = _run([
         sys.executable, "-u", "-m", "Equivariant_pathway.rollout_test",
         "--checkpoint", str(CKPT_DIR / "best_eq_policy.pth"),
-        "--layouts",    str(BO_HELDOUT_YAML),
+        "--layouts",    str(layouts_yaml),
         "--out_dir",    str(rollout_dir),
         "--seed",       str(seed),
         "--max_steps",  str(max_steps),
     ])
     if rc != 0:
-        raise RuntimeError(f"rollout for analysis failed (rc={rc})")
+        raise RuntimeError(f"rollout on {layouts_yaml.name} failed (rc={rc})")
 
 
 def _read_sr(rollout_dir: Path) -> Dict:
@@ -404,9 +410,11 @@ def main():
     _bootstrap(args.seed, args.initial_epochs, args.initial_demos)
 
     _section("PHASE 2: ROUND 0 — HELDOUT EVAL ON SHARED STARTING MODEL", char="-")
-    round0_dir = RESULTS_DIR / "round_000_rollout"
-    _rollout_for_analysis(args.seed, round0_dir, max_steps=args.max_steps)
-    init_metrics = _read_sr(round0_dir)
+    # Round 0 is a PURE eval on the heldout pool. No analysis, no demo
+    # collection. This is the same starting point baseline_only logs.
+    round0_eval_dir = RESULTS_DIR / "round_000_heldout_eval"
+    _rollout(args.seed, BO_HELDOUT_YAML, round0_eval_dir, max_steps=args.max_steps)
+    init_metrics = _read_sr(round0_eval_dir)
     cum_demos = _count_demos()
     _info(f"INITIAL: cum_demos={cum_demos}  "
           f"heldout_sr={init_metrics['success_rate']:.3f} "
@@ -417,6 +425,7 @@ def main():
         "heldout_sr":          init_metrics["success_rate"],
         "heldout_n_successes": init_metrics["n_successes"],
         "heldout_n_episodes":  init_metrics["n_episodes"],
+        "correction_sr":       None,
         "n_prescribed_layouts": 0,
         "n_new_demos":         0,
     }]
@@ -427,26 +436,35 @@ def main():
         _make_chart()
         return
 
-    _section("PHASE 3: P4 LOOP", char="-")
+    _section("PHASE 3: P4 LOOP (correction = LLM analysis pool, eval = heldout)", char="-")
     for rnd in range(1, args.max_rounds + 1):
         _section(f"ROUND {rnd}", char="-")
         round_dir = RESULTS_DIR / f"round_{rnd:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
 
-        # Round 1 reuses round 0's rollout (identical model, same seed
-        # would yield the same trajectory anyway). Subsequent rounds
-        # produce a fresh rollout against the just-retrained model.
-        if rnd == 1:
-            rollout_dir = round0_dir
-        else:
-            rollout_dir = round_dir / "rollout"
-            _rollout_for_analysis(args.seed + rnd * 1000, rollout_dir, max_steps=args.max_steps)
-            pre_metrics = _read_sr(rollout_dir)
-            _info(f"round {rnd} rollout sr={pre_metrics['success_rate']:.3f}")
+        # Step 1. Rollout on the CORRECTION pool. This is the LLM's input
+        # — the failures it analyses come from this set, never from the
+        # heldout set. That's how we keep the heldout SR curve clean.
+        corr_rollout_dir = round_dir / "correction_rollout"
+        _rollout(
+            args.seed + rnd * 1000,
+            BO_CORRECTION_YAML,
+            corr_rollout_dir,
+            max_steps=args.max_steps,
+        )
+        corr_metrics = _read_sr(corr_rollout_dir)
+        _info(f"round {rnd} correction-pool rollout sr={corr_metrics['success_rate']:.3f} "
+              f"({corr_metrics['n_successes']}/{corr_metrics['n_episodes']})")
 
+        # Step 2. P4 LLM analysis over those correction-pool failures.
         analysis_dir = round_dir / "p4_analysis"
-        _analyze(rollout_dir, analysis_dir)
+        _analyze(corr_rollout_dir, analysis_dir)
 
+        # Step 3. Flatten the prescription into recommended_layouts.json
+        # and BFS-collect the prescribed layouts. Note: the prescribed
+        # layouts are NEW synthesised layouts proposed by the LLM, not
+        # the failed correction-pool layouts themselves. Either way, no
+        # heldout layout ever ends up in the demo set.
         rec_path = _flatten_recommended_layouts(analysis_dir)
         n_new_demos = 0
         n_prescribed = 0
@@ -461,13 +479,16 @@ def main():
             )
         _info(f"round {rnd}: prescribed_layouts={n_prescribed}  new_demos={n_new_demos}")
 
+        # Step 4. Retrain on (initial demos UNION every prescribed demo so far).
         if n_new_demos > 0:
             _retrain(args.seed, args.round_epochs, args.train_from_scratch)
         else:
             _info(f"round {rnd}: no new demos; skipping retrain.")
 
+        # Step 5. Heldout eval on a separate, never-trained-on layout set.
+        # This is the SR curve we plot.
         post_dir = round_dir / "heldout_eval"
-        _rollout_for_analysis(args.seed + rnd, post_dir, max_steps=args.max_steps)
+        _rollout(args.seed + rnd, BO_HELDOUT_YAML, post_dir, max_steps=args.max_steps)
         post_metrics = _read_sr(post_dir)
         cum_demos = _count_demos()
         history.append({
@@ -476,6 +497,7 @@ def main():
             "heldout_sr":          post_metrics["success_rate"],
             "heldout_n_successes": post_metrics["n_successes"],
             "heldout_n_episodes":  post_metrics["n_episodes"],
+            "correction_sr":       corr_metrics["success_rate"],
             "n_prescribed_layouts": n_prescribed,
             "n_new_demos":         n_new_demos,
         })
@@ -497,13 +519,14 @@ def main():
 
 def _persist_curve(history: List[Dict]) -> None:
     out = {
-        "method":         "p4_only",
-        "target_sr":      TARGET_SR,
-        "demo_dir":       str(DEMO_DIR),
-        "checkpoint_dir": str(CKPT_DIR),
-        "heldout_yaml":   str(BO_HELDOUT_YAML),
-        "training_yaml":  str(BO_TRAIN_YAML),
-        "history":        history,
+        "method":          "p4_only",
+        "target_sr":       TARGET_SR,
+        "demo_dir":        str(DEMO_DIR),
+        "checkpoint_dir":  str(CKPT_DIR),
+        "heldout_yaml":    str(BO_HELDOUT_YAML),
+        "correction_yaml": str(BO_CORRECTION_YAML),
+        "training_yaml":   str(BO_TRAIN_YAML),
+        "history":         history,
     }
     with open(RESULTS_DIR / "learning_curve.json", "w") as f:
         json.dump(out, f, indent=2, default=str)

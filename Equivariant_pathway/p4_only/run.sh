@@ -48,9 +48,12 @@ echo "[$(date)]   results} are wiped and re-bootstrapped from baseline_only/"
 echo "[$(date)]   on every submission. baseline_only/ is read-only."
 
 if [ ! -f "Equivariant_pathway/baseline_only/heldout_layouts.yaml" ] \
+   || [ ! -f "Equivariant_pathway/baseline_only/correction_layouts.yaml" ] \
    || [ ! -d "Equivariant_pathway/baseline_only/demos" ]; then
-    echo "[$(date)] ERROR: baseline_only/ has not been run yet."
+    echo "[$(date)] ERROR: baseline_only/ has not been run with the new"
+    echo "[$(date)]        correction-pool architecture yet."
     echo "[$(date)] Need: Equivariant_pathway/baseline_only/heldout_layouts.yaml"
+    echo "[$(date)]       Equivariant_pathway/baseline_only/correction_layouts.yaml"
     echo "[$(date)]       Equivariant_pathway/baseline_only/demos/*.json"
     echo "[$(date)] Run Equivariant_pathway/baseline_only/run.sh first."
     exit 1
