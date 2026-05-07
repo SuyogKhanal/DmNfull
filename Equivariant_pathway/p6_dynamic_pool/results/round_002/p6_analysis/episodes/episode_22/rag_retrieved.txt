@@ -1,0 +1,27 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.954 run=p6_analysis ep=13 ---
+  Dynamic config: start=[1, 1] goal=[0, 4] fires=[['0', '2'], ['1', '3'], ['2', '1']]
+  Summary:        Root cause: The agent collided with fires due to early top-row bias and failure to commit to a robust corridor, causing dangerous detours in a dynamic fire layout. 
+
+Key configuration: Start at (1,1); goal at (0,4); fires at (0,2), (1,3), (2,1) on a 5x5 grid with no walls.
+
+Correct path: Stay in the left-edge corridor: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+Result: Following this corridor-based route would avoid central/top hazards and reliably reach the goal; the episode failed due to deviation toward the top row and ineffective detours.
+  Root cause:     pending
+
+--- rank=2 sim=0.937 run=p6_analysis ep=17 ---
+  Dynamic config: start=[2, 0] goal=[0, 3] fires=[['2', '4'], ['3', '2'], ['3', '3']]
+  Summary:        Root cause: The agent failed to adhere to a robust corridor strategy and drifted from the top-edge corridor early (Step 0), placing it near central/lower fires and making progress toward the goal unsafe. Key configuration: Start at (2,0), goal at (0,3), with fires at (2,4), (3,2), and (3,3); the episode ends unfavorably after 60 steps with a negative reward. What the correct path should have been: commit to the Top-edge Corridor by moving Up to (1,0) then to (0,0), followed by Right to (0,1), (0,2), and finally (0,3) to reach the goal while avoiding all fire tiles. This corridor-based route would minimize exposure to the central fire cluster seen in this configuration.
+  Root cause:     pending
+
+--- rank=3 sim=0.936 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent abandoned the safe Top-edge Corridor early, detouring from the top row to interior cells (e.g., (1,2)) and failing to avoid central fires, leading to a dead-end near a fire tile rather than reaching the goal.
+
+Key configuration: Start at (0,0) with goal at (2,4); fires located at (1,0), (2,3), and (3,0) create a central-fire cluster that makes interior routes risky and favor the top-edge path.
+
+Correct path: Stay on the top row along the corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4), then descend: (1,4) -> (2,4).
+
+Overall, the fix is to reinforce corridor adherence to the Top-edge Corridor across dynamic fire layouts to ensure robust goal attainment.
+  Root cause:     pending

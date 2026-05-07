@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 3
+demo_variations: rag rank=2 top_edge variant; rag rank=3 top_edge variant; rag rank=1 left_edge variant
+rationale: To avoid the central fire cluster, follow the Top-edge corridor as described in 'Top-edge corridor: Stay in row 0 while traversing to the goal column, then descend along that column'.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI veers right from the start (2,0) to (2,1) instead of moving Up to begin the top-edge corridor, which leads toward the central fire cluster and ends in a fire collision. The failure is tied to not choosing the top_edge corridor route when fires are arranged centrally.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- From the start (2,0), move Up to (1,0), then Up to (0,0), then travel right along the top row: (0,1), (0,2), and finally reach the goal at (0,3). This follows the top_edge corridor: stay on the top row to the goal column, then descend to the goal, avoiding central fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to prefer safe corridors, specifically the top_edge path, to avoid central hazards. The RAG results show two top_edge demonstrations (rank=2 and rank=3) that validate this corridor as a robust strategy across different start/goal/fire configurations, while rank=1 demonstrates an alternative left_edge option. Together they reinforce the principle that safest routes are along clearly defined safe corridors rather than cutting through central hazard zones.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs are used. Variation includes two top_edge corridor demonstrations (rag rank=2 and rag rank=3) to cover different dynamic layouts, and one left_edge corridor demonstration (rag rank=1) to provide a contrasting safe-route example. This ensures coverage of both the primary recommended corridor (top_edge) and an alternative safe corridor (left_edge) while respecting the RAG guidance and TKF coverage gap.

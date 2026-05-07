@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 2
+demo_variations: two variants: (A) start at (4,4) to (1,0) via top-edge corridor; (B) start at (3,4) to (1,0) via top-edge corridor
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to step into a fire when following the last leg toward the goal from near the right side, due to not consistently using a safe top-edge corridor; the fix centers on the top_edge corridor pattern.
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough keeps the agent on the top edge (row 0) to advance horizontally toward the goal column, then descends along that column to reach the goal, avoiding central fire tiles.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer a top-edge corridor strategy when central hazards exist, improving fire-avoidance generalization across randomized starts/goals/fires.
+4. HOW MANY walkthroughs are needed and how should they vary? 2 walkthroughs are provided (n_demos = 2) with variations in the starting row near the bottom-right region (variant A: start at (4,4); variant B: start at (3,4)) while applying the same top-edge corridor path to the goal.

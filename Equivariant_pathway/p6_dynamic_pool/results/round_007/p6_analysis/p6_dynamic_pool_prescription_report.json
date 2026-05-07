@@ -1,0 +1,121 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_007/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_007/p6_analysis",
+  "n_failures": 2,
+  "test_layout_failures": [
+    {
+      "episode_id": 0,
+      "maze_name": "heldout_001",
+      "start_pos": [
+        4,
+        4
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          1,
+          2
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          4,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 13,
+      "maze_name": "heldout_014",
+      "start_pos": [
+        1,
+        1
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 1,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              4,
+              4
+            ],
+            "goal_pos": [
+              1,
+              0
+            ],
+            "fire_positions": [
+              [
+                1,
+                2
+              ],
+              [
+                4,
+                0
+              ],
+              [
+                4,
+                2
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Ground the fail-safe corridor (left-edge) with explicit avoidance of three fire blocks so the agent learns to stick to the corridor when fires appear in adjacent inner cells."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "fire_block_left_edge_cluster",
+        "episodes_in_cluster": [
+          0,
+          13
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "The agent stepped into a FIRE tile in configurations where the left-edge corridor is expected to guide progress toward the goal, indicating poor fire-avoidance generalization in this region.",
+        "what_it_does_wrong": "Fails to consistently avoid the three fire placements while navigating the left-edge corridor, leading to terminal negative outcomes instead of reaching the GOAL.",
+        "source_final_recs": [
+          "corridor_left_edge",
+          "corridor_top_edge"
+        ]
+      }
+    ]
+  }
+}

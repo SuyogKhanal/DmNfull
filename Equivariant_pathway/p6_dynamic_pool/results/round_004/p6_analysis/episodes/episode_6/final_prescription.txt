@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)
+n_demos: 3
+demo_variations: rag rank=2 top_edge corridor demonstration; TKF NOT_FOUND -> 3 top-edge variants: exact path (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4); early descent (0,0)->(0,1)->(0,2)->(0,3)->(1,3)->(1,4); mid descent (0,0)->(0,1)->(0,2)->(1,2)->(1,3)->(1,4)
+rationale: 'Top-edge corridor: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to derail from the top-edge corridor (top row) early on, drifting toward the interior and failing to stay on the row that avoids central fires, as suggested by the observed mis-step around step 3 in the analysis. The chosen corridor to fix this is the top_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? A robust top-edge walkthrough sticks to the top row as much as possible: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4). This keeps the agent away from central fires and ends with a descent to the goal column.
+
+3. WHAT will the AI learn from seeing that walkthrough? The demonstrations reinforce staying on the top-edge corridor to avoid fire tiles and only descending at the final moment to reach the goal, aligning with the rank-2 top_edge retrieval guidance and addressing the kind of drift seen in the failure.
+
+4. HOW MANY walkthroughs are needed and how should they vary? 3 demonstrations are provided (n_demos = 3) to cover slight variations along the top-edge corridor: (a) the exact top-edge path, (b) an early descent at column 3, and (c) a mid-descent at column 2. This mirrors the RAG guidance to cover corridor-based variations and compensates for TKF coverage not fully addressing top-edge in isolation.

@@ -1,0 +1,21 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.965 run=p6_analysis ep=13 ---
+  Dynamic config: start=[1, 1] goal=[0, 4] fires=[['0', '2'], ['1', '3'], ['2', '1']]
+  Summary:        The failure was due to a fire collision: the agent moved Up into a fire tile at (0,2), terminating the episode and indicating a lack of generalized fire-avoidance under dynamic layouts. The episode started at (1,1) with the goal at (0,4) and fires at (0,2), (1,3), and (2,1). The correct behavior would have avoided central/top hazards by following a corridor-based route, instead of drifting toward the top row. A safe corridor path is to stay in the left-edge corridor down column 0, then traverse along the bottom row to the right, and finally ascend the right edge to reach the goal (e.g., (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4)). This avoids all fires and aligns with corridor-based safety guidance.
+  Root cause:     pending
+
+--- rank=2 sim=0.955 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        - Root cause: The agent failed to generalize fire avoidance under dynamic randomization, diverging early from the safe path (Step 1 went LEFT into (4,3) instead of the recommended UP to (3,4)), leading to later fire-adjacent risk and an eventual collision with a fire hazard.
+- Key configuration: Start at (4,4); goal at (1,0); fires at (1,2), (4,0), and (4,2); episode uses a randomized start/goal/fire layout with local 3x3 observations.
+- What the correct path should have been: Follow the top-edge corridor, starting with an upward move to reach the top corridor (e.g., (3,4) then (0,4) or near-top row), proceed horizontally along the top row toward the goal column, and finally descend along column 0 to reach (1,0) while avoiding the central fire at (1,2) and the bottom fires.
+- Rationale: A top-edge, corridor-consistent route would avoid central hazards and align with the demonstrated safe-start guidance, improving generalization across randomized fire layouts.
+  Root cause:     pending
+
+--- rank=3 sim=0.948 run=p6_analysis ep=6 ---
+  Dynamic config: start=[0, 0] goal=[1, 4] fires=[['1', '1'], ['2', '0'], ['3', '2']]
+  Summary:        - Root cause: The agent failed to generalize a safe corridor under dynamic start/goal/fire layouts, repeatedly oscillating near the start and deviating from the optimal top-edge path.
+- Key configuration: Grid 5x5 with start at [0,0], goal at [1,4], and fires at [(1,1), (2,0), (3,2)], creating central hazards the policy must avoid.
+- What went wrong: The earliest wrong decision was moving down from the start to (1,0), which placed the agent near fires and broke the top-edge corridor strategy.
+- Correct path: Follow the top-edge corridor: [0,0] -> [0,1] -> [0,2] -> [0,3] -> [0,4] -> [1,4], avoiding the fires along the way.
+  Root cause:     pending

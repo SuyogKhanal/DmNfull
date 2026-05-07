@@ -1,0 +1,31 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.976 run=p6_analysis ep=17 ---
+  Dynamic config: start=[2, 0] goal=[0, 3] fires=[['2', '4'], ['3', '2'], ['3', '3']]
+  Summary:        Root cause: The agent deviated from the top-edge corridor and wandered into the interior near fire, failing to follow the robust top-edge path.
+
+Key configuration: Start at (2,0) with the goal at (0,3); fires are placed to obstruct central areas, encouraging a top-edge traversal rather than interior routes.
+
+Correct path: Stay on the top edge: (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3).
+
+Resulting navigation rule: Use the top_edge corridor from the starting row to the goal column, then descend, avoiding fires on the interior.
+  Root cause:     pending
+
+--- rank=2 sim=0.968 run=p6_analysis ep=10 ---
+  Dynamic config: start=[1, 4] goal=[3, 0] fires=[['4', '0'], ['4', '3'], ['4', '4']]
+  Summary:        Root cause: The agent deviated from a safe corridor early on (Step 0) by moving left to (1,3) instead of initiating the Top-edge corridor, leading to suboptimal routing in a dynamic fire layout and eventual fire hazards.
+
+Key configuration: Start at [1,4], goal at [3,0], with fires at [4,0], [4,3], and [4,4]; episode lasted 60 steps and ended at [4,1], not reaching the goal.
+
+What the correct path should have been: Follow the Top-edge corridor—move Up to the top row, traverse left along row 0 toward the goal column, then descend along column 0 to reach [3,0]; e.g., (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0) -> (2,0) -> (3,0).
+  Root cause:     pending
+
+--- rank=3 sim=0.968 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent failed to maintain a safe top-edge corridor and made detours around nearby fires, with an implied corrective action at step 7 that did not align with a robust corridor, leading to a fire collision risk and ultimately a non-goal termination.
+
+Key configuration: Start at (0,0); fires at (1,0), (2,3), and (3,0); goal at (2,4). The episode’s hazards tempt moves toward central/left regions, but the fire cluster near the left and center makes a top-edge route preferable.
+
+Correct path: Follow the top-edge corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+
+Outcome: The policy failed to adhere to this safe corridor, resulting in a 60-step episode with negative reward and no goal reached.
+  Root cause:     pending

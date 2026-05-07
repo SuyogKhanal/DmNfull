@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 3
+demo_variations: Left-edge corridor corrective demos: exact path (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4); references rag rank=2 partial (top-edge insights), with rank 1 and rank 3 not applicable
+rationale: 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to misperceive the local neighborhood near the start (1,1) and initially drifts toward the inner region, risking nearby fires. The chosen corrective focus is the left_edge corridor, which hugs the left edge and bottom edge to route away from central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (1,1). Move left to (1,0), then descend down column 0 to (4,0). Traverse right along row 4 to (4,4), then climb up the right edge by going (3,4) -> (2,4) -> (1,4) -> (0,4) to reach the goal. This path keeps the agent away from central fires at (0,2), (1,3), and (2,1) by sticking to the left edge, then bottom edge, then up the far-right approach to the goal at (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The walkthrough demonstrates robust fire-avoidance through a concrete corridor (left_edge) route, reinforcing a safe habit when fires are distributed centrally. RAG results show some related insights: Rank 2 (ep=6) suggests top-edge corridors can be relevant in similar dynamic layouts, but the exact safe path here is the left-edge route that explicitly avoids central hazards; Rank 1 and Rank 3 do not map cleanly to this episode, so the left-edge demonstration provides targeted guidance where those retrieved cases don’t perfectly align.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 3 demonstrations are used. They all focus on the same left-edge corridor path to ensure the agent learns a stable, fire-avoiding routing strategy in this configuration. The variations line references the relevant RAG note (rank=2 partial) to acknowledge related ideas while keeping the core left-edge path as the primary corrective trajectory.

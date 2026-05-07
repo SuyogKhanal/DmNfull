@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(4,4)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)>
+n_demos: 1
+demo_variations: covers rag rank=2 top_edge variant
+rationale: Top-edge corridor chosen because 'Stay in row 0 while traversing to the goal column, then descend along that column'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI tends to hazard toward the right-edge path near (1,4) or struggle with choosing a safe corridor from the start at (4,4); in this scenario, the safest route is the top-edge corridor to avoid the fire at (1,4) and the other hazards.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the top-edge plan: from (4,4) move left to (4,3), then go up along column 3 to (0,3), and finally travel along the top row from (0,3) to (0,0) so you reach the goal without stepping on any fire.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the top-edge corridor when horizontal hazards block the right-edge column, using a vertical climb along a safe column (here, column 3) to reach row 0 and then finish along the top row, matching the safe-top-edge strategy shown in the RAG-top_edge variant.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local failure; variation is not required here, since the top-edge path demonstrated covers the identified hazard pattern for this episode. (If future episodes present different fire placements, additional demos covering alternate safe columns along the top edge would be added.)

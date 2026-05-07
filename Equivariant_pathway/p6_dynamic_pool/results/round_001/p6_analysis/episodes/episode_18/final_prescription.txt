@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: covers rag rank=1 left_edge variant; TKF FOUND left-edge corridor demonstration; path: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+rationale: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure centers on following a near-bottom corridor path (left_edge) to the goal in dynamic fire layouts. The analysis identifies the premature vertical deviation near step 5 as the misgeneralization point, and favors a left-edge corridor-based plan to dodge central fires.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough should follow the left-edge corridor: start at (4,0), then move along the bottom row to (4,3), and then climb up the safe column to the goal at (0,3) via (3,3) -> (2,3) -> (1,3) -> (0,3). This demonstrates committing to the corridor approach to avoid fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to generalize fire-avoidance by sticking to a corridor-based route when central fires block direct paths, aligning with the rank-1 rag guidance that favors a left-edge corridor in similar configurations.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 is chosen since TKF shows a FOUND demonstration for the left-edge corridor; this single, targeted demo covers the essential corridor strategy without padding. If more coverage were desired, one could add another demo in the same corridor with a slightly different start/goal alignment, but for this failure, a single precise left-edge corridor demo suffices.

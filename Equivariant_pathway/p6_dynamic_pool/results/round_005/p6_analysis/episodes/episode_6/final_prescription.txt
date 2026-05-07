@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)>
+n_demos: 1
+demo_variations: covers rag rank=1 top-edge corridor variant; TKF FOUND top-edge coverage (1 demo)
+rationale: Top-edge corridor is selected to enforce a clean, hazard-avoiding route along the top row, as validated by the KAG fact 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It struggles to commit to a safe corridor and tends to linger near the start, particularly failing to consistently follow the top-edge corridor when central fires are nearby.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the top-edge corridor: start at (0,0), move right along the top row to (0,4), then descend to the goal at (1,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to a safe corridor (top-edge) under dynamic fire layouts, aligning with the rank-1 RAG example that recommends this corridor to avoid central hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Use 1 demo (n_demos = 1) focusing on the top-edge corridor path; variations can be minor (slightly perturb around near-top-row steps) but must return to the top-edge route to reach the goal.

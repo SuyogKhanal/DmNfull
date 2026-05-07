@@ -1,0 +1,22 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)
+n_demos: 2
+demo_variations: covers rag rank=3 top_edge corridor variant; covers rag rank=2 top_edge corridor variant
+rationale: Use the Top-edge corridor as described in KAG: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles to commit to the Top-edge corridor when Fires occupy the middle rows; it diverges away from the top-edge plan and ends up near central hazards (not reaching the goal) in this episode.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A solid walkthrough stays on the top edge as soon as possible: from the start (4,4) move up the rightmost column to reach the top edge, then traverse left along the top row to reach the goal at (0,0). The exact demonstrator path should be:
+  (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0).
+  This path avoids central fires and keeps the bulk of movement along the safe top-edge corridor.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The RAG retrievals emphasize that mis-generalization of fire-avoidance under dynamic fires is addressed by a corridor-based strategy, especially the Top-edge corridor. Rank-3 retrieval explicitly supports using a top-edge path to avoid central hazards, and rank-2 retrieval also highlights the same corridor as a robust pattern. By demonstrating the top-edge path, the agent learns a generalizable safe pattern across Fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 2. Both demonstrations should center on the Top-edge corridor to cover variation within that corridor. Variation 1 mirrors the exact Top-edge path described above (top-edge traversal to the goal). Variation 2 also uses the Top-edge corridor but is framed as a second retrieval-aligned example to ensure coverage across rank-3 and rank-2 evidence, reinforcing the same corridor-based strategy.

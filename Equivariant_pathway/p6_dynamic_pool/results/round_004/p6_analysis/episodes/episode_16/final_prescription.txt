@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: rag rank=3 left_edge variant (FOUND via TKF); rank=2 top_edge variant not applicable due to fire placement in this episode
+rationale: Follow the Left-edge corridor as defined in KAG: 'Left-edge corridor: Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens at the start area around (1,3) when the agent deviates from the safe left-edge pathway and moves toward the center by stepping to (2,2) instead of moving left to align with the left-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would rapidly align with the left-edge corridor: from (1,3) move left to (1,2), then to (1,1), then to (1,0), then descend down the leftmost column to (4,0) which is the GOAL, ensuring you never step on the fires at (0,1), (0,3), or (4,1).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to commit to the left-edge corridor when fires block more central routes, which is supported by the RAG retrieval showing a rank-3 left-edge variant that successfully uses the left-edge path to reach the goal, and by the rank-2 top-edge example illustrating that other corridors can be viable in different configurations but may be blocked here by a fire.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 1 demonstration is used (n_demos = 1) because this failure is localized to one corridor and one directional deviation. The variation referenced is the left-edge corridor demonstration (rank=3 left-edge variant) as the applicable fix, with rank-2 top-edge cases noted as not applicable for this episode.

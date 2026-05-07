@@ -1,0 +1,68 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode start: The agent begins at position [1, 3] (row 1, col 3). There is an immediate Fire Hazard directly above at (0,3). The goal is at [4,0], and fires are at (0,1), (0,3), and (4,1).
+
+- Step 0 observation (start_frame, step 0): Agent at (1,3). Immediate hazard above: Fire at (0,3); other adjacent cells: (2,3) open, (1,2) open, (1,4) open. The first corrective demonstration proposed to the human demonstrator was to move Down to (2,3) in order to avoid the near-term fire and progress toward the goal.
+
+- Step 1 observation (highest_loss_frame, step 1): Agent at (1,2). Nearby hazards include fires at (0,1) and (0,3); the cell left of the agent (1,1) is flagged as potentially hazardous in the frame, while (1,3) is now behind the agent. Distances to goal: Manhattan distance from (1,2) to (4,0) is 5. The corrective demonstration recorded for this step moved Down to (2,2).
+
+- Step 2–Step 4 (inferred path consistent with the corrective notes and the end frame): From the corrective moves, a plausible continuation is:
+  - Step 2: (2,2)
+  - Step 3: (3,2)
+  - Step 4: (4,2)
+  These steps align with the narrative of “first corrective move” at step 1 (to (2,2)) and then continuing downward along the same column. 
+
+- Step 5 end frame: The end_frame reports the agent at (4,1). This position is a Fire tile, implying the episode terminated as a Fire collision on or at this final move (consistent with the total episode reward of -10.50, i.e., -10 Fire penalty plus step penalties).
+
+- Summary trajectory (consistent with the frame data and the corrective notes):
+  - Step 0: (1,3)
+  - Step 1: (1,2)
+  - Step 2: (2,2)
+  - Step 3: (3,2)
+  - Step 4: (4,2)
+  - Step 5: (4,1) [entered Fire, episode terminated]
+
+- Key take-away from the trajectory: The agent moved along a vertical midline (columns around 2) instead of following a corridor that would stay clear of the three fires, ultimately stepping into a fire at the end. The observed path did not persist on any single corridor that aligns with the safe corridor templates in the KAG.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a safe corridor path:
+  - Corridor considered safe in this episode context is the Left-edge corridor, which would keep the agent in column 0 and descend to the bottom before traversing row 4 toward the goal. The corridor path in coordinates is consistent with the following corridor path: (1,3) -> (1,2) -> (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0).
+  - The agent’s path (based on the step-by-step reconstruction) shows the first deviation from that corridor around Step 2: from (1,2) the agent moves Down to (2,2) instead of Left to (1,1). So:
+    - Step 2 action taken: DOWN to (2,2)
+    - Expected safe action (corridor-guided): LEFT to (
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.673): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.665): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.664): A demonstration starting at (4, 4) with goal at (0, 3) and fires at [(2, 0), (2, 1), (4, 2)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 5 steps with actions: 4x UP, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.663): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 5 (similarity=0.663): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To safely navigate toward the goal while avoiding fire hazards, the agent should follow the safe left-edge corridor path by moving left from its starting position at (1,3) to (1,2). From there, it should continue moving leftward to stay close to the leftmost column, which provides a clear path free of fire tiles. This strategy helps the agent avoid the dangerous center area where fire risks are higher. By prioritizing this left-edge route, the agent will consistently steer clear of fire and find a reliable, hazard-free path to the goal. Practicing this corrective move of heading left before proceeding forward will improve safety and success in navigation tasks involving fire obstacles.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: rag rank=3 left_edge variant (FOUND via TKF); rank=2 top_edge variant not applicable due to fire placement in this episode
+rationale: Follow the Left-edge corridor as defined in KAG: 'Left-edge corridor: Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens at the start area around (1,3) when the agent deviates from the safe left-edge pathway and moves toward the center by stepping to (2,2) instead of moving left to align with the left-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would rapidly align with the left-edge corridor: from (1,3) move left to (1,2), then to (1,1), then to (1,0), then descend down the leftmost column to (4,0) which is the GOAL, ensuring you never step on the fires at (0,1), (0,3), or (4,1).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to commit to the left-edge corridor when fires block more central routes, which is supported by the RAG retrieval showing a rank-3 left-edge variant that successfully uses the left-edge path to reach the goal, and by the rank-2 top-edge example illustrating that other corridors can be viable in different configurations but may be blocked here by a fire.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 1 demonstration is used (n_demos = 1) because this failure is localized to one corridor and one directional deviation. The variation referenced is the left-edge corridor demonstration (rank=3 left-edge variant) as the applicable fix, with rank-2 top-edge cases noted as not applicable for this episode.

@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 3
+demo_variations: rag rank=3 top_edge: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4); rag rank=2 partial_top_edge: (0,0)->(0,1)->(0,2)->(0,3); rag rank=1 left_edge: (0,0)->(1,0)->(2,0)->(3,0)->(4,0)
+rationale: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drift away from a single, safe corridor and ends up near the upper-left quadrant (around (1,1)) with central fire tiles nearby (notably (1,2), (2,3), and (3,1)), instead of committing to a top-edge corridor that would steer it away from central hazards.
+
+2. WHAT should a good walkthrough look like in that area? A good walk is a steadfast Top-edge Corridor: stay on row 0 as you approach the goal column, then descend along that column to the goal. For this scenario, the demonstrated path is (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? The AI will learn to prefer a single, edge-hugging corridor (the Top-edge Corridor) under fire pressure, which aligns with the RAG evidence that rank-3 top-edge demonstrations are effective in similar fire layouts (and helps avoid the partial or left-edge misdirection shown in rank-1/2 examples).
+
+4. HOW MANY walkthroughs are needed and how should they vary? Use 3 demonstrations. Variation 1 reinforces the core top-edge route to the usual bottom-right goal (4,4). Variation 2 exercises the same corridor concept with a different goal (e.g., (4,0)) to show generalization of the corridor approach along the left end of the top-edge corridor. Variation 3 checks a top-edge goal along the top row (e.g., (0,4)) to confirm the corridor works when the goal lies on the top edge itself.

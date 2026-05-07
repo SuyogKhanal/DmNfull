@@ -1,0 +1,33 @@
+VISION REPORT
+Maze=heldout_010 Steps=5 Reward=-10.50 Success=False
+---
+--- start_frame frame step 0 ---
+1) Agent location and adjacent cells
+- Agent is at (0,0) (A). Adjacent candidates: (0,1) to the east and (1,0) to the south. The cells (−1,0) and (0,−1) are out of bounds (walls). There is a fire at (1,0) directly below, while (0,1) is empty and safe. The goal is not directly adjacent.
+
+2) Goal location and Manhattan distance
+- Goal is at (2,4). Manhattan distance from (0,0) is |2−0| + |4−0| = 6.
+
+3) Fire hazards relative to the agent
+- Fires are at (1,0), (2,3), and (3,0). The immediate hazard is (1,0), which is adjacent south of the agent. The other fires are farther away: (2,3) is distance 5, and (3,0) is distance 3–4 depending on path, so if a route veers south along the first column, you’ll encounter (3,0) later or (2,3) if you cut across. No walls block the top row.
+
+4) First corrective demonstration move
+- Action: Move Right to (0,1).
+- Justification: It immediately reduces the distance to the goal (to 5) and avoids the adjacent fire at (1,0). It also keeps you on a safe, open path toward the goal (towards the top row before dropping down). New distance would be |2−0| + |4−1| = 5.
+
+--- highest_loss_frame frame step 1 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells
+- Current position: (0,1). Adjacent in-bounds cells: down to (1,1) (open), left to (0,0) (open), right to (0,2) (open). Up would be outside the grid (wall). Nearby fires are at (1,0), (2,3), and (3,0); no fire occupies an adjacent cell right now. Goal is at (2,4), not adjacent.
+
+2) Goal location and Manhattan distance
+- Goal: (2,4). Manhattan distance from agent: |2-0| + |4-1| = 5.
+
+3) Fire hazards relative to the agent
+- Fires: (1,0) (distance 2), (3,0) (distance 4), (2,3) (distance 4). There is no immediate fire in an adjacent cell; fires are nearby but not occupying immediate moves. Path planning should avoid risky approaches toward (1,0) region and (2,3) if stepping closer.
+
+4) First corrective demonstration move
+- Action: RIGHT (0,1) -> (0,2). Justification: reduces the distance to the goal (5 → 4), stays clear of current fires, and proceeds along a safe, open top-row route toward (0,4) before descending to the goal at (2,4).
+
+--- end_frame frame step 5 ---

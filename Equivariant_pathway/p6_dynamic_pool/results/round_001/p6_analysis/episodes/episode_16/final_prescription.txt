@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: covers rag rank=2 left_edge variant
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   The AI struggles to commit early to a hazard-avoiding corridor and often drifts toward central/fires; the safe cure is to lock into the left_edge corridor starting near the top-left quadrant.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+   A strong, safe walkthrough would start at (1,3) and quickly align with the left_edge corridor by moving left along the row to column 0, then descend straight down the column to the bottom: (1,3) -> (1,2) -> (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+   The AI learns to commit early to a hazard-avoiding corridor (left_edge) to bypass central fires, matching the rank-2 left_edge variant in the RAG evidence, which APPLIES for this kind of start/goal/fire arrangement.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+   Use 1 demonstration here (n_demos = 1) since this is a local failure focused on one corridor and one path. The single left_edge variant is the core corrective path; additional variations would only be needed if there were multiple distinct failure modes or start-goal-fire configurations to cover.

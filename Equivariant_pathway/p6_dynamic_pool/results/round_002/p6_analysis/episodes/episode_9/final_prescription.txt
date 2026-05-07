@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 3
+demo_variations: rag rank=1 top_edge corridor variants: A) start (0,0) path along top edge to (0,4), then down to (2,4); B) same top-edge path with a different central-fire placement in a companion episode to test generalization; C) start at (0,1) path along top edge to (0,4), then down to (2,4)
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' is the reason to pick the top-edge corridor for this configuration, as it avoids middle fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to leave the top-edge corridor and enter interior cells (near (1,2)) instead of sticking to the top row to skirt the middle-fire cluster; the safe path is the top_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would hug the top row: start at (0,0), move right along (0,1), (0,2), (0,3), (0,4), then drop down along column 4: (1,4) and finally reach the goal at (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to prefer the Top-edge corridor in the presence of middle-row fires, aligning with the RAG rank-1 case which demonstrates that staying on the top edge and descending at the far-right column is the robust route to the goal under central-fire configurations.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Three demonstrations are provided (n_demos = 3) to cover corridor adherence across slight variations: (A) same start and top-edge path, (B) same path with a different central-fire placement to test generalization, and (C) a close start variation along the top edge to ensure the corridor choice remains robust across similar starts.

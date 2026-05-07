@@ -1,0 +1,173 @@
+[
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 6,
+    "maze_name": "heldout_007",
+    "seed": 9006,
+    "total_steps": 60,
+    "total_reward": -8.95000000000001,
+    "success": false,
+    "start_pos": [
+      0,
+      0
+    ],
+    "goal_pos": [
+      1,
+      4
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "1"
+      ],
+      [
+        "2",
+        "0"
+      ],
+      [
+        "3",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent failed due to fire_collision and a failure to maintain the safe top-edge corridor, causing early divergence from the row-0 path and near-fire configurations around (1,0). \n\nKey configuration: Start at (0,0), goal at (1,4), fires at (1,1), (2,0), and (3,2) on a 5x5 grid with border walls.\n\nCorrect path: Stay on the top row: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4).",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 13,
+    "maze_name": "heldout_014",
+    "seed": 9013,
+    "total_steps": 2,
+    "total_reward": -10.2,
+    "success": false,
+    "start_pos": [
+      1,
+      1
+    ],
+    "goal_pos": [
+      0,
+      4
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "2"
+      ],
+      [
+        "1",
+        "3"
+      ],
+      [
+        "2",
+        "1"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    ],
+    "summary": "Root cause: The policy entered a fire tile at (1,3) due to a misstep from (1,2), failing to follow a safe corridor under a fire-laden layout.\n\nKey configuration: Start at (1,1), goal at (0,4), with fires at (0,2), (1,3), and (2,1); no walls in view, dynamic per-episode randomness.\n\nCorrect path: Follow the left-edge corridor to avoid central fires: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).\n\nIn short: commit to a safer left-edge corridor rather than pursuing the central/top-right route, which reduces fire-collision risk and aligns with the corridor-based generalization.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 30,
+    "maze_name": "llm_round006_idx000",
+    "seed": 9030,
+    "total_steps": 60,
+    "total_reward": -8.90000000000001,
+    "success": false,
+    "start_pos": [
+      0,
+      0
+    ],
+    "goal_pos": [
+      0,
+      4
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "2"
+      ],
+      [
+        "0",
+        "3"
+      ],
+      [
+        "1",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent failed to generalize fire-avoidance for this layout, getting stuck near the start instead of committing to a robust corridor that bypasses the central fire cluster.\n\nKey configuration: Start at (0,0), goal at (0,4); fires at (0,2), (0,3), and (1,2); early step suggested detour would be down to (1,0) but the agent moved right to (0,1) instead and remained near the barrier.\n\nCorrect path: Follow the left-edge corridor: (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).\n\nProgress note: The trajectory ended around the vicinity near (1,1) without reaching the goal, reflecting the failure to commit to the left-edge corridor under the central-fire layout.",
+    "root_cause": "pending"
+  }
+]

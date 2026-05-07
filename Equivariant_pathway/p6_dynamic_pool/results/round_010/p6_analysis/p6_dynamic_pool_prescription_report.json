@@ -1,0 +1,147 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_010/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_010/p6_analysis",
+  "n_failures": 2,
+  "test_layout_failures": [
+    {
+      "episode_id": 9,
+      "maze_name": "heldout_010",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        2,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    },
+    {
+      "episode_id": 30,
+      "maze_name": "llm_round006_idx000",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 2,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 2,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                3,
+                0
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Ground the agent in choosing the top-edge corridor early and avoiding lateral detours near the fire placement in ep9."
+          },
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                0,
+                2
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Ground the agent in choosing the left-edge/top-edge corridor when the leftmost fires constrain the top path, reinforcing a single-corridor commitment as in ep30."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_A",
+        "episodes_in_cluster": [
+          9,
+          30
+        ],
+        "root_cause": "timeout",
+        "corridor": "mixed",
+        "where_it_fails": "In both episodes, the agent failed to reach the goal within the 200-step limit, indicating hesitation/oscillation rather than successful corridor following.",
+        "what_it_does_wrong": "The policy does not commit to a single corridor path and oscillates between potential routes, causing excessive step counts before reaching the goal.",
+        "source_final_recs": [
+          "top_edge",
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}

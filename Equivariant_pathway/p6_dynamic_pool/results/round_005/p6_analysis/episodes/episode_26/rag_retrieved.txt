@@ -1,0 +1,21 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.962 run=p6_analysis ep=25 ---
+  Dynamic config: start=[4, 0] goal=[0, 4] fires=[['1', '2'], ['2', '1'], ['3', '3']]
+  Summary:        - Root cause: The analysis does not provide a root-cause explanation for episode 25; the root cause section is empty.
+- Key configuration: Start position, goal, and fire placements for this specific episode are not stated in the provided data.
+- Correct path: The analysis does not specify the correct path for this episode, nor which corridor or route should have been taken.
+- Summary note: To generate an accurate summary, the start/goal/fire details and the intended path need to be supplied.
+  Root cause:     pending
+
+--- rank=2 sim=0.962 run=p6_analysis ep=22 ---
+  Dynamic config: start=[0, 0] goal=[4, 4] fires=[['1', '2'], ['2', '3'], ['3', '1']]
+  Summary:        The root cause was a misalignment with the safe corridor under dynamic fire placement: the agent initially moved down from the start (0,0) to (1,0), steering toward the central/hazardous area instead of committing to the top-edge corridor. Key configuration: start at (0,0), goal at (4,4), fires at (1,2), (2,3), (3,1); the agent’s late attempts to favor the top edge did not complete the top-edge route within 60 steps. The correct path should stay on the top row from the start: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This top-edge corridor avoids all central fires and reaches the goal efficiently within the step budget.
+  Root cause:     pending
+
+--- rank=3 sim=0.940 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        - Root cause: The agent failed to generalize fire avoidance under dynamic randomization, diverging early from the safe path (Step 1 went LEFT into (4,3) instead of the recommended UP to (3,4)), leading to later fire-adjacent risk and an eventual collision with a fire hazard.
+- Key configuration: Start at (4,4); goal at (1,0); fires at (1,2), (4,0), and (4,2); episode uses a randomized start/goal/fire layout with local 3x3 observations.
+- What the correct path should have been: Follow the top-edge corridor, starting with an upward move to reach the top corridor (e.g., (3,4) then (0,4) or near-top row), proceed horizontally along the top row toward the goal column, and finally descend along column 0 to reach (1,0) while avoiding the central fire at (1,2) and the bottom fires.
+- Rationale: A top-edge, corridor-consistent route would avoid central hazards and align with the demonstrated safe-start guidance, improving generalization across randomized fire layouts.
+  Root cause:     pending

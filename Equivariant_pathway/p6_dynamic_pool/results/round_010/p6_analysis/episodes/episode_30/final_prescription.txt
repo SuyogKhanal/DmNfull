@@ -1,0 +1,23 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)>
+n_demos: 3
+demo_variations: rag rank=1: top-edge hazard pattern; three left-edge corridor variants (baseline left-edge path; row-3 crossing variant; row-2 crossing variant)
+rationale: Adopt left-edge corridor to bypass top-edge fires, per KAG: 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to chase the top-edge corridor when the top row has fires (0,2) and (0,3), which leads toward danger and a dead-end near the hazard. This shows up as a high-loss moment early on (around step 3 at (0,1)) and a tendency to probe into the hazardous central area instead of detouring.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough starts by dropping down the left edge: (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0). Then move along the bottom row to the right: (4,1) -> (4,2) -> (4,3) -> (4,4). Finally ascend along the rightmost column back toward the goal: (3,4) -> (2,4) -> (1,4) -> (0,4). This path avoids the top-row fires at (0,2) and (0,3) and never steps on (0,2), (0,3), or (1,2).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The demonstrations reinforce hazard-avoidance by using the left-edge corridor as a safe detour when the top-edge route is blocked by fires. The RAG results show a recurring hazard pattern where staying on or near the top edge leads to fire collisions; the left-edge detour provides a robust alternative, and the three variations expose the policy to slight routing tweaks (baseline left-edge, row-3 crossing, row-2 crossing) to generalize across small layout changes.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 3. They vary as:
+  - Demo 1: baseline left-edge corridor path (the standard left-edge detour).
+  - Demo 2: left-edge detour with a row-3 crossing variant (uses a slightly different crossing strategy while staying on safe cells).
+  - Demo 3: left-edge detour with a row-2 crossing variant (another alternative safe crossing pattern).

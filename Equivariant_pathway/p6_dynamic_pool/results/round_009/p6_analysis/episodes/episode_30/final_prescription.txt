@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 3
+demo_variations: 'RAG rank=1 left_edge variant; rank=2 top_edge variant rejected; TKF NOT_FOUND for left_edge; three left_edge variations: A) baseline with fires at (0,2),(0,3),(1,2); B) baseline + extra fire at (2,3); C) baseline + extra fire at (1,1).'
+rationale: The left-edge corridor is chosen because 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI gets stuck near the start when central fires block the top row (especially at (0,2) and (0,3)) and a nearby fire at (1,2) creates a stubborn barrier around the start. This makes it fail to commit to the left-edge corridor path or reliably detour around the barrier.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would follow the left-edge corridor: start at (0,0), move down the first column to (4,0), cruise along the bottom row to (4,4), then go up the rightmost column to reach the goal at (0,4). The sequence is (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The RAG rank-1 case shows a left-edge corridor can robustly avoid central fires and reach the goal, reinforcing left-edge as a safe default in fire-dense layouts. The rank-2 top-edge path fails in this configuration (fires at (0,2)/(0,3)), explaining why the model should not rely on the top edge here. TKF confirms left-edge coverage is currently NOT_FOUND, so these left-edge demonstrations will fill that gap and generalize to variations with different minor fire placements (as reflected in the three demos).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs are used (as listed in FINAL_REC). They vary by slight changes to the fire placement to harden the left-edge corridor generalization: a baseline, one with an added fire at (2,3), and one with an added fire at (1,1). This keeps the core corridor constant while exposing the policy to nearby hazards, aligning with the RAG guidance and filling the TKF coverage gap.

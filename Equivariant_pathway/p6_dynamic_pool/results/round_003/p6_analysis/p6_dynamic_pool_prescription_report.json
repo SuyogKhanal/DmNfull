@@ -1,0 +1,321 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_003/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_003/p6_analysis",
+  "n_failures": 9,
+  "test_layout_failures": [
+    {
+      "episode_id": 0,
+      "maze_name": "heldout_001",
+      "start_pos": [
+        4,
+        4
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          1,
+          2
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          4,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    },
+    {
+      "episode_id": 5,
+      "maze_name": "heldout_006",
+      "start_pos": [
+        4,
+        2
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 4
+    },
+    {
+      "episode_id": 6,
+      "maze_name": "heldout_007",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        1,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 2
+    },
+    {
+      "episode_id": 9,
+      "maze_name": "heldout_010",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        2,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 10,
+      "maze_name": "heldout_011",
+      "start_pos": [
+        1,
+        4
+      ],
+      "goal_pos": [
+        3,
+        0
+      ],
+      "fire_positions": [
+        [
+          4,
+          0
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 13,
+      "maze_name": "heldout_014",
+      "start_pos": [
+        1,
+        1
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 2
+    },
+    {
+      "episode_id": 16,
+      "maze_name": "heldout_017",
+      "start_pos": [
+        1,
+        3
+      ],
+      "goal_pos": [
+        4,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    },
+    {
+      "episode_id": 17,
+      "maze_name": "heldout_018",
+      "start_pos": [
+        2,
+        0
+      ],
+      "goal_pos": [
+        0,
+        3
+      ],
+      "fire_positions": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          3,
+          3
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 18,
+      "maze_name": "heldout_019",
+      "start_pos": [
+        4,
+        0
+      ],
+      "goal_pos": [
+        0,
+        3
+      ],
+      "fire_positions": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 2,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              4,
+              0
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                2
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                3,
+                3
+              ]
+            ],
+            "n_repetitions": 2,
+            "rationale": "This layout forces the agent to consider the top-edge corridor while contending with FIRE placements that could tempt detours; tests safe corridor following and fire-avoidance in the top-edge cluster."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "top_edge_fire_cluster",
+        "episodes_in_cluster": [
+          0,
+          6,
+          9,
+          17
+        ],
+        "root_cause": "fm_fire_collision",
+        "corridor": "mixed",
+        "where_it_fails": "Agent repeatedly enters the TOP_EDGE corridor region and encounters FIRE placements along or near the corridor, leading to abrupt termination before reaching the goal.",
+        "what_it_does_wrong": "Policy selects top-edge corridor traversal in configurations where a FIRE hazard is present near the corridor, causing a collision rather than avoiding the hazard.",
+        "source_final_recs": [
+          "top_edge",
+          "top_edge",
+          "top_edge",
+          "top_edge"
+        ]
+      }
+    ]
+  }
+}

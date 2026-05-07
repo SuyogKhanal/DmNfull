@@ -1,0 +1,59 @@
+VISION REPORT
+Maze=heldout_014 Steps=2 Reward=-10.20 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis for start_frame (Pos: (1,1)):
+
+1) Agent location and adjacent cells
+- Agent at (1,1).
+- Adjacent: up (0,1) – safe/empty; down (2,1) – fire; left (1,0) – safe/empty; right (1,2) – safe/empty.
+- Nearby goal not adjacent; goal is at (0,4). Fires are at (0,2), (1,3), (2,1).
+
+2) Goal location and Manhattan distance
+- Goal at (0,4).
+- Manhattan distance from agent: |1-0| + |1-4| = 4.
+
+3) Fire hazards relative to the agent
+- Fire at (2,1): distance 1 (immediate risk if moving down).
+- Fire at (0,2): distance 2.
+- Fire at (1,3): distance 2.
+- Conclusion: the immediate threat is the cell below; the top-right/nearby fires constrain the straightforward top-row route.
+
+4) First corrective demonstration move
+- Action: Right (to 1,2).
+- Justification: avoids the immediate fire below, and begins a safe detour around the fires. The new route can proceed via (1,2) → (2,2) → (2,3) → (2,4) → (1,4) → (0,4) to reach the goal without stepping on a fire.
+
+--- highest_loss_frame frame step 1 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells
+- Current position: row 1, column 2 (cell labeled 1,2 in the frame).
+- Adjacent cells: up (0,2) is a fire; down (2,2) is empty; left (1,1) appears as a safe blue cell; right (1,3) is a fire. The agent is thus boxed on two sides by hazards (up and right) with two safe options (left or down).
+
+2) Goal location and Manhattan distance
+- Goal location: row 0, column 4 (cell 0,4 in the frame).
+- Manhattan distance from the agent: |0−1| + |4−2| = 1 + 2 = 3.
+
+3) Fire hazards relative to the agent
+- Fires at (0,2) and (1,3) are immediate hazards (distance 1). 
+- Fire at (2,1) is nearby (distance 2) and could become relevant if the agent shifts position. No walls indicated; fires constrain direct routes toward the goal.
+
+4) First corrective demonstration move
+- Action: Down (to 2,2).
+- Justification: It avoids stepping into adjacent fires (up/right) and begins a feasible detour path toward the goal via (2,3) → (2,4) → (1,4)
+
+--- end_frame frame step 2 ---
+Structured analysis for end_frame (step 2)
+
+1) Agent location and adjacents
+- Agent at (1, 3). Adjacent cells: Up (0, 3) – empty; Down (2, 3) – empty; Left (1, 2) – empty; Right (1, 4) – empty. No walls shown in immediate vicinity. Fires are located at (0, 2) and (2, 1); one of the listed fires would be at (1,3) but the agent currently occupies that tile, so it’s not an active fire this frame.
+
+2) Goal location and Manhattan distance
+- Goal at (0, 4). Current Manhattan distance = |1-0| + |3-4| = 2.
+
+3) Fire hazards relative to the agent
+- Active fires: (0, 2) and (2, 1). Distances to agent: to (0, 2) = 2 steps; to (2, 1) = 3 steps. Neither fire is adjacent to the agent now. If the agent moves to (0, 3), it becomes adjacent to (0, 2), increasing risk for the next step.
+
+4) First corrective demonstration move
+- Action: Move Up to (0, 3).
+- Justification: It shortens the remaining path to the goal (from distance 2 to 1) and keeps options open to finish with a single Right move to (0, 4). It avoids stepping toward any immediate fire hazard and preserves a safe route toward the goal.

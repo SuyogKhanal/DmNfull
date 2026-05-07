@@ -1,0 +1,116 @@
+[
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 9,
+    "maze_name": "heldout_010",
+    "seed": 10009,
+    "total_steps": 5,
+    "total_reward": -10.5,
+    "success": false,
+    "start_pos": [
+      0,
+      0
+    ],
+    "goal_pos": [
+      2,
+      4
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "0"
+      ],
+      [
+        "2",
+        "3"
+      ],
+      [
+        "3",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        0
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          0
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent left the safe top-edge corridor and descended toward the center, causing a fire collision at (2,3); this indicates poor generalization of fire-avoidance under dynamic fire layouts.\n\nKey configuration: Start at (0,0); goal at (2,4); fires at (1,0), (2,3), and (3,0).\n\nWhat should have happened: Stay on the top edge (row 0) as long as possible, e.g., (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4), then descend to the goal via (1,4) -> (2,4).\n\nCorrect path: (0,0) \u2192 (0,1) \u2192 (0,2) \u2192 (0,3) \u2192 (0,4) \u2192 (1,4) \u2192 (2,4).",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 30,
+    "maze_name": "llm_round006_idx000",
+    "seed": 10030,
+    "total_steps": 60,
+    "total_reward": -8.90000000000001,
+    "success": false,
+    "start_pos": [
+      0,
+      0
+    ],
+    "goal_pos": [
+      0,
+      4
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "2"
+      ],
+      [
+        "0",
+        "3"
+      ],
+      [
+        "1",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    ],
+    "summary": "The root cause was a failure to generalize fire-avoidance: the agent chased a top-edge path despite a hazardous cluster at (0,2) and (0,3), instead of detouring via the left-edge corridor. Key configuration: start at (0,0), goal at (0,4), with fires at (0,2), (0,3), and (1,2). The correct route would follow the left-edge corridor: (0,0)\u2192(1,0)\u2192(2,0)\u2192(3,0)\u2192(4,0)\u2192(4,1)\u2192(4,2)\u2192(4,3)\u2192(4,4)\u2192(3,4)\u2192(2,4)\u2192(1,4)\u2192(0,4), avoiding all fires. This detour keeps to safe cells and reaches the goal without stepping on fire tiles.",
+    "root_cause": "pending"
+  }
+]

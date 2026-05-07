@@ -1,0 +1,33 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (per KAG):
+  - Start: [4,4]; Goal: [1,0]; Fires: [ (1,2), (4,0), (4,2) ]; Walls elsewhere as per 5x5 grid; No goal reached within 60 steps (Success: False); Final pos reported as not available in the log, but end-frame state shows the agent at (1,3).
+  - Fires are present and must be avoided; stepping onto a FIRE tile terminates the episode with a large negative reward.
+  - The agent’s policy is vision-conditioned diffusion with a last-4 observations and a 3-step action horizon; the first action in the denoised sequence is executed each step.
+
+- Step-by-step trajectory (restricted to documented anchors; gaps noted):
+  - Step 0 (start): Agent at (4,4). The episode’s design places three fires: (1,2), (4,0), (4,2).
+  - Step 0 action/demonstration (from the vision-grounded corrective-demos note): Up to (3,4). Rationale given for reducing distance to the goal and avoiding row-4 hazards.
+  - Step 1–4: No explicit coordinates documented. No step-by-step log available beyond the anchor steps.
+  - Step 5 (highest_loss_frame): Agent at (2,3). This frame is described as the point of highest predicted loss; the surrounding description notes proximity to the fire at (1,2) and the growing distance to the goal.
+  - Step 60 (end_frame): Agent at (1,3). At this moment the left neighbor (1,2) is a FIRE tile, the goal is at (1,0) but remains unreached. The end-state local description states the goal is not reached within 60 steps and there is an immediate hazard to the left.
+  - Summary of spatial dynamics from the frames:
+    - Early phase: The agent moves from (4,4) toward the top-right vicinity (e.g., (3,4) as per the corrective demo) but does not commit to a top-edge corridor path early enough.
+    - Mid-episode: By step 5 the agent sits at (2,3), closer to the central region where the fire at (1,2) becomes a salient risk if the agent continues leftward.
+    - Late-episode: By step 60 the agent reaches (1,3) with (1,2) as a direct left hazard, still a non-goal state; the top-left corridor remains blocked by the fire cluster and the direct left path to the goal is obstructed byFire. The log notes a prospective corrective move to (0,3) to circumvent left-side hazard, implying
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.651): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.651): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.649): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.649): A demonstration starting at (0, 2) with goal at (4, 1) and fires at [(0, 0), (0, 4), (3, 3)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 5 steps with actions: 4x DOWN, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.648): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To safely navigate around the left-side fire cluster, it is important to start by following the corridor along the top edge of the grid, staying close to row 0. This route keeps the agent clear of fire hazards blocking the direct path and provides a safer alternative to moving through the center where fire is nearby. The agent should move right along the top row at the beginning of its journey, hugging the corridor tightly to avoid stepping onto any fire tiles. Once past the fire cluster on the left side, the agent can then gradually move downward and around hazards toward the goal. This strategy improves the chances of reaching the goal successfully by avoiding risky central paths that lead too close to fire. Following the top-edge route early in the trajectory is key to a safe and successful navigation.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

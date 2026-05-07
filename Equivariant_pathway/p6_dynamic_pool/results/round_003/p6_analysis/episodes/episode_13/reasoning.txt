@@ -1,0 +1,36 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (per KAG and episode summary):
+  - Start position: (row, col) = (1, 1)
+  - Goal position: (0, 4)
+  - Fire hazards (tile_fire): (0,2), (1,3), (2,1)
+  - Episode outcome: failure, total steps = 2, total reward = -10.20; final position not reported
+  - The agent operates in a 5x5 grid with walls (not involved here), fires terminate on entry, and goal terminates with success.
+
+- Step-by-step trajectory (based on the provided step-log framing and vision notes):
+  - Step 0 (start_frame, step 0): Agent at (1,1). Fires present at (0,2), (1,3), (2,1). Manhattan distance to goal = |1-0| + |1-4| = 4.
+    - Vision analysis proposes a corrective move: Move Left to (0,1) (though this is a suggested corrective for later steps, not necessarily what occurred in the agent’s rollout).
+  - Step 1 (highest_loss_frame, step 1): Agent at (1,2). Adjacent checks show potential hazards to Up (0,2) and Right (1,3) depending on the exact map permutation; the visible immediate hazard mirrored in the frame is the cluster around (0,2)/(1,3). The goal remains at (0,4) with a distance now 3.
+    - Vision analysis proposes a corrective move: Move Left to (1,1) as a safe sidestep away from the proximal hazard cluster.
+  - Step 2 (end_frame, step 2): Agent at (1,3). This tile is a fire tile per the episode fire placements; entering it terminates the episode with large negative reward, consistent with FIRE_PENALTY. The reported episode total reward (-10.20) aligns with stepping onto a fire (-10) plus step penalties (-0.1 per step, totaling -0.2 across two steps).
+
+- Summary trajectory interpretation:
+  - Actual executed path (as observed by the step framing): (1,1) -> (1,2) -> (1,3)
+  - Termination: Entered a FIRE tile at step 2, consistent with a fire_collision failure mode.
+  - The short sequence confirms the policy did not reach the goal and fell into a fire, producing the negative
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.566): A demonstration starting at (0, 2) with goal at (4, 2) and fires at [(1, 1), (1, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.557): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.557): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.557): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.556): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To safely navigate around fire hazards, it is important to plan a route that avoids stepping directly on fire tiles such as those located at (0,2), (1,3), and (2,1). The demonstrations show successful paths that pass close to fire tiles but maintain a safe distance, effectively bypassing the hazards. For example, moving through central areas while carefully choosing steps can help reach the goal without colliding with fire. Actions often involve moving downward and to the right or left to avoid dangerous tiles, ensuring the agent does not terminate the episode prematurely. By following these examples, the agent learns to identify hazardous tiles and select safe moves that lead to the goal while steering clear of any fires. This approach teaches safe, strategic navigation that minimizes risk and maximizes success.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

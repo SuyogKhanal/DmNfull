@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 3
+demo_variations: rag rank=1 top_edge variant (PARTIAL); rag rank=1 left_edge variant (PARTIAL); TKF gap NOT_FOUND for left_edge corridor; add 3-left_edge demos to close coverage gap
+rationale: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion occurs in the left-edge corridor area. The agent previously selected a dangerous move into a fire near the center-right area instead of committing to a safe corridor path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough keeps the agent in the safe left-most column (column 0) all the way down to row 4, then travels right along row 4 to reach the goal column, and finally moves up to the goal at (0,4). The exact coordinate sequence is: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to prefer a safe corridor approach when fires appear near the central area, particularly prioritizing a left-edge corridor despite starting near the top-left. RAG rank=1 examples show partial alignment with corridor-based safety (top-edge and left-edge variants) and highlight the need to reinforce safe- corridor commitments under fire placements. The TKF evidence indicates current demos largely cover central_mixed paths, so the left-edge corridor demonstrations will fill that gap to improve generalization.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Three demonstrations are provided. They should cover the left-edge corridor under the same start/goal but with variations that stress corridor commitment (and explicitly acknowledge the RAG signals). The first two variations reference RAG rank=1 top_edge and left_edge variants to illustrate partial coverage, and the third variation explicitly notes the TKF NOT_FOUND gap for left_edge so that the agent sees the safe corridor path in a left-edge setting across episodes.

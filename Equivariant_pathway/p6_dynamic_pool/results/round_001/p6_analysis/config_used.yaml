@@ -1,0 +1,153 @@
+maze:
+  name: multimodal
+rollout:
+  n_episodes: 20
+  seed: 1000
+  checkpoint_path: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/checkpoints/best_eq_policy.pth
+tracking:
+  output_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_001
+pipeline:
+  use_vlm: true
+  use_reasoning: true
+  use_cross_episode_reasoning: true
+  use_kag: true
+  use_rag: true
+  use_tkf: true
+  use_plain_llm: true
+  use_aggregator: true
+llm:
+  prompt_addendum_reasoning: "-------------------------------------------------------------------\n\
+    P6 DYNAMIC-POOL PER-EPISODE ANALYSIS DIRECTIVE\n-------------------------------------------------------------------\n\
+    CONTEXT \u2014 what role this episode plays:\nThis failure was observed while\
+    \ the policy rolled out on the CURRENT\nCORRECTION POOL. Note that this pool is\
+    \ GROWING: every round the\ndownstream cross-episode reasoner adds new layouts\
+    \ to it, and the\npolicy must learn to handle the entire growing pool. Your analysis,\n\
+    combined with the other failures from this round, will inform which\nNEW layouts\
+    \ get appended to the pool next.\n\nCrucially: there is also a separate held-out\
+    \ evaluation set of 50\nlayouts that you will NEVER see and that no demo collector\
+    \ ever\ntouches. The held-out SR is the only published number. Do NOT\nspeculate\
+    \ about specific held-out configurations.\n\nWHAT TO REASON ABOUT:\n  * The FAILURE\
+    \ MODE this episode reveals \u2014 corridor side, fire-block\n    pattern, visual\
+    \ feature missed, recovery the policy lacks.\n  * Whether the TKF block (when\
+    \ present) flags this corridor / mode as\n    NOT_FOUND, PARTIAL, or FOUND in\
+    \ the existing demo bank. The bank\n    reflects everything the policy has been\
+    \ trained on so far. TKF\n    gaps are exactly what dynamic-pool expansion targets.\n\
+    \  * Whether the RAG retrievals indicate this is recurring across rounds\n   \
+    \ \u2014 recurrence is evidence that previous pool extensions did not\n    cover\
+    \ this mode adequately.\n  * Whether the KAG vocabulary contains a name that fits\
+    \ this episode;\n    use that name verbatim in section 5.\n\nWHAT NOT TO SPEND\
+    \ TOKENS ON:\n  * Long step-by-step \"how to walk through this maze\" instructions.\n\
+    \    Section 5 still requests a corridor + path as a sanity anchor \u2014\n  \
+    \  keep it short. Movement-level planning is the prescription stage's\n    job,\
+    \ not yours; your value is failure-mode identification grounded\n    in TKF /\
+    \ KAG / RAG signals.\n  * Held-out speculation. You do not see the held-out set.\n\
+    \nBe specific to THIS episode but written so the cross-episode reasoner\ncan extract\
+    \ the failure-mode signature in one pass."
+  prompt_addendum_cross_episode: "-------------------------------------------------------------------\n\
+    P6 DYNAMIC-POOL CROSS-EPISODE PRESCRIPTION DIRECTIVE\n-------------------------------------------------------------------\n\
+    WHAT THIS STAGE PRODUCES:\nA list of NEW maze layouts (start_pos, goal_pos, fire_positions)\
+    \ that\nwill be APPENDED to the active correction pool. The next round's\nrollout\
+    \ will run the policy on the EXPANDED pool \u2014 original layouts\nPLUS your\
+    \ additions PLUS additions from prior rounds. Demos are also\ncollected on your\
+    \ additions and the policy is retrained.\n\nThis is \"LLM-guided dynamic pool\
+    \ expansion\": you are not just adding\ntraining data, you are reshaping the training\
+    \ distribution itself.\n\nWHY THIS DESIGN \u2014 overcoming correction-pool saturation:\n\
+    Vanilla DAgger on a fixed pool plateaus once the policy passes every\nlayout in\
+    \ the pool, even if it still fails on a randomised held-out\nset. The pool is\
+    \ \"saturated\" \u2014 it has nothing more to teach. P6\ndynamic-pool expansion\
+    \ breaks that ceiling by extending the pool with\nlayouts the LLM identifies as\
+    \ currently uncovered.\n\nCONTEXT YOU HAVE:\n  * Per-episode reasoning + per-episode\
+    \ FINAL_REC for every confirmed\n    failure observed on the current pool.\n \
+    \ * Verbatim numeric layout (start, goal, fires) of every confirmed\n    failure\
+    \ (the PER-FAILURE LAYOUTS block).\n  * KAG corridor / failure-mode vocabulary.\n\
+    \  * RAG retrievals from past failure rounds.\n  * TKF demo-coverage block: NOT_FOUND\
+    \ / PARTIAL / FOUND verdicts on\n    corridors. The demo bank is the de facto\
+    \ training distribution;\n    NOT_FOUND corridors are the primary expansion targets.\n\
+    \  * (Implicit) the current correction pool grows monotonically across\n    rounds.\
+    \ Your additions become permanent members of it.\n\nCONTEXT YOU DO NOT HAVE (and\
+    \ MUST NOT FABRICATE):\n  * Any specific held-out layout.\n  * Any held-out success/failure\
+    \ count.\n  * Any policy behaviour outside the correction pool.\nHeld-out information\
+    \ is intentionally hidden so your prescriptions\ngeneralise honestly. Every recommendation\
+    \ is grounded in correction-\npool failures + the demo bank exposed via TKF /\
+    \ RAG / KAG.\n\nHARD GUARDRAILS \u2014 every recommended layout MUST satisfy:\n\
+    \  1. SOLVABLE \u2014 the BFS expert that will collect the demo must reach\n \
+    \    the goal:\n       * start_pos and goal_pos in [0..4] x [0..4]\n       * Manhattan(start,\
+    \ goal) >= 4\n       * EXACTLY 3 distinct fire cells, none equal to start or goal\n\
+    \       * at least one fire-free path from start to goal\n     The orchestrator\
+    \ runs an A* solvability check and silently skips\n     unsolvable layouts. Do\
+    \ not propose layouts where every path is\n     fire-blocked.\n  2. UNIQUE WITHIN\
+    \ YOUR OUTPUT \u2014 each recommended layout must teach\n     something the others\
+    \ do not. Two layouts with the same corridor\n     and fire-blocking pattern that\
+    \ differ only by one cell are\n     duplicates.\n  3. NOT IDENTICAL to a layout\
+    \ already in the failures list above\n     (those are listed as the GROUND for\
+    \ cluster reasoning, not as\n     prescriptions to retrace one-for-one). The whole\
+    \ point of\n     dynamic-pool expansion is to grow the distribution, not duplicate\n\
+    \     what is already there.\n  4. INFORMATIVE WRT THE HIDDEN HELD-OUT DISTRIBUTION\
+    \ \u2014 the held-out\n     set is drawn from the same family (5x5, 3 randomised\
+    \ fires,\n     randomised start/goal with Manhattan >= 4). Pick layouts whose\n\
+    \     failure-mode coverage is broad: a layout teaching the policy to\n     route\
+    \ around a left-edge fire cluster will help on any held-out\n     configuration\
+    \ with a similar pattern.\n\nCOUNT GUARDRAIL \u2014 minimum but ADEQUATE:\n  *\
+    \ Do NOT prescribe just 1 or 2 layouts in total. Single-digit\n    additions almost\
+    \ never close the held-out gap on a randomised\n    distribution; the policy will\
+    \ memorise them and fail on\n    neighbouring configs.\n  * Do NOT pad to look\
+    \ thorough. Each layout costs one expert query\n    + one retraining sample +\
+    \ one extra rollout episode every future\n    round (because it stays in the pool).\n\
+    \  * Aim for the SMALLEST set that genuinely covers every distinct\n    failure\
+    \ mode you have identified, with enough variety per mode\n    (typically 2-4 layouts\
+    \ per mode) that the policy cannot memorise\n    individual configurations.\n\n\
+    HOW TO USE THE TKF / KAG / RAG SIGNALS TOGETHER:\n  * TKF NOT_FOUND on corridor\
+    \ X -> add at least 2 layouts targeting X.\n  * TKF PARTIAL on corridor X with\
+    \ one demo angle -> add at least 1\n    layout targeting a DIFFERENT angle.\n\
+    \  * RAG shows this failure recurred over multiple rounds -> stronger\n    evidence\
+    \ the corridor is genuinely under-covered; lean toward\n    more layouts there,\
+    \ not fewer.\n  * KAG corridor name disagrees with what the cluster looks like\
+    \ ->\n    still use the KAG name and explain why.\n\nOutput is consumed by the\
+    \ JSON-formatting aggregator that is told not\nto contradict you. Be specific\
+    \ so the JSON stage has nothing to invent."
+  prompt_addendum_aggregator: "-------------------------------------------------------------------\n\
+    P6 DYNAMIC-POOL STRUCTURED PRESCRIPTION DIRECTIVE\n-------------------------------------------------------------------\n\
+    ROLE OF THIS STAGE:\nFormat the cross-episode reasoning's prescription as JSON.\
+    \ You are NOT\ninventing prescriptions \u2014 every layout must be derivable from\
+    \ the\ncross-episode reasoning, the per-episode FINAL_REC table, the per-\nfailure\
+    \ layouts block, and the KAG / RAG / TKF context blocks.\n\nWHY THIS PIPELINE\
+    \ EXISTS \u2014 dynamic-pool expansion against saturation:\nLayouts in `recommended_layouts`\
+    \ will be APPENDED to the active\ncorrection pool. Next round the policy will\
+    \ be rolled out on the\nexpanded pool. Demos are also collected on these layouts\
+    \ and the\npolicy is retrained from scratch on the cumulative bank. The held-out\n\
+    50 layouts remain untouched until final eval.\n\nHARD GUARDRAILS \u2014 every\
+    \ layout in `recommended_layouts` MUST satisfy:\n  1. SOLVABLE: bounds (0..4 x\
+    \ 0..4), Manhattan(start, goal) >= 4,\n     exactly 3 distinct fire cells none\
+    \ equal to start/goal, at least\n     one fire-free path. Invalid layouts are\
+    \ dropped + warned by\n     _validate_layout, and unsolvable layouts are skipped\
+    \ at BFS-\n     collection time. Either way they are wasted slots that also\n\
+    \     wasted a future rollout episode (because the dynamic pool grows\n     monotonically).\n\
+    \  2. UNIQUE WITHIN THIS OUTPUT: no two layouts in your JSON should\n     share\
+    \ corridor + fire-blocking pattern unless their start/goal\n     directions differ.\n\
+    \  3. NOT a verbatim copy of any failure layout in the PER-FAILURE\n     LAYOUTS\
+    \ block above. Those are listed there to ground your\n     cluster reasoning,\
+    \ NOT as prescriptions.\n  4. INSIDE the failure-mode envelope identified by cross-episode\n\
+    \     reasoning. If cross-episode reasoning says cluster A is a left-\n     edge\
+    \ fire-block failure, your layouts for cluster A must\n     exercise that.\n\n\
+    COUNT DISCIPLINE \u2014 mirror cross-episode reasoning:\n  * Cross-episode reasoning\
+    \ is responsible for the holistic minimum.\n    If it prescribed N layouts across\
+    \ K clusters, do NOT collapse to\n    fewer.\n  * Do NOT shrink to 1-2 layouts\
+    \ overall \u2014 that does not close the\n    held-out gap on a randomised distribution.\n\
+    \  * Do NOT pad either. Every extra layout costs one expert query, one\n    retraining\
+    \ sample, and one extra rollout episode every future\n    round (the pool grows\
+    \ monotonically).\n  * total_demonstrations_needed MUST equal the sum of all\n\
+    \    `demonstration_prescriptions[].n_repetitions`.\n\nHOW TO CITE TKF / KAG /\
+    \ RAG IN THE JSON:\n  * cluster.corridor: KAG corridor name when KAG is provided.\n\
+    \  * cluster.source_final_recs: corridor strings from the FINAL_REC\n    table\
+    \ for episodes in that cluster, IN ORDER.\n  * demonstration_prescriptions[].rationale:\
+    \ name the TKF verdict\n    (NOT_FOUND / PARTIAL / FOUND) when TKF is provided,\
+    \ OR the RAG\n    retrieval ranks (when RAG is provided), OR both. The point is\
+    \ to\n    make the JSON output auditable \u2014 every layout traceable to a\n\
+    \    specific signal.\n\nINFORMATION YOU DO NOT HAVE:\n  No held-out layouts.\
+    \ No held-out success counts. Do NOT mention\n  held-out information in any field.\
+    \ Every grounded statement comes\n  from correction-pool failures + the demo-bank\
+    \ context blocks above."
+tkf:
+  demo_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/demos
+rag:
+  bank_path: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/rag_bank/round_001

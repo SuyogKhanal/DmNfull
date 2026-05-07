@@ -1,0 +1,23 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 3
+demo_variations: covers rag rank=1 top_edge variant; covers rag rank=2 top_edge variant; rank 3 central_mixed variant rejected due to corridor mismatch
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends not to stick to the top-edge corridor when starting from the shown start positions, causing it to drift into non-ideal interior areas where fires are likely.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A strong walkthrough for the top_edge corridor is: from the start (2,0) go up to (0,0), then move along the top row to (0,3). Concretely: (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3), ensuring each step avoids FIRE cells.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- It will learn to prefer the top-edge corridor when fires block central regions, mirroring the successful patterns found in the RAG rank=1 and rank=2 examples that advocate staying on the top row and then dropping down toward the goal. Rank=3's central_mixed example is less relevant to top-edge guidance and is noted as not applied here.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- We need 3 demonstrations (n_demos = 3) to cover two solid top-edge corridor scenarios plus a third variation to test robustness. The variations include:
+  - Demo 1: same corridor and goal as the episode in the context (start [2,0], goal [0,3], fires [(2,4),(3,2),(3,3)]).
+  - Demo 2: another top-edge scenario (start [4,4], goal [1,0], fires [(1,2),(4,0),(4,2)]) to reinforce staying on the top edge.
+  - Demo 3: a distinct top-edge corridor case with a different start/goal (e.g., start [0,2], goal [3,4], fires chosen not to block the top-edge path) to ensure the policy generalizes the same corridor across configurations.

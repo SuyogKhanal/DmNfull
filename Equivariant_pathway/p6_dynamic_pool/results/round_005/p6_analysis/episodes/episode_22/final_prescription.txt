@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 5
+demo_variations: 5 targeted demonstrations: rag rank=1 top-edge variant; rag rank=2 top-edge variant; rag rank=3 top-edge variant; plus two new top-edge-start variants at (0,1) and (0,2) to test robustness
+rationale: This plan follows the KAG corridor fact: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' to fix the failure due to not committing to the top-edge corridor under dynamic start/goal/fire, supported by RAG findings that top-edge is robust and TKF FOUND coverage; The path is along the top edge to avoid central fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets lost trying to pick between staying on the top edge versus dipping into the left/top area early; the critical confusion centers on following a top-edge corridor (top_edge) to avoid central fires but the initial move sometimes routes toward other paths.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A correct walkthrough should push the agent to stay on the top row from the start, moving Right along (0,0) → (0,1) → (0,2) → (0,3) → (0,4), and then descend down the final column to the goal: (1,4) → (2,4) → (3,4) → (4,4). This keeps the agent away from central fires at (1,2), (2,3), and (3,1).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The agent will learn to commit to the top-edge corridor when central fire clusters appear, consistent with RAG ranks 1–3, which advocate the top-edge path as a robust corridor under dynamic layouts. TKF coverage also supports TOP_EDGE, so these demonstrations reinforce choosing the safer top-edge path rather than drifting toward suboptimal corridors.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Five demonstrations are provided (n_demos = 5) to cover multiple targeted variants of starting positions along the top edge and to test robustness under slight variations in fire placement while keeping the top-edge corridor intact. The variations reference the RAG results (ranked top-edge variants) and add two additional top-edge-start variants to stress-test generalization.

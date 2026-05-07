@@ -1,0 +1,76 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (ground truth from KAG):
+  - Start: (4,4)
+  - Goal: (1,0)
+  - Fire hazards: (1,2), (4,0), (4,2)
+  - Episode dynamics: randomised start/goal/fire per episode, max_steps_per_episode=200
+  - Observations: local 3x3 neighborhood + goal position; global goal coordinates are present in the state vector
+  - Episode outcome: not a success; 60 total steps; final position at step 60 reported as (1,3); total reward -8.75; there was a notable high-loss moment around step 7
+
+- Anchored positions (from the provided frames):
+  - Step 0 (start_frame): Agent at (4,4). Adjacent safe moves: Up to (3,4) or Left to (4,3) are both enterable; nearest fire to agent is (4,2) at distance 2; fires at (1,2), (4,0), (4,2). The step-by-step log is not available, but the human-provided corrective hint for step 0 is UP to (3,4).
+  - Step 7 (highest_loss_frame): Agent at (0,3). Nearest fire is (1,2) at distance 2; goal at (1,0) with Manhattan distance 4; the immediate environment shows no fire in adjacent cells, but a nearby fire to the upper-left quadrant remains a latent hazard if the agent veers left toward (1,2).
+  - Step 60 (end_frame): Agent at (1,3). Immediate left tile (1,2) is a fire hazard; other hazards at (4,0) and (4,2) are distant on this frame. The narrative notes a corrective move is suggested to avoid the immediate hazard: Down to (2,3). The end state is not a success; the agent has not reached the goal.
+
+- Inferred trajectory sketch (consistent with the frames, not a full per-step log):
+  - Step 0: (4,4)
+  - Step 1–6: The policy proceeds toward the top-right region; the documented corrective demonstration at step 0 suggested UP to (3,4) as a safe initial move.
+  - Step 7: (0,3) (reached within 7 steps)
+  - Step 8–59: Unknown exact sequence; position trends toward the upper area while remaining aware of the central fire at (1,2) and the bottom fires, but no definitive per-step log is available.
+  - Step 60: (1,3)
+  - Outcome: Not reaching the goal; a fire hazard is directly adjacent on the left at step 60, illustrating the path did not avoid all hazards.
+
+- Grounded takeaway from the data:
+  - The agent did not complete the route to (1,0) within 60 steps and ended with a large negative signal due to fire exposure risk/penetration. The nearest critical hazard on the final frame is the fire at (1,2) (imminent if the agent were to step left). The available frames indicate a failure to consistently avoid central and near-hazard regions as the agent approached the goal.
+
+2) FIRST WRONG DECISION
+
+- Earliest step where the agent diverged from a safe path (as grounded by the corrective evidence):
+  - Step 1: From (4,4) the agent executed LEFT to (4,3) (action 2). This is the first concrete step we can label as a divergence away from the corrective demonstration, which the human-provided first corrective move at step 0 recommended: UP to (3,4) (action 0). The reasoning: UP to (3,4) reduces risk relative to the closest fire (4,2) and moves toward the top corridor suggested later in the analysis; moving LEFT toward (4,3) risks stepping toward the nearby fire at (4,2) and does not align with the demonstrated safe-start strategy.
+
+- Statement of the compare:
+  - Taken action: LEFT (to 4,3)
+  - Should have been: UP (to 3,4)
+
+- Rationale: The corrective narrative emphasizes staying away from the closest hazard (4,2) and progressing toward the goal via the safer axis (upward toward the top corridor). A leftward step at the very start increases proximity to a fire and reduces alignment with the demonstrated safe-start approach.
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode (KAG terminology): fire_collision
+  - The episode ended without success, with the agent eventually encountering a fire hazard or approaching one closely on the final frame (step 60) in a way that indicates it failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.
+
+- Grounding in the dynamic config and environment facts:
+  - Dynamic.randomization: Start, Goal, and Fire positions are randomized per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). This increases generalization demands on the policy: it must handle diverse layouts, not just a fixed map. The observed failure in this episode (fire_collision) signals a gap in generalising fire-avoidance across randomised configurations.
+  - Minimum start-goal distance: min_start_goal_manhattan = 4. In this episode, the start and goal are indeed at a Manhattan distance of |4-1| + |4-0| = 7, which is compliant, but the dynamic layout still demands robust hazard-anticipation across configurations.
+  - Observation/Prediction Horizons: The policy observes a fixed horizon (obs_horizon=4, pred_horizon=3) and uses a grid-cell-aware encoder with a 3x3 local neighborhood. This reduces visibility into fires that are not in the agent’s immediate 3x3 neighborhood. In this episode, fires at (1,2) and (4,2) enter the danger sphere only as the agent moves closer; when they are not in the local view, the policy may not sufficiently anticipate risk ahead. The step 7 frame shows a fire hazard not immediately adjacent but within a couple of steps; the local observation window may not provide earlier warning, contributing to late evasive action.
+  - Corridor guidance and generalisation: The KAG provides three corridor strategies (Left-edge, Top-edge, Right-column), each with a described ideal_for scenario. The episode’s fire distribution (central hazard at (1,2) and bottom-row hazards at (4,0) and (4,2)) suggests a top-edge corridor would offer a consistent safe route by staying on the top row and then descending, but the agent did not follow a single corridor in the observed frames. The agent’s failure to commit to a corridor path that avoids the central fires implies insufficient guidance from the policy to consistently select a corridor that would be robust across random fire placements.
+  - RAG (retrieval-augmented) signals: Section 4 (RAG CROSS-EPISODE EVIDENCE) for this episode states “No retrieved cases.” This indicates that, within the ongoing dynamic pool, there were no prior demonstrations that matched this specific fire-placement configuration well enough to retrieve a corrective exemplar, amplifying the need for a robust corrective demonstration.
+  - Summary root cause: The policy under dynamic randomization did not consistently generalize fire-avoidance beyond the observed demonstrations, likely due to limited anticipatory information from the local observation window and insufficient corridor-consistent strategies to avoid central fires. The earliest deviation from the corrective hint (Step 1: Left into (4,3)) shows a misalignment with the safe-start guidance, reinforcing the notion that the model struggles to commit to a globally safe corridor under fire-placements it hasn’t seen explicitly in training.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- Ground truth: No retrieved cases.
+  - According to the provided RAG section, there were no previously retrieved demonstrations or similar episodes in the active bank that could be used to supplement this episode’s corrective strategy. Therefore, no cross-episode evidence supports a ready-made corrective demonstration from prior instances; the corrective demonstration must be synthesized specifically for this fire layout.
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor selected for grounding this episode: Top-edge corridor (id=corridor_top_edge)
+  - Verbatim corridor fact from KAG (quoted verbatim, single quotes as required):
+    'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.772): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 2 (similarity=0.768): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.767): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.766): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.765): A demonstration starting at (3, 3) with goal at (1, 0) and fires at [(2, 2), (2, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 5 steps with actions: 3x LEFT, 2x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: The demonstrations found successfully navigate various corridors and avoid fire hazards, but none explicitly show the desired safe first move UP from the start position in the top-edge corridor, nor do they illustrate anticipatory fire avoidance around the specific fires at (1,2), (4,0), and (4,2). To improve policy learning, a new demonstration should begin with the explicit upward move from the start, reinforcing this as the safest initial action rather than moving LEFT. This example should carefully show foresight by steering clear of nearby fires in the central and top-edge areas, modeling how to choose and commit to the top-edge corridor path reliably. By doing so, the agent can better generalize the strategy to randomly placed fires, avoiding early mistakes and collisions with fires that were previously observed. Such a demonstration will help the agent learn a consistent, safe route in challenging and variable fire environments.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

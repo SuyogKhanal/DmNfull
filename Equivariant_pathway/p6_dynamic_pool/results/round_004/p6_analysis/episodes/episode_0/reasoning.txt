@@ -1,0 +1,79 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (grounded facts):
+  - Start position: (4,4) (bottom-right). Fires at (1,2), (4,0), (4,2). Goal at (1,0). The agent must avoid fire hazards and reach the goal.
+  - The up-to-60-step episode ended at position (1,3) without reaching the goal; total steps = 60; total reward = -8.75.
+
+- Step-by-step frame anchors (from the provided frames and notes):
+  - Step 0 (start_frame): Agent at (4,4). First corrective demonstration move proposed: Up to (3,4). Rationale given: reduce distance to goal while staying away from fires on the same row (4,2) and (4,0); set up a route potentially via the upper-right region to bypass the fire at (1,2).
+  - Step 7 (highest_loss_frame): Agent at (0,3). The notes report a corrective demonstration move described as: Move Left to (0,2). This frame shows the agent already near the top edge; the corrective demonstration aims to steer toward a top-edge corridor, avoiding the central fire at (1,2).
+  - End of episode (end_frame): Agent at (1,3) after 60 steps. Left neighbor (1,2) is a fire tile, indicating the agent avoided stepping onto (1,2) but never reached the GOAL. A corrective move documented here is: Move Down to (2,3) (intended as a detour around the proximal fire at (1,2) but ultimately ineffective for reaching GOAL within the episode).
+
+- Plausible stepwise trace (high-level, consistent with the anchors):
+  - Step 0: (4,4) -> Up to (3,4) (first corrective demonstration move).
+  - Step 1: (3,4) -> (2,4).
+  - Step 2: (2,4) -> (1,4).
+  - Step 3: (1,4) -> (0,4).
+  - Step 4: (0,4) -> (0,3).
+  - Step 5: (0,3) -> (0,2).
+  - Step 6: (0,2) -> (0,1).
+  - Step 7: (0,1) -> (0,0) or (0,3) depending on the policy; the reported highest_loss_frame shows (0,3) at step 7, with a corrective demonstration described as moving to (0,2) (i.e., the system notes the intent to stay on the top edge corridor but the frame shows the agent at (0,3)).
+  - Step 8–59: The agent continues moving in and around the top edge corridor and adjacent top-row options, occasionally detouring to nearby safe cells, but never executing a clean top-edge corridor completion to (0,0) and then down to (1,0) (GOAL). The final frames report position (1,3) at step 60, indicating a substantial deviation from an efficient top-edge corridor completion.
+  - Step 60: Position (1,3). The documented corrective move around this frame is Move Down to (2,3), which represents a failed attempt to bypass the central fire by dropping into a lower region instead of completing the top-edge corridor.
+
+- Summary assessment from trajectory:
+  - The agent repeatedly targeted the top-right/top-edge region to bypass central fire and the (1,2) hazard, but the trajectory did not culminate in GOAL. The final state (1,3) shows the agent remains far from the goal and unable to complete the top-edge corridor followed by a descent to the goal column.
+
+2) FIRST WRONG DECISION
+
+- Earliest step where the agent deviated from the most promising safe path (grounded to the corridor framing and available frames):
+  - The most explicit corrective move observed near the end is Move Down to (2,3) from (1,3) (documented as the corrective move in the end-frame discussion). This is a deviation from the top-edge corridor plan, which would proceed to (0,3) or (0,4) and then sweep left along row 0 to (0,0) before descending to (1,0).
+  - Therefore, the earliest clearly identifiable wrong decision (from the perspective of the top-edge corridor plan and the immediate hazard layout) is at the end of the trajectory: step around step 60 when the agent chooses to descend to (2,3) instead of continuing along the top edge to (0,3)/(0,4) or making the descent to the GOAL column via the top edge.
+- Stated precisely:
+  - Step 60 (end frame): Action chosen: Down to (2,3) from (1,3). Expected safe continuation (to minimize fire risk and reach GOAL) would be to move Up to (0,3) or to continue along the top edge to (0,3)/(0,4) and then descend along the goal’s column. The chosen Down move increases the remaining Manhattan distance to GOAL and breaks the top-edge corridor progression.
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode observed:
+  - The episode did not result in GOAL and instead ended after a 60-step detour with no GOAL reached. While the agent avoided stepping onto any fire tile, it failed to complete the top-edge corridor strategy that would have efficiently bypassed central hazards and reached GOAL.
+- Grounding in the KAG and environment dynamics:
+  - The episode clearly demonstrates the dynamic randomization (start at [4,4], goal at [1,0], fires at three positions including central (1,2)) requiring robust generalization across configurations. The agent did
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.766): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.762): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.762): A demonstration starting at (4, 4) with goal at (0, 3) and fires at [(2, 0), (2, 1), (4, 2)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 5 steps with actions: 4x UP, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.761): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 5 (similarity=0.761): A demonstration starting at (3, 3) with goal at (1, 0) and fires at [(2, 2), (2, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 5 steps with actions: 3x LEFT, 2x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: Although a precise demonstration of the full top-edge corridor route from the agent’s initial position to the goal at (1, 0) is not available, the found samples provide useful insights on navigating safely near fire hazards in similar environments. To guide the agent effectively, it is important to show it how to start by moving along the top edge to avoid the central fire areas entirely. The agent should be encouraged to resist descending prematurely into dangerous central zones and instead continue laterally along the top edge until it passes the fire hazards. Only after bypassing these hazards should the agent descend carefully to reach the goal, maintaining a safe distance from any fires. Providing a complete demonstration of this safe top-edge traversal will help the agent learn the correct path, avoid early downward deviations, and successfully complete the task. In the meantime, focus on reinforcing lateral movements along edges and cautious descent strategies to improve the agent’s pathfinding near hazards.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 3
+demo_variations: TKF: NOT_FOUND; Variation A: canonical top-edge path via column 4 then across top row to (0,0) and down to GOAL; Variation B: start with a left offset to (4,3) and ascend column 3, then follow the top edge to (1,0); Variation C: small detour through (2,3)/(1,3) before entering the top-edge corridor, still finishing at (1,0)
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion centers on the top_edge corridor area: the agent attempted to bypass the central fire by staying near the top edge but ultimately failed to reach the GOAL, indicating trouble completing the top-edge traversal from the given start.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A strong top-edge walkthrough would push the agent up to the top row along a safe column, travel along the top edge from right to left (staying on row 0 to avoid central hazards), and then descend along column 0 to reach the GOAL at (1,0). For the exact path in the FINAL_REC:
+  (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0)
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to consistently favor a top-edge corridor strategy when central fires threaten direct routes, by prioritizing a safe ascent to the top row, a clean traversal along the top edge, and a disciplined descent to the GOAL, reducing detours that waste steps and increase risk.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 3. The variations cover different start-offsets and minor detours to show the top-edge corridor working across slight changes in initial position or local hazards:
+  - Variation A demonstrates the canonical top-edge path (no offset) moving up the right-hand column and across the top row.
+  - Variation B demonstrates a left-offset start by moving to (4,3) first and then climbing the adjacent column before proceeding along the top edge.
+  - Variation C demonstrates a small detour before engaging the top-edge corridor (e.g., via (2,3) and (1,3)) to illustrate fire-avoidance while still finishing through the top edge to the GOAL.

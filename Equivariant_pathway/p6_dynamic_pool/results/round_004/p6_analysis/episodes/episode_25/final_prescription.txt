@@ -1,0 +1,24 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 3
+demo_variations: Left-edge corridor baseline (4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4); rag rank=2 top-edge corridor variant (0,0)->(0,1)->(0,2)->(0,3)->(0,4); rag rank=1 partial left-edge deviation (4,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+rationale: This choice follows the left-edge corridor as per KAG: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.' and is reinforced by RAG findings that rank=3 supports left-edge corridor strategies in central-fire layouts.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to stray from the left-edge corridor early, often not committing to the bottom-row progression that keeps close to the left edge and away from central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust walkthrough is to start at (4,0) and follow the left-edge corridor: move along the bottom row to (4,4), then go straight up along the rightward edge to the goal at (0,4), i.e., (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4). This keeps you out of central fire tiles.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The demonstrations will reveal that staying in a safe corridor (left-edge, and to a lesser extent top-edge) is a robust strategy when central fires block direct central paths. RAG evidence supports this: rank=3 explicitly favors left-edge corridor; rank=2 shows a viable top-edge alternative; rank=1 indicates partial coverage of corridor strategies in earlier data.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs are provided. They include:
+  - A baseline left-edge corridor demonstration (the target corridor).
+  - A top-edge corridor variant to illustrate another safe route under similar hazards.
+  - A partial left-edge deviation demonstration to show common missteps and the importance of re-joining the corridor path.
+These variations align with the TKF coverage assessment (NOT_FOUND for left-edge, hence at least 3 demos) and incorporate RAG references to rank-1, rank-2, and rank-3 cases to cover different corridor strategies and failure modes.

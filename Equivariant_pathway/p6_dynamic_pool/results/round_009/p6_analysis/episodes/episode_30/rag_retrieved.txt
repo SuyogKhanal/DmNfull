@@ -1,0 +1,20 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.942 run=p6_analysis ep=13 ---
+  Dynamic config: start=[1, 1] goal=[0, 4] fires=[['0', '2'], ['1', '3'], ['2', '1']]
+  Summary:        Root cause: The policy entered a fire tile at (1,3) due to a misstep from (1,2), failing to follow a safe corridor under a fire-laden layout.
+
+Key configuration: Start at (1,1), goal at (0,4), with fires at (0,2), (1,3), and (2,1); no walls in view, dynamic per-episode randomness.
+
+Correct path: Follow the left-edge corridor to avoid central fires: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+In short: commit to a safer left-edge corridor rather than pursuing the central/top-right route, which reduces fire-collision risk and aligns with the corridor-based generalization.
+  Root cause:     pending
+
+--- rank=2 sim=0.934 run=p6_analysis ep=6 ---
+  Dynamic config: start=[0, 0] goal=[1, 4] fires=[['1', '1'], ['2', '0'], ['3', '2']]
+  Summary:        Root cause: The agent failed due to fire_collision and a failure to maintain the safe top-edge corridor, causing early divergence from the row-0 path and near-fire configurations around (1,0). 
+
+Key configuration: Start at (0,0), goal at (1,4), fires at (1,1), (2,0), and (3,2) on a 5x5 grid with border walls.
+
+Correct path: Stay on the top row: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4).
+  Root cause:     pending

@@ -1,0 +1,110 @@
+=== KAG — ENVIRONMENT KNOWLEDGE GRAPH ===
+Domain: dynamic_maze_navigation
+Coordinate system: (row, col), origin top-left, row increases downward, col increases rightward
+Grid shape: [5, 5]
+Description: Structured knowledge graph describing the dynamic 5x5 maze navigation environment used in the diffusion-policy imitation learning research project. Consumed by the Reasoning LLM to ground failure analysis in verified environment facts (geometry, dynamics, rewards, failure taxonomy, policy constraints). All coordinates use (row, col) with top-left = (0,0) and bottom-right = (4,4).
+
+[GridWorld]
+  - Dynamic 5x5 Maze (id=gw_main): grid_size=5, num_cells=25, top_left=[0, 0], bottom_right=[4, 4], max_steps_per_episode=200, layout_name=multimodal
+
+[Tile]
+  - FREE (id=tile_free): value=0, enterable=True, reward_on_enter=-0.1, description=Normal passable cell. Entering costs the step penalty only.
+  - WALL (id=tile_wall): value=1, enterable=False, reward_on_hit=-0.5, description=Impassable cell. Attempting to move into a wall keeps the agent in place and applies the wall-hit penalty.
+  - FIRE (id=tile_fire): value=2, enterable=True, terminates_episode=True, reward_on_enter=-10.0, description=Hazard cell. Entering terminates the episode immediately with large negative reward.
+  - GOAL (id=tile_goal): value=3, enterable=True, terminates_episode=True, reward_on_enter=10.0, description=Target cell. Entering terminates the episode with large positive reward (success).
+
+[Agent]
+  - Navigating Agent (id=agent_main): controller=MazeDiffusionPolicy, action_selection=argmax over one-hot action_dim=4 channels of the first predicted action in the denoised sequence, render_colour_rgb=[30, 100, 220]
+
+[Goal]
+  - Episode Goal (id=goal_main): randomised_per_episode=True, render_colour_rgb=[50, 200, 80]
+
+[FireHazard]
+  - Fire Hazards (id=fire_hazard_main): default_count=3, configurable=True, randomised_per_episode=True, render_colour_rgb=[220, 60, 20], danger=Instant termination on contact. Agent must never step onto a FIRE tile.
+
+[Wall]
+  - Maze Walls (id=wall_main): source=configs/maze_layouts.py layout['grid'] values == 1
+
+[Action]
+  - UP (id=act_up): index=0, delta=[-1, 0]
+  - DOWN (id=act_down): index=1, delta=[1, 0]
+  - LEFT (id=act_left): index=2, delta=[0, -1]
+  - RIGHT (id=act_right): index=3, delta=[0, 1]
+
+[Corridor]
+  - Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.
+  - Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.
+  - Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.
+
+[FailureMode]
+  - fire_collision (id=fm_fire_collision): description=Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.
+  - timeout (id=fm_timeout): description=Episode reached MAX_STEPS (200) without reaching the goal. Indicates looping, hesitation, or oscillation.
+  - wall_thrashing (id=fm_wall_thrashing): description=Agent repeatedly hit walls while failing to progress toward the goal. Usually co-occurs with timeout.
+
+[RewardSignal]
+  - GOAL_REWARD (id=rew_goal): value=10.0
+  - FIRE_PENALTY (id=rew_fire): value=-10.0
+  - WALL_PENALTY (id=rew_wall): value=-0.5
+  - STEP_PENALTY (id=rew_step): value=-0.1
+  - REVISIT_PENALTY (id=rew_revisit): value=-0.05
+
+[ObservationComponent]
+  - state_vector (id=obs_state): shape=[14], dtype=float32, layout=[agent_row/4, agent_col/4, goal_row/4, goal_col/4, 3x3 local neighbourhood values / 3.0 (9 entries), steps_remaining / 200], notes=The goal position is always present in state[2:4], so the policy can condition on any goal placement.
+  - image (id=obs_image): shape=[64, 64, 3], dtype=uint8 (rendered); normalised to float32 [0,1] before encoder, description=Bird's-eye RGB render. Blue=agent, Green=goal, Red=fire, Dark=wall, Light=free.
+
+[DynamicConfig]
+  - randomize_start (id=cfg_rand_start): flag=randomize_start, default=True, target=agent_pos
+  - randomize_goal (id=cfg_rand_goal): flag=randomize_goal, default=True, target=goal_pos
+  - randomize_fire (id=cfg_rand_fire): flag=randomize_fire, default=True, target=fire_positions, num_fire_tiles_default=3
+  - min_start_goal_manhattan (id=cfg_min_sg_dist): value=4, description=Enforced minimum Manhattan distance between start and goal to prevent trivially short episodes.
+
+[PolicyConstraint]
+  - Stochastic DDPM Inference (id=pc_stochastic_ddpm): num_diffusion_steps=200, description=Inference draws a fresh Gaussian noise tensor and denoises over 200 steps. Identical observations can yield different action sequences run-to-run — this is intended probabilism, not a bug.
+  - CellAlignedEncoder (id=pc_cell_encoder): architecture=1x1 Conv2d stack followed by AvgPool2d(kernel_size=cell_px, stride=cell_px), feature_dim=128, grid_size=5, cell_px=16, description=Custom grid-cell-aware vision encoder with zero cross-cell bleed. Each grid cell's pixels are pooled independently into one feature before projection. Not a ResNet.
+  - Observation/Prediction Horizons (id=pc_horizons): obs_horizon=4, pred_horizon=3, action_dim=4, description=Policy observes the last 4 (state, image) pairs and predicts the next 3 one-hot actions; only the first action of the sequence is executed each step.
+  - UNet1D backbone (id=pc_unet_shape): dim=64, dim_mults=[1, 2, 4]
+
+[RELATIONS]
+  Dynamic 5x5 Maze --[HAS_TILE]--> FREE
+  Dynamic 5x5 Maze --[HAS_TILE]--> WALL
+  Dynamic 5x5 Maze --[HAS_TILE]--> FIRE
+  Dynamic 5x5 Maze --[HAS_TILE]--> GOAL
+  Navigating Agent --[CAN_ENTER]--> FREE
+  Navigating Agent --[CAN_ENTER]--> FIRE  {'warning': 'Entering terminates the episode with -10 reward.'}
+  Navigating Agent --[CAN_ENTER]--> GOAL
+  Navigating Agent --[CAN_ENTER]--> WALL  {'blocked': True, 'effect': 'Agent remains in place; wall penalty -0.5 applied.'}
+  Navigating Agent --[TERMINATES_ON]--> FIRE  {'failure_mode': 'fire_collision'}
+  Navigating Agent --[SUCCEEDS_ON]--> GOAL
+  GOAL --[PENALISES]--> GOAL_REWARD  {'sign': 'positive'}
+  FIRE --[PENALISES]--> FIRE_PENALTY
+  WALL --[PENALISES]--> WALL_PENALTY
+  Navigating Agent --[PENALISES]--> STEP_PENALTY  {'applied_every_step': True}
+  Navigating Agent --[PENALISES]--> REVISIT_PENALTY  {'applied_when': 'agent re-enters a previously visited free cell'}
+  Navigating Agent --[NAVIGATES_VIA]--> Left-edge corridor
+  Navigating Agent --[NAVIGATES_VIA]--> Top-edge corridor
+  Navigating Agent --[NAVIGATES_VIA]--> Right-column corridor
+  Left-edge corridor --[AVOIDS]--> Fire Hazards
+  Top-edge corridor --[AVOIDS]--> Fire Hazards
+  Right-column corridor --[AVOIDS]--> Fire Hazards
+  Left-edge corridor --[CONNECTS_TO]--> Episode Goal
+  Top-edge corridor --[CONNECTS_TO]--> Episode Goal
+  Right-column corridor --[CONNECTS_TO]--> Episode Goal
+  Navigating Agent --[OBSERVES]--> state_vector
+  Navigating Agent --[OBSERVES]--> image
+  randomize_start --[RANDOMISES]--> Navigating Agent
+  randomize_goal --[RANDOMISES]--> Episode Goal
+  randomize_fire --[RANDOMISES]--> Fire Hazards
+  min_start_goal_manhattan --[RANDOMISES]--> Dynamic 5x5 Maze  {'constraint': 'min_manhattan(start, goal) >= 4'}
+  FIRE --[CAUSES_FAILURE]--> fire_collision
+  Dynamic 5x5 Maze --[CAUSES_FAILURE]--> timeout  {'trigger': 'step_count >= 200 and agent has not reached goal'}
+  WALL --[CAUSES_FAILURE]--> wall_thrashing  {'trigger': 'repeated wall-hit penalties without progress'}
+  Navigating Agent --[ENFORCES]--> Stochastic DDPM Inference
+  Navigating Agent --[ENFORCES]--> CellAlignedEncoder
+  Navigating Agent --[ENFORCES]--> Observation/Prediction Horizons
+  Navigating Agent --[ENFORCES]--> UNet1D backbone
+
+[REASONING IMPLICATIONS]
+  * fire_collision_per_episode: If the agent stepped onto FIRE, the policy has not generalised fire-avoidance to this particular (start, goal, fire-placement) configuration. Prescribe a corrective demonstration that starts from a similar region and shows the safe corridor (left-edge, top-edge, or right-column) appropriate to this fire placement.
+  * timeout_per_episode: If the agent timed out, it is likely oscillating or hesitating. Prescribe demonstrations that commit to one corridor without backtracking.
+  * wall_thrashing_per_episode: If the agent hit many walls, it is not using the state vector's local-neighbourhood signal effectively. Prescribe demonstrations that include approach-and-turn behaviour near walls.
+  * dynamic_randomisation_caveat: Because start, goal, and fire are all randomised per episode, the policy must generalise across configurations. A demo prescription should describe the SITUATION (fire placement pattern relative to start/goal) rather than a fixed coordinate path.

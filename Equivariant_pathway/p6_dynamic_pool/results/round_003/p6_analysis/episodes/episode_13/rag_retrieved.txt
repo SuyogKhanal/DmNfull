@@ -1,0 +1,27 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.972 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent failed to maintain a safe top-edge corridor and made detours around nearby fires, with an implied corrective action at step 7 that did not align with a robust corridor, leading to a fire collision risk and ultimately a non-goal termination.
+
+Key configuration: Start at (0,0); fires at (1,0), (2,3), and (3,0); goal at (2,4). The episode’s hazards tempt moves toward central/left regions, but the fire cluster near the left and center makes a top-edge route preferable.
+
+Correct path: Follow the top-edge corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+
+Outcome: The policy failed to adhere to this safe corridor, resulting in a 60-step episode with negative reward and no goal reached.
+  Root cause:     pending
+
+--- rank=2 sim=0.965 run=p6_analysis ep=6 ---
+  Dynamic config: start=[0, 0] goal=[1, 4] fires=[['1', '1'], ['2', '0'], ['3', '2']]
+  Summary:        - Root cause: The policy failed to generalize fire avoidance in this randomized configuration, leading to a dangerous misstep into a fire tile rather than following a safe corridor (top edge) when hazards were near the start. 
+- Key configuration: Start at (0,0), goal at (1,4), fires at (1,1), (2,0), and (3,2); the episode ended after two steps with a collision on (2,0). 
+- Correct path: Stay along the top edge: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4).
+  Root cause:     pending
+
+--- rank=3 sim=0.964 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        Root cause: The agent failed to generalize fire avoidance to the randomized start/goal/fire layout, leading it to enter a fire tile (fm_fire_collision) along a corridor it hadn’t robustly learned to keep clear.
+
+Key configuration: Start at (4,4); goal at (1,0); fire tiles at (1,2), (4,0), and (4,2). The dangerous move occurred when from (1,3) it stepped Left into (1,2).
+
+Correct path: Stay on the top-edge corridor to avoid central hazards: (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0).
+  Root cause:     pending

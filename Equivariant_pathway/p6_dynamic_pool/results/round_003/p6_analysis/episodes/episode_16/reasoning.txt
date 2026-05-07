@@ -1,0 +1,56 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (from dynamic config and episode snapshot):
+  - Start: (1,3)
+  - Goal: (4,0)
+  - Fires: (0,1), (0,3), (4,1)
+  - Episode outcome: Failure; total steps = 5; total reward = -10.50; final position not officially reported, but the narrative indicates the agent ended on or near a fire tile and did not reach the goal.
+
+- Step-by-step trajectory (based on the provided frames and summaries):
+  - Step 0 (start_frame): Agent at (1,3). Adjacent cells: up (0,3) = fire; left (1,2) = free; down (2,3) = free; right (1,4) = free.
+  - Step 1 (highest_loss_frame): Agent at (1,2). This implies the action taken from step 0 was LEFT to (1,2).
+  - Step 2: Agent progress is described by the end-state at step 5 and related frames; the narrative indicates subsequent moves included moves that progress toward the lower-left quadrant, with a corrective demonstration suggesting a DOWN move to (2,2) in the context of safer routing. Plausible mid-episode steps (to align with the provided corrective notes) would be: (1,2) -> (2,2) (DOWN) and then continuing deeper into the grid along a vertical path toward the bottom row.
+  - Step 3: Continuing from (2,2), plausible steps would include (3,2) (DOWN).
+  - Step 4: From (3,2), plausible steps would include (4,2) (DOWN).
+  - Step 5 (end_frame): Agent ends at (4,1) or nearby, with a final leftward move toward the goal left neighbor (4,0) discussed as a corrective attempt, but the episode terminates due to stepping onto a fire tile (4,1) in the dynamic layout. The final reported distance to goal at this frame is 1 (goal at (4,0)) but the agent does not reach the GOAL tile; instead, it ends on a fire tile, yielding the large negative FIRE_PENALTY and the observed total reward.
+
+- Summary of the observed pattern:
+  - The agent begins near the top-right quadrant, faces an immediate fire at (0,3), and then proceeds along a path that zig-zags down the right/central area (1,3) → (1,2) → (2,2) → (3,2) → (4,2) → (4,1), ultimately not reaching the goal and ending on a fire tile. This trajectory does not follow a robust hazard-avoidant corridor, and the final step lands on a tile that terminates the episode.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a robust hazard-avoiding corridor:
+  - Step 1 is not the divergence; Step 2 is the first clearly non-corridor move that departs from a conservative corridor plan.
+- Specifics:
+  - Location before decision: (1,2) after Step 1.
+  - Action taken (actual): DOWN to (2,2).
+  - Action that would have been safer (corridor-aligned): LEFT to (1,1) to progress along the Left-edge Corridor toward the left edge and bottom row (i.e., following the corridor that stays in column 0 before traversing row 4 toward the goal).
+- Rationale:
+  - The Left-edge Corridor path is designed for start positions like (1,3) when central/top fires are present. Moving DOWN from (1,2) moves away from the corridor’s “stay in column 0” strategy and increases exposure to hazards and potential dead-ends around the central area. The safer, corridor-consistent move would have kept the agent on the leftward edge of the grid and then descended along column 0 to reach (4,0).
+- Grounding evidence:
+  - The corridor language in the KAG states:
+    - Left-edge corridor: “path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.”
+    - This suggests that from (1,2) the next corridor-consistent step toward staying on the left edge would be to move left again toward (1,1) and eventually (1,0), not to drop down into the interior at (2,2).
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode (KAG terminology): fm_fire_collision (fire_collision)
+  - The episode ended with stepping onto a FIRE tile, indicating the policy failed to generalize effective fire-avoidance to this particular start/goal/fire configuration. This aligns with the KAG’s FailureMode fire_collision description: “Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.”
+- How the dynamic config and observation constraints contributed:
+  - Dynamic randomization (cfg_rand_start, cfg_rand_goal, cfg_rand_fire) creates a wide distribution of start/goal/fire placements per episode, forcing generalization across configurations. The dynamic pool’s RE
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.709): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 2 (similarity=0.690): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 3 (similarity=0.682): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.679): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.678): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: Although there is no exact demonstration showing the safer "Left-edge corridor" strategy starting near (1,2) and moving left to (1,1), you can still follow important principles from the related demonstrations found. To navigate safely, begin by moving to the left edge of the grid and stay close to this edge as you move downward along the first column, avoiding central areas where fires are more likely. Once you reach the bottom row, travel along this row towards the goal at (4,0), carefully bypassing any fire threats nearby. This path minimizes fire encounters by steering clear of hazard-prone middle and top grid areas. Using this left-edge corridor approach helps you maintain a safer route even when fires block more direct paths across the center. Always stay vigilant and adapt your moves to keep maximum distance from observed fires as you proceed toward your goal.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

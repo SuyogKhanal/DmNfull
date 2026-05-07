@@ -1,0 +1,23 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: NOT_FOUND
+What was found in existing training demos:
+Verdict: NOT_FOUND
+Adjusted guidance: To provide accurate guidance regarding the missing demonstration, please first submit the failure reasoning text or describe in plain English what specific demonstration you need. Without this information, it is not possible to determine which demonstration is absent or how to address the issue effectively. Once you provide these details, I can analyze the problem and offer tailored advice to locate or create the required demo, ensuring that your training materials are complete and function as intended. Please focus on giving clear and detailed information about the failure or the missing content so that the remedy can be precise and helpful.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)>
+n_demos: 3
+demo_variations: Three top-edge corridor demonstrations starting from top-row starts (0,0) or (0,1), walking along row 0 to column 4 and then down to the goal cell (1,4) to avoid central fires.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The top-edge corridor area (staying on the top row to reach the goal) is the critical region, given the fires occupy the central rows and would block other routes.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough keeps the agent on the top row from the start until it reaches column 4, then moves down to the goal at (1,4) without stepping on any FIRE tiles.
+3. WHAT will the AI learn from seeing that walkthrough? The AI will learn to prefer the top-edge corridor when fires block the middle of the maze, reinforcing a safe, fire-avoiding path that still reaches the goal efficiently.
+4. HOW MANY walkthroughs are needed and how should they vary? 3 walkthroughs are provided (n_demos = 3) to cover small start-offset variations along the top edge (e.g., starting at (0,0) or (0,1)) so the policy generalizes to slight differences in start position while following the same safe corridor.

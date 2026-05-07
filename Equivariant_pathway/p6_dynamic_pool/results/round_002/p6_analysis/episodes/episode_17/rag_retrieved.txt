@@ -1,0 +1,33 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.981 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent abandoned the safe Top-edge Corridor early, detouring from the top row to interior cells (e.g., (1,2)) and failing to avoid central fires, leading to a dead-end near a fire tile rather than reaching the goal.
+
+Key configuration: Start at (0,0) with goal at (2,4); fires located at (1,0), (2,3), and (3,0) create a central-fire cluster that makes interior routes risky and favor the top-edge path.
+
+Correct path: Stay on the top row along the corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4), then descend: (1,4) -> (2,4).
+
+Overall, the fix is to reinforce corridor adherence to the Top-edge Corridor across dynamic fire layouts to ensure robust goal attainment.
+  Root cause:     pending
+
+--- rank=2 sim=0.973 run=p6_analysis ep=16 ---
+  Dynamic config: start=[1, 3] goal=[4, 0] fires=[['0', '1'], ['0', '3'], ['4', '1']]
+  Summary:        Root cause: The agent deviated from a robust left-edge corridor and entered a fire tile, causing failure (fire_collision) before reaching the goal.
+
+Key configuration: Start at (1,3) with goal at (4,0); fires placed at (0,1), (0,3), and (4,1); the episode ended after stepping onto (4,1).
+
+What the correct path should have been: Stay in the left-edge corridor by moving from (1,3) to (1,2) to (1,1) to (1,0), then descend the left column: (2,0) → (3,0) → (4,0) (the goal).
+
+Thus, the robust corridor-based route (left_edge) avoids top/inner fires and reaches the goal without entering fire tiles.
+  Root cause:     pending
+
+--- rank=3 sim=0.971 run=p6_analysis ep=13 ---
+  Dynamic config: start=[1, 1] goal=[0, 4] fires=[['0', '2'], ['1', '3'], ['2', '1']]
+  Summary:        Root cause: The agent collided with fires due to early top-row bias and failure to commit to a robust corridor, causing dangerous detours in a dynamic fire layout. 
+
+Key configuration: Start at (1,1); goal at (0,4); fires at (0,2), (1,3), (2,1) on a 5x5 grid with no walls.
+
+Correct path: Stay in the left-edge corridor: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+Result: Following this corridor-based route would avoid central/top hazards and reliably reach the goal; the episode failed due to deviation toward the top row and ineffective detours.
+  Root cause:     pending

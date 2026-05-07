@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)>
+n_demos: 2
+demo_variations: 'RAG rank=1 not applicable; rank=2 not applicable; two top_edge corridor demos: canonical top-edge path (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4) and a variant with a minor backtrack (0,0)->(0,1)->(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)'
+rationale: 'Top-edge corridor (id=corridor_top_edge): Stay on the top row while traversing to the GOAL column and descend along that column to reach the GOAL, ideal_for=start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the top-edge corridor area, starting from the top-left (0,0) while central fires are nearby (notably at (1,1), (2,0), and (3,2)); the earliest misstep observed is stepping from (0,1) back to (0,0) instead of continuing along the top row toward (0,2).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough keeps the agent on the top edge: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) and then descends to the goal at (1,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- By seeing a clean top-edge corridor traversal, the AI learns to commit to a fire-free corridor when fires cluster in the middle rows, improving generalization for top-row starts across varied fire layouts. The RAG results at ranks 1 and 2 did not apply to this exact episode (mismatched start/goal/fire), so the two targeted top-edge demonstrations reinforce the corridor behavior directly rather than trying to map unrelated past cases.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Two demonstrations are provided. Variation 1 shows the canonical top-edge path from (0,0) to (1,4). Variation 2 adds a small backtrack early (0,1) -> (0,0) before resuming along the top edge to test robustness to brief local reversals while still staying within the safe corridor.

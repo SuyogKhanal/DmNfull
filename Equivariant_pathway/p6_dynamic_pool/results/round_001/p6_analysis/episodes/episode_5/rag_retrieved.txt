@@ -1,0 +1,14 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.982 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        Root cause: The agent failed to generalize to dynamic fire placements, drifting toward fire-adjacent areas and ultimately colliding with a fire near (1,2) while lingering near (1,3). Key configuration: start (4,4), goal (1,0), fires at (1,2), (4,0), (4,2); end position reported as (1,3) at step 60 with total reward -8.80. What the correct path should have been: follow the top-edge corridor to stay on row 0 while moving toward the goal column, then descend along column 0, e.g., (4,4)→(3,4)→(2,4)→(1,4)→(0,4)→(0,3)→(0,2)→(0,1)→(0,0)→(1,0). This top-edge route avoids the central fire cluster and aligns with the corridor-based strategy.
+  Root cause:     pending
+
+--- rank=2 sim=0.962 run=p6_analysis ep=3 ---
+  Dynamic config: start=[0, 2] goal=[3, 3] fires=[['0', '3'], ['2', '4'], ['3', '2']]
+  Summary:        Root cause: The agent failed to generalise fire-avoidance and followed a central corridor that led toward a nearby fire, ultimately stepping onto a FIRE tile. The initial corrective move from the start favored moving down (toward the interior) rather than committing to the left-edge corridor, causing exposure to hazards.
+
+Key configuration: Start at (0,2); goal at (3,3); fires at (0,3), (2,4), and (3,2). The unsafe move sequence culminated in stepping on (3,2), a fire tile, ending the episode.
+
+Correct path: Follow the Left-edge corridor: (0,2) -> (0,1) -> (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (3,3).
+  Root cause:     pending

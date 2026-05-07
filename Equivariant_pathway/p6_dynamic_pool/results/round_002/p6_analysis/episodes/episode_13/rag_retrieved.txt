@@ -1,0 +1,16 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.968 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent abandoned the safe Top-edge Corridor early, detouring from the top row to interior cells (e.g., (1,2)) and failing to avoid central fires, leading to a dead-end near a fire tile rather than reaching the goal.
+
+Key configuration: Start at (0,0) with goal at (2,4); fires located at (1,0), (2,3), and (3,0) create a central-fire cluster that makes interior routes risky and favor the top-edge path.
+
+Correct path: Stay on the top row along the corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4), then descend: (1,4) -> (2,4).
+
+Overall, the fix is to reinforce corridor adherence to the Top-edge Corridor across dynamic fire layouts to ensure robust goal attainment.
+  Root cause:     pending
+
+--- rank=2 sim=0.936 run=p6_analysis ep=6 ---
+  Dynamic config: start=[0, 0] goal=[1, 4] fires=[['1', '1'], ['2', '0'], ['3', '2']]
+  Summary:        Root cause: The agent attempted to navigate through the central area where fires are located, instead of using the safe top-edge corridor, leading to failure. Key configuration: starts are on the top row (e.g., (0,0) or (0,1)); the goal is at (1,4); central rows contain fire tiles that block other routes, leaving the top edge as the viable path. Correct path: stay on the top row from the starting column to column 4, then move down to the goal at (1,4). This sequence avoids fires and reaches the goal.
+  Root cause:     pending

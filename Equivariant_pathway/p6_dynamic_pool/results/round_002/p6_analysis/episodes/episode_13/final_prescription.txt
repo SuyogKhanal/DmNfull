@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 3
+demo_variations: RAG rank=1/top_edge variant and rank=2/top_edge variant rejected; three left-edge corridor demos: canonical path (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4); alt1: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(2,4)->(1,4)->(0,4); alt2: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(3,1)->(3,2)->(3,3)->(2,3)->(2,4)->(1,4)->(0,4)
+rationale: Left-edge corridor chosen due to hazard distribution; from KAG, 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles to stay on a safe corridor after starting at (1,1); it ends up deviating toward the top edge (top_edge corridor) and then gets blocked by fires near the center-right, failing to commit to a robust left_edge corridor path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A strong corrective walkthrough would stick to the left_edge corridor: start at (1,1), move left to (1,0), descend the left column to (4,0), then travel along the bottom row to (4,4), and finally ascend the rightmost column to reach the goal at (0,4). The explicit variation set includes slight detours that still preserve the left-edge corridor-majority structure.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to prioritize staying in the left-edge corridor when fires cluster in the center and top areas, rather than drifting into interior routes. The RAG evidence (rank=1 and rank=2 top-edge variants) suggested different safe corridors in similar layouts, but those were rejected here in favor of reinforcing the left-edge corridor per the KAG grounding, so the demonstrations reinforce corridor adherence over interior detours.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs are provided. They share the same left-edge corridor backbone but vary in small detours near the bottom-right junction to ensure the policy can handle minor tactical deviations while still returning to the left-edge path and reaching the goal.

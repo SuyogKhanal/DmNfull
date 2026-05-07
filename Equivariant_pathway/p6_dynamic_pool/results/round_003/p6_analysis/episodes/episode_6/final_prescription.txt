@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)>
+n_demos: 1
+demo_variations: rag rank=1 top_edge variant; rag rank=2 left_edge variant; TKF coverage=FOUND for top_edge but no 0,0-start top_edge demo yet; add a dedicated 0,0-start top_edge demonstration
+rationale: This top-edge corridor path is justified by KAG: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles along the Top-edge corridor when fires clutter the central area. In this episode, the safe path would hug the top edge rather than dropping toward central fires; the current failure showed a misstep that could lead into a fire if it veers off the top edge.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts at (0,0) and stays on the top row: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4), then down to the goal at (1,4). This keeps the agent away from central fires at (1,1), (2,0), and (3,2).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to rely on the Top-edge corridor as a robust heuristic to avoid central hazards in this kind of randomized start/goal/fire layout. The RAG evidence shows a Rank-1 top-edge example aligns with this safe path, while Rank-2 demonstrates an alternative corridor, underscoring that the top-edge route is the most reliable fix for fire-avoidance in these configurations. The TKF check also notes top-edge coverage exists, and a dedicated 0,0-start top-edge demo would further solidify this behavior.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1: a single targeted demonstration that begins at (0,0) and follows the top-edge path to (1,4) is sufficient to address this local failure, given the corridor coverage found in retrievals. If more coverage were needed (e.g., additional start positions or fire placements), we would add small variations of the same top-edge path, but for this episode a single 0,0-start top-edge walkthrough is appropriate.

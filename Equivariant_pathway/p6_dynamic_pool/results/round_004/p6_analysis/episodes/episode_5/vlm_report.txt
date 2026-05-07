@@ -1,0 +1,34 @@
+VISION REPORT
+Maze=heldout_006 Steps=3 Reward=-10.30 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells
+- Agent is at (4,2). Adjacent cells: Up (3,2) = Fire (F); Left (4,1) = empty; Right (4,3) = empty; Down (5,2) is outside the grid. No walls visible in immediate vicinity; the nearest hazard above.
+
+2) Goal location and Manhattan distance
+- Goal is at (1,0). Current Manhattan distance from (4,2) to (1,0) is |4−1| + |2−0| = 5.
+
+3) Fire hazards relative to the agent
+- Fires are at (3,2), (3,0), and (2,4). Distances from the agent: (3,2) = 1 (immediate risk, directly adjacent); (3,0) = 3; (2,4) = 4. The (3,2) fire is the most immediate hazard to avoid; stepping onto any fire must be avoided.
+
+4) First corrective demonstration move
+- Action: move_left (to 4,1).
+- Justification: avoids the immediate fire at (3,2) while reducing the distance to the goal (now 4). Leaves a viable path toward (3,1) and then (2,1)/(1,1) toward (1,0).
+
+--- highest_loss_frame frame step 1 ---
+
+
+--- end_frame frame step 3 ---
+1) Agent location and adjacent cells
+- Agent is at (3,0). Adjacent cells: North (2,0) is empty, South (4,0) is a safe blue-dot cell, East (3,1) is empty, West is outside the grid (wall). Nearby fires: current cell (3,0) is a fire hazard; other fires are at (3,2) and (2,4) but they are not immediately adjacent. Goal is at (1,0), two steps straight north.
+
+2) Goal location and Manhattan distance
+- Goal: (1,0). Manhattan distance from the agent’s position (3,0) is |3−1| + |0−0| = 2.
+
+3) Fire hazards relative to the agent
+- Fires present: (3,0) (agent’s current cell), (3,2), and (2,4). Distances: to (3,0) = 0 (immediate hazard), to (3,2) = 2, to (2,4) = 5. The agent is currently on a fire; escaping this hazard is critical before proceeding.
+
+4) First corrective demonstration move
+- Action: Up (move to 2,0). Justification: reduces the Manhattan distance to the goal from 2 to 1, and steps off the current fire hazard, positioning the agent for a direct north move to the goal on the next step.

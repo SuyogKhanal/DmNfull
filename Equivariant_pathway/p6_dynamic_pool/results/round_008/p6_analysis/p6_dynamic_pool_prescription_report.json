@@ -1,0 +1,154 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_008/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_008/p6_analysis",
+  "n_failures": 2,
+  "test_layout_failures": [
+    {
+      "episode_id": 5,
+      "maze_name": "heldout_006",
+      "start_pos": [
+        4,
+        2
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 13,
+      "maze_name": "heldout_014",
+      "start_pos": [
+        1,
+        1
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 2,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              4,
+              0
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                2,
+                4
+              ],
+              [
+                3,
+                0
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Explicitly tests left-edge traversal with three fires arranged to challenge the corridor without placing fires on start or goal."
+          }
+        ],
+        "rationale": ""
+      },
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              1
+            ],
+            "goal_pos": [
+              4,
+              4
+            ],
+            "fire_positions": [
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Targets top-edge traversal with three fires positioned to interfere with top-row progress without hitting start/goal."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_fire_collision_left_focus",
+        "episodes_in_cluster": [
+          5,
+          13
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "In both failure episodes, the agent enters a FIRE tile when following the left-edge corridor's path pattern under randomised start/goal/fire placements.",
+        "what_it_does_wrong": "The policy fails to generalise fire avoidance along the left-edge corridor given the specific arrangement of three fires relative to the start and goal, causing a terminal negative reward.",
+        "source_final_recs": [
+          "corridor_left_edge",
+          "corridor_top_edge"
+        ]
+      }
+    ]
+  }
+}

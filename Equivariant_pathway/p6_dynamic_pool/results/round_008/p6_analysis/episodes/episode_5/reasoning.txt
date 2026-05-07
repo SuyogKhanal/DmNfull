@@ -1,0 +1,44 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (from KAG and episode summary)
+  - Start: (4,2). Fires present at (3,0), (3,2), (2,4). Goal at (1,0). The immediate hazard north of the start is a Fire at (3,2).
+  - Fires in this episode: (2,4), (3,0), (3,2). The safest immediate options from the start are Left to (4,1) or Right to (4,3); Up into (3,2) would step onto a Fire (hazardous).
+  - The human-provided corrective signal at step 0 was to move Left: (4,2) -> (4,1) to avoid the adjacent fire and reduce distance to the goal.
+
+- Step-by-step trajectory (as inferred from the provided frames and summary)
+  - Step 0 (start): Position (4,2). Adjacent hazards note a Fire at (3,2). The corrective demonstration begins with Move Left to (4,1) (the suggested safe alternative).
+  - Step 1–2: Likely progressed toward (4,1) (consistent with the first corrective move). Exact intermediate states are not logged.
+  - Step 3 (highest_loss_frame): Agent at (4,1). The frame cites a corrective action: Move Up to (3,1) (this was proposed as an immediate corrective step to press toward the goal while avoiding nearby fires).
+  - Step 4–59: Not logged in detail; the summary states 60 total steps with a negative return, indicating ongoing struggle and suboptimal routing under the current policy.
+  - End frame (step 60): Agent at or near (4,0) vicinity; the adjacent Fire above at (3,0) remains a hazard. The described corrective move near the end is Move Right to (4,1) (to re-enter a safer zone), but the episode did not reach the goal.
+  - Fires observed across the episode: (3,2) to the north of the start is the closest hazard; (3,0) lies to the left; (2,4) is far right/up. The agent never steps into a Fire tile in the described frames, but it also never achieves the goal within 60 steps.
+
+- Summary of the observed dynamic: The agent repeatedly navigates near fires (especially (3,2) and (3,0)) and fails to lock onto a progress-centric corridor, leading to a suboptimal route that eventually ends without reaching the goal.
+
+2) FIRST WRONG DECISION
+- Earliest diverging decision (row, col) and action
+  - Step 0, from (4,2): The correct safe action based on the immediate hazard is to move Left to (4,1). The earliest wrong decision would have been to move Up into (3,2) (the adjacent Fire) or to proceed along a non-safety-checked path that increases exposure to hazard. Given the cited corrective cue at step 0 (Left to 4,1), the earliest safe policy deviation would be: Action Up into (3,2) (a Fire) instead of the safe Left move.
+  - If the agent did not take the Up-to-Fire move at Step 0, the next potential divergence would be Step 3’s proposed Up to (3,1) after having moved to (4,1). Choosing a different next step (e.g., continuing up into a hazard or moving back toward (4,2)) would be another divergence point, but Step 3’s highlighted corrective move indicates that the policy’s safe path would be (4,1) -> (3,1), not (4,1) -> (4,2) or (4,1) -> (4,0) with uncertain safety.
+
+- Concrete accounting for this episode
+  - Earliest wrong decision (most clearly evidenced grounding from the data): Step 0, Attempt to move Up from (4,2) into (3,2) (Fire) instead of following the corrective Left move to (4,1). This would directly trigger a fire collision if executed, and the corrective cue explicitly contrasts with the safe leftward choice.
+
+3) WHY THE POLICY FAILED
+- Root-cause grounding
+  - DynamicConfig and generalization challenge: The environment randomizes Start, Goal, and Fire positions per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). This creates a spectrum of configurations in which the policy must generalize fire avoidance and corridor navigation. The KAG notes emphasize: “randomised_per_episode=True” and “min_start_goal_manhattan” constraints that enforce nontrivial routing, reinforcing the need for robust generalization across configurations.
+  - Fire-avoidance generalization gap: Even though a Fire tile is present very near the start (3,2), the policy fails to consistently avoid stepping into or approaching such hazards in the right sequences across configurations. The “fire_collision” failure mode is the canonical pattern when the agent steps into a Fire tile; in this episode, the observed behavior shows near-fire navigation without stepping into a Fire tile, but the planner still fails to lock onto
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.600): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.598): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 3 (similarity=0.597): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 4 (similarity=0.592): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.589): A demonstration starting at (4, 4) with goal at (0, 3) and fires at [(2, 0), (2, 1), (4, 2)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 5 steps with actions: 4x UP, 1x LEFT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: When a Fire tile is immediately adjacent, the safest first step is to move away from it, such as stepping left instead of moving up into danger. Demonstrations should clearly show this initial safe move to help you learn to avoid hazards right from the start. Following that, continue by navigating along safe corridors, like the left_edge or central_mixed paths, where you maintain a comfortable distance from the Fire tiles. These examples often show successful routes using moves such as going right and down through safe spots near but not next to fire. Observing how these paths avoid getting too close to Fire can help you consistently choose safer options and reduce the chances of colliding with hazards in varied situations. Practicing this approach will improve your ability to generalize hazard avoidance across different layouts.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

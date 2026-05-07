@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)
+n_demos: 1
+demo_variations: rag rank=1 top_edge variant; TKF FOUND coverage; one-layout demonstration: stay on top row to column 4, then descend to the goal (1,4)
+rationale: This path uses the Top-edge corridor because 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI slips from the planned Top-edge corridor (top_edge) at the start, choosing to move down into the interior rather than staying on the top row.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the Top-edge corridor: start at [0,0], move right along the top row to [0,4], then move down to the goal at [1,4]. In coordinates: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4). This keeps you on the top edge for the majority of the path and avoids central fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- It will learn to prefer the Top-edge corridor as a robust strategy for mid-fire layouts, aligning with the Rank-1 RAG case that emphasizes generalizing fire avoidance via the top-edge path, and it will recognize that alternative corridors (e.g., left_edge) may be useful in other fire configurations (Rank-2 partial, Rank-3 not applicable) but the top-edge approach is the safest generalizable pattern for this scenario.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, since this is a local failure and a single top-edge demonstration suffices to convey the safe pattern for this configuration. If later rounds encounter different fire layouts with similar central hazards, consider adding 1-2 more demos that vary the start or goal within the top-edge safe region to further bolster generalization.
