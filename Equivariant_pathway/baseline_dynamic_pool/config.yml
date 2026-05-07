@@ -1,0 +1,40 @@
+# baseline_dynamic_pool configuration. CLI args override these. Match
+# baseline_only / p6_dynamic_pool when comparing.
+
+# ---- Layouts ----
+# baseline_dynamic_pool generates NO layout YAML. It reads heldout +
+# training + correction layouts from baseline_only/, seeds its own
+# dynamic_pool.yaml from baseline_only/correction_layouts.yaml, and grows
+# the pool with uniformly-random layouts (signature-disjoint from
+# heldout + training + the existing pool) every round.
+
+# ---- Initial training (only used when no initial_*_eq_policy.pth snapshot) ----
+initial_demos: 20
+initial_epochs: 500
+
+# ---- Per-round retrain ----
+round_epochs: 500
+
+# ---- Loop ----
+max_rounds: 50
+max_steps: 60
+target_sr: 0.90
+
+# ---- Training mode ----
+train_from_scratch: true
+
+# ---- Random expansion budget ----
+# 0 = no cap: each round samples min(prior_round_heldout_failures,
+# available_random_layouts) new layouts. With 50 heldout layouts and a
+# starting heldout SR around 0.5, the round-1 budget will be ~25
+# layouts and shrink as SR rises. Total budget over a typical run lands
+# around 60-100 layouts.
+#
+# Set to a positive integer to cap per-round expansion — useful for the
+# "isolate LLM-vs-random axis" comparison where you constrain this
+# baseline to roughly p6_dynamic_pool's prescription scale (1-3 per
+# round).
+max_pool_expansion_per_round: 0
+
+# ---- Misc ----
+seed: 0
