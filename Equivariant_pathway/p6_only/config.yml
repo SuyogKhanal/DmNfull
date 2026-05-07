@@ -1,0 +1,45 @@
+# p6_only configuration.
+#
+# Every value here is the default for the corresponding CLI flag. CLI args
+# still override. Match these to baseline_only/config.yml when comparing.
+
+# ---- Layouts ----
+# p6_only does NOT generate any layout YAML. It reads three from baseline_only/
+# (the source of truth so all three methods see the SAME training distribution
+# and the SAME held-out distribution):
+#
+#   baseline_only/training_layouts.yaml    -> initial demos (copied)
+#   baseline_only/correction_layouts.yaml  -> rollout pool the LLM analyses
+#   baseline_only/heldout_layouts.yaml     -> pure eval set; never written to
+
+# ---- Initial-training fallback ----
+# Used ONLY when baseline_only/checkpoints/initial_best_eq_policy.pth is
+# missing. When the snapshot exists, p6_only copies it verbatim and skips
+# initial training.
+initial_demos: 20
+initial_epochs: 500
+
+# ---- Per-round retrain ----
+round_epochs: 500         # epochs PER RETRAIN after each LLM-prescribed batch
+                          # is BFS-collected. See baseline_only/config.yml for
+                          # the train_from_scratch trade-off — match that
+                          # setting here for an apples-to-apples comparison.
+
+# ---- Loop ----
+max_rounds: 50            # hard guard against infinite loops.
+max_steps: 60             # per-episode step cap during rollout.
+target_sr: 0.90           # stop when heldout success rate >= this.
+
+# ---- Training mode ----
+train_from_scratch: true
+
+# ---- Misc ----
+seed: 0
+
+# ---- Prompts ----
+# Three prompt addenda live in p6_only/prompts/:
+#   prompts/reasoning.yml      -> appended to per-episode reasoning prompt
+#   prompts/cross_episode.yml  -> appended to cross-episode reasoning prompt
+#   prompts/aggregator.yml     -> appended to plain-LLM JSON aggregator prompt
+# Edit those YAMLs to tune prompting without touching code. Setting an
+# addendum's value to "" disables that hook for p6_only.

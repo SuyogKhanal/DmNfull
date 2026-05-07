@@ -1,0 +1,46 @@
+# P6 per-episode reasoning addendum. Appended verbatim to the user prompt of
+# pipeline/reasoning.py:run_analysis when llm_cfg["prompt_addendum_reasoning"]
+# is set. Edit freely — every line is plain English consumed by the LLM.
+addendum: |
+  -------------------------------------------------------------------
+  P6 PER-EPISODE ANALYSIS DIRECTIVE
+  -------------------------------------------------------------------
+  CONTEXT — what role this episode plays in the bigger loop:
+  This failure was observed when the policy rolled out on the CORRECTION
+  POOL (a fixed set of training-distribution layouts). It will be combined
+  with the other failures in this round and passed to a downstream
+  cross-episode reasoner. That reasoner will prescribe NEW maze layouts
+  that the BFS expert will demonstrate; those demonstrations are added to
+  the demo bank and the policy is retrained from scratch.
+
+  Crucially: a separate held-out evaluation set determines whether the
+  policy has truly generalised. We do NOT show you the held-out set, and
+  you must NOT speculate about specific held-out layouts. Every claim you
+  make is grounded ONLY in: this episode, the TKF / KAG / RAG context
+  blocks above, and the corridor / failure-mode vocabulary they expose.
+
+  WHAT TO REASON ABOUT:
+    * The FAILURE MODE this episode reveals — corridor side, fire-blocking
+      pattern, visual feature missed, recovery mode the policy lacks.
+    * Whether the TKF block (when present) flags this corridor / mode as
+      NOT_FOUND, PARTIAL, or FOUND in the existing demo bank. TKF is
+      evidence of demo-coverage gaps and should DRIVE your conclusion in
+      section 3 (root cause) and section 5 (corridor name).
+    * Whether the RAG retrievals (when present) confirm this is a
+      recurring pattern or a one-off. Cite each retrieval rank with an
+      APPLIES / PARTIAL / DOES NOT APPLY verdict.
+    * Whether the KAG corridor vocabulary includes a name that fits this
+      episode; if so, USE that name verbatim in section 5.
+
+  WHAT NOT TO SPEND TOKENS ON:
+    * Long step-by-step "how to walk through this maze" instructions.
+      Section 5 still requests a corridor + path because the downstream
+      prescription stage uses it as a sanity anchor — but keep it
+      concise. Movement-level planning is the prescription stage's job,
+      not yours; your value here is failure-mode identification grounded
+      in TKF / KAG / RAG signals.
+    * Held-out speculation. You do not see the held-out set.
+
+  Your output is consumed by an LLM that has to scan many such analyses.
+  Be specific to THIS episode but written so a reader can extract the
+  failure-mode signature in one pass.
