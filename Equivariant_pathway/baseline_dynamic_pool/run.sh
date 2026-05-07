@@ -76,6 +76,26 @@ for d in "${required_dirs[@]}"; do
         if [ "$n" -eq 0 ]; then
             echo "[$(date)]                 (directory is empty — counts as missing)"
             need_run_baseline=true
+        else
+            # Break the count down by source field so the user can see
+            # upfront that only the initial BFS demos get copied. The
+            # DAgger corrections from baseline_only's own loop are
+            # filtered out by the bootstrap to prevent contamination.
+            init_count=0
+            dagger_count=0
+            unknown_count=0
+            while IFS= read -r f; do
+                if grep -q '"source": *"equivariant_pathway_bfs"' "$f" 2>/dev/null; then
+                    init_count=$((init_count + 1))
+                elif grep -q '"source": *"baseline_dagger_correction"' "$f" 2>/dev/null; then
+                    dagger_count=$((dagger_count + 1))
+                else
+                    unknown_count=$((unknown_count + 1))
+                fi
+            done < <(find "$d" -maxdepth 1 -name '*.json' 2>/dev/null)
+            echo "[$(date)]                 source breakdown: $init_count initial BFS, $dagger_count DAgger correction, $unknown_count unknown"
+            echo "[$(date)]                 baseline_dynamic_pool WILL COPY ONLY the $init_count initial BFS demos"
+            echo "[$(date)]                 (DAgger corrections are skipped — they would contaminate the starting set)"
         fi
     fi
 done
