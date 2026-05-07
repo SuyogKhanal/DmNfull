@@ -47,16 +47,31 @@ echo "[$(date)]   --force_restart is ALWAYS on: p4_only/{demos,checkpoints,"
 echo "[$(date)]   results} are wiped and re-bootstrapped from baseline_only/"
 echo "[$(date)]   on every submission. baseline_only/ is read-only."
 
-if [ ! -f "Equivariant_pathway/baseline_only/checkpoints/best_eq_policy.pth" ]; then
-    echo "[$(date)] ERROR: baseline_only/ has not been run."
-    echo "[$(date)] Expected: Equivariant_pathway/baseline_only/checkpoints/best_eq_policy.pth"
+if [ ! -f "Equivariant_pathway/baseline_only/heldout_layouts.yaml" ] \
+   || [ ! -d "Equivariant_pathway/baseline_only/demos" ]; then
+    echo "[$(date)] ERROR: baseline_only/ has not been run yet."
+    echo "[$(date)] Need: Equivariant_pathway/baseline_only/heldout_layouts.yaml"
+    echo "[$(date)]       Equivariant_pathway/baseline_only/demos/*.json"
     echo "[$(date)] Run Equivariant_pathway/baseline_only/run.sh first."
     exit 1
 fi
 
-echo "[$(date)] sha256 of baseline_only's shared best_eq_policy.pth (this is what"
-echo "[$(date)] p4_only is starting from):"
-sha256sum Equivariant_pathway/baseline_only/checkpoints/best_eq_policy.pth || true
+# Initial-checkpoint resolution: prefer the immutable initial_* snapshot
+# (written by modern baseline_only runs BEFORE the DAgger loop). If that
+# snapshot is missing, p4_only will fall back to training its OWN initial
+# model on the same 20 demos — copying the post-DAgger best_eq_policy.pth
+# would give P4 a head start and is intentionally not done.
+if [ -f "Equivariant_pathway/baseline_only/checkpoints/initial_best_eq_policy.pth" ]; then
+    echo "[$(date)] initial-snapshot present — p4_only will start from byte-identical weights:"
+    sha256sum Equivariant_pathway/baseline_only/checkpoints/initial_best_eq_policy.pth || true
+else
+    echo "[$(date)] initial_best_eq_policy.pth NOT FOUND in baseline_only/checkpoints/."
+    echo "[$(date)]   This is expected for a baseline_only run that completed BEFORE the"
+    echo "[$(date)]   snapshot fix. p4_only will train its OWN initial model from scratch on"
+    echo "[$(date)]   the same 20 demos using --initial_epochs / --initial_demos. To get"
+    echo "[$(date)]   byte-identical starting weights for future runs, re-run baseline_only/"
+    echo "[$(date)]   run.sh — it now writes the initial_* snapshot automatically."
+fi
 
 python -u -m Equivariant_pathway.p4_only.pipeline \
     --force_restart \

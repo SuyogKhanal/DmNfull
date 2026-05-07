@@ -95,13 +95,16 @@ def _count_demos() -> int:
 
 
 def _check_baseline_artifacts() -> None:
-    """Fail fast with a clear message if baseline_only/ is missing pieces."""
+    """Fail fast if baseline_only/ is missing the artefacts we MUST share
+    (heldout YAML, training YAML, top-level initial demos). The initial
+    checkpoint is NOT required here — if no `initial_best_eq_policy.pth`
+    snapshot exists, p4_only trains its own initial model on the same 20
+    demos in _bootstrap()."""
     missing = []
     for path, label in [
-        (BO_TRAIN_YAML,                        "training_layouts.yaml"),
-        (BO_HELDOUT_YAML,                      "heldout_layouts.yaml"),
-        (BO_DEMOS,                             "demos/"),
-        (BO_CKPT / "best_eq_policy.pth",       "checkpoints/best_eq_policy.pth"),
+        (BO_TRAIN_YAML,    "training_layouts.yaml"),
+        (BO_HELDOUT_YAML,  "heldout_layouts.yaml"),
+        (BO_DEMOS,         "demos/"),
     ]:
         if not path.exists():
             missing.append((label, str(path)))
@@ -115,31 +118,120 @@ def _check_baseline_artifacts() -> None:
         raise SystemExit("\n".join(msg))
 
 
-def _bootstrap() -> None:
-    """Copy initial 20 demos + initial checkpoints from baseline_only/.
-    Round subfolders (baseline's corrective demos) are NOT copied — p4_only
-    accumulates its own per-round prescribed demos under its own demos/."""
+def _bootstrap(seed: int, initial_epochs: int, initial_demos: int) -> None:
+    """Bring p4_only/ to the SAME starting point baseline_only had at round 0:
+    same initial demos, same initial model.
+
+    Demos: the top-level *.json files in baseline_only/demos/ are copied
+    verbatim. Round subfolders (baseline's corrective demos collected during
+    its DAgger loop) are intentionally NOT copied — p4_only accumulates its
+    own per-round prescribed demos under its own demos/.
+
+    Initial model: ordered fallback —
+      1. If baseline_only/checkpoints/initial_best_eq_policy.pth exists
+         (modern baseline_only runs snapshot it BEFORE the DAgger loop),
+         copy it. Same for initial_last_eq_policy.pth. This gives both
+         methods byte-identical starting weights.
+      2. Otherwise (e.g. an already-completed legacy baseline_only run
+         where best_eq_policy.pth is now the converged post-DAgger model),
+         we MUST NOT copy that file — it would give P4 a head start that
+         has nothing to do with P4. Instead, train p4_only's own initial
+         model from scratch on the same 20 demos that were just copied,
+         using the same epochs / seed baseline_only used. The result is a
+         trained-the-same-way starting point (statistically equivalent;
+         not bit-identical because of CUDA non-determinism, but predicts
+         very similarly on the heldout)."""
     DEMO_DIR.mkdir(parents=True, exist_ok=True)
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # baseline_only/demos/ at top-level holds BOTH the initial BFS demos AND
+    # every corrective demo baseline's DAgger loop appended. They are
+    # distinguishable by the `source` field in the JSON payload:
+    #   - "equivariant_pathway_bfs"     -> initial demos (collect_demos.py)
+    #   - "baseline_dagger_correction"  -> DAgger corrections (baseline_dagger._save_corrective_demo)
+    # Copying everything would mean p4_only starts with 20 + N demos and
+    # would skew every comparison against baseline. So we filter by source
+    # and copy ONLY the initial BFS demos. Files we cannot decode or that
+    # lack a recognisable source are skipped with a warning rather than
+    # silently let through.
     n_copied = 0
+    n_skipped_dagger = 0
+    n_skipped_unknown = 0
     for src in sorted(BO_DEMOS.glob("*.json")):
+        try:
+            with open(src, "r") as f:
+                payload = json.load(f)
+        except Exception as e:
+            _info(f"demos: skipping unreadable {src.name} ({e!r})")
+            n_skipped_unknown += 1
+            continue
+        source = (payload.get("source") or "").strip()
+        if source == "baseline_dagger_correction":
+            n_skipped_dagger += 1
+            continue
+        if source != "equivariant_pathway_bfs":
+            _info(f"demos: skipping {src.name} (unrecognised source={source!r})")
+            n_skipped_unknown += 1
+            continue
         dst = DEMO_DIR / src.name
         if not dst.exists():
             shutil.copy2(src, dst)
             n_copied += 1
     n_now = sum(1 for _ in DEMO_DIR.glob("*.json"))
-    _info(f"demos: copied {n_copied} initial demos from {BO_DEMOS} "
-          f"(top-level total now: {n_now})")
+    _info(
+        f"demos: copied {n_copied} initial BFS demos from {BO_DEMOS}; "
+        f"skipped {n_skipped_dagger} baseline-DAgger corrections, "
+        f"{n_skipped_unknown} unknown. Total now in {DEMO_DIR}: {n_now}."
+    )
+    if n_now == 0:
+        raise SystemExit(
+            f"After filtering, p4_only/demos is empty. baseline_only/demos has no\n"
+            f"files with source=='equivariant_pathway_bfs'. Re-run baseline_only/run.sh\n"
+            f"so the initial 20 demos are regenerated."
+        )
 
-    for name in ("best_eq_policy.pth", "last_eq_policy.pth"):
-        src = BO_CKPT / name
-        if src.exists():
-            shutil.copy2(src, CKPT_DIR / name)
-            _info(f"checkpoint: copied {name} ({src.stat().st_size} bytes)")
-        elif name == "best_eq_policy.pth":
-            raise SystemExit(f"required {src} not found")
+    snap_best = BO_CKPT / "initial_best_eq_policy.pth"
+    snap_last = BO_CKPT / "initial_last_eq_policy.pth"
+    dst_best = CKPT_DIR / "best_eq_policy.pth"
+    dst_last = CKPT_DIR / "last_eq_policy.pth"
+
+    if snap_best.exists():
+        _info(f"initial checkpoint: snapshot found at {snap_best}; copying.")
+        shutil.copy2(snap_best, dst_best)
+        _info(f"  -> {dst_best.name} ({dst_best.stat().st_size} bytes)")
+        if snap_last.exists():
+            shutil.copy2(snap_last, dst_last)
+            _info(f"  -> {dst_last.name} ({dst_last.stat().st_size} bytes)")
+        else:
+            shutil.copy2(snap_best, dst_last)
+            _info(f"  -> {dst_last.name} (=initial_best fallback)")
+        return
+
+    _info(
+        f"initial checkpoint: snapshot {snap_best.name} NOT found at {BO_CKPT}.\n"
+        f"  baseline_only/checkpoints/best_eq_policy.pth would be the post-\n"
+        f"  DAgger converged model — copying it would give P4 a head start.\n"
+        f"  Falling back to training p4_only's own initial model on the\n"
+        f"  {_count_demos()} initial demos for {initial_epochs} epochs (seed="
+        f"{seed}). To make future runs byte-identical across methods, re-run\n"
+        f"  baseline_only/run.sh — it now writes the initial_* snapshot."
+    )
+    rc = _run([
+        sys.executable, "-u", "-m", "Equivariant_pathway.train",
+        "--demo_dir",       str(DEMO_DIR),
+        "--checkpoint_dir", str(CKPT_DIR),
+        "--epochs",         str(initial_epochs),
+        "--seed",           str(seed),
+        "--max_demos",      str(initial_demos),
+    ])
+    if rc != 0:
+        raise RuntimeError(f"p4_only initial training failed (rc={rc})")
+    if not dst_best.exists():
+        raise RuntimeError(
+            f"p4_only initial training finished rc=0 but {dst_best} is missing."
+        )
+    _info(f"initial checkpoint trained at {dst_best} ({dst_best.stat().st_size} bytes)")
 
 
 def _rollout_for_analysis(seed: int, rollout_dir: Path) -> None:
@@ -240,6 +332,13 @@ def main():
     p = argparse.ArgumentParser(description="P4-only equivariant pipeline.")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--round_epochs", type=int, default=DEFAULT_ROUND_EPOCHS)
+    p.add_argument("--initial_epochs", type=int, default=500,
+                   help="Epochs used ONLY when baseline_only's initial_*_eq_policy.pth "
+                        "snapshot is missing and p4_only must train its own initial "
+                        "model from scratch. Match baseline_only's --initial_epochs.")
+    p.add_argument("--initial_demos", type=int, default=20,
+                   help="Number of initial demos cap for the fallback initial training "
+                        "(matches baseline_only's --initial_demos).")
     p.add_argument("--max_rounds", type=int, default=50,
                    help="Hard guard against infinite loops; the loop normally exits "
                         "when heldout success rate >= 0.90.")
@@ -263,7 +362,7 @@ def main():
                 shutil.rmtree(d)
 
     _section("PHASE 1: BOOTSTRAP FROM baseline_only/", char="-")
-    _bootstrap()
+    _bootstrap(args.seed, args.initial_epochs, args.initial_demos)
 
     _section("PHASE 2: ROUND 0 — HELDOUT EVAL ON SHARED STARTING MODEL", char="-")
     round0_dir = RESULTS_DIR / "round_000_rollout"
