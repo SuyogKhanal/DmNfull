@@ -1,65 +1,108 @@
-# Final structured prescription addendum for p6_dynamic_pool. Appended to
-# pipeline/aggregator.py:final_structured_prescription when
-# prompt_addendum_aggregator is set.
+# Final structured prescription addendum for p6_dynamic_pool — REVISED v2.
+# Appended to pipeline/aggregator.py:final_structured_prescription when
+# llm_cfg["prompt_addendum_aggregator"] is set.
+#
+# The previous version mirrored the cross-episode reasoning's count.
+# But the JSON aggregator was still collapsing 5+ layouts into 1-2
+# prescriptions — the count discipline was being interpreted as
+# "produce as few prescription objects as possible". This rewrite
+# explicitly forbids reducing the layout count and explains why.
 addendum: |
   -------------------------------------------------------------------
-  P6 DYNAMIC-POOL STRUCTURED PRESCRIPTION DIRECTIVE
+  P6 DYNAMIC-POOL STRUCTURED PRESCRIPTION DIRECTIVE (v2)
   -------------------------------------------------------------------
   ROLE OF THIS STAGE:
-  Format the cross-episode reasoning's prescription as JSON. You are NOT
-  inventing prescriptions — every layout must be derivable from the
-  cross-episode reasoning, the per-episode FINAL_REC table, the per-
-  failure layouts block, and the KAG / RAG / TKF context blocks.
+  Format the cross-episode reasoning's prescription as JSON. You are
+  NOT inventing prescriptions. You are NOT reducing the layout count.
+  Every layout the cross-episode reasoning proposed MUST appear in
+  your JSON exactly once.
 
-  WHY THIS PIPELINE EXISTS — dynamic-pool expansion against saturation:
-  Layouts in `recommended_layouts` will be APPENDED to the active
-  correction pool. Next round the policy will be rolled out on the
-  expanded pool. Demos are also collected on these layouts and the
-  policy is retrained from scratch on the cumulative bank. The held-out
-  50 layouts remain untouched until final eval.
+  =================================================================
+  ABSOLUTE NO-SHRINK RULE:
+  =================================================================
+  Count the total layouts in the cross-episode reasoning's proposal.
+  Call that number N_PROPOSED. Then:
+      sum( recommended_layouts across all demonstration_prescriptions )
+      MUST equal N_PROPOSED.
+  Reducing this count is a directive violation. Specifically:
+    * Do NOT collapse multiple distinct layouts into one prescription
+      with high n_repetitions. (n_repetitions=5 on a single layout is
+      NOT equivalent to 5 distinct layouts in recommended_layouts.)
+    * Do NOT drop layouts because they "look similar" to other layouts.
+      The cross-episode stage already enforced diversity; trust it.
+    * Do NOT drop layouts because you think the policy might already
+      handle them. You don't know that.
 
+  =================================================================
+  COUNT FLOOR (independent check):
+  =================================================================
+  Even if for some reason the cross-episode reasoning produced fewer
+  than max(5, ceil(n_failure_episodes / 2)) layouts, your final JSON
+  output MUST still contain at least that many layouts. Generate
+  variant layouts (consistent with the cross-episode clusters and the
+  diversity rule below) to make up the gap.
+
+  =================================================================
+  DIVERSITY RULE (mirror the cross-episode rule exactly):
+  =================================================================
+  No two layouts in `recommended_layouts` may share all four of:
+      (corridor, fire_block_pattern, start_edge, goal_edge).
+  Each pair must differ on at least 2 of those 4 axes.
+
+  =================================================================
   HARD GUARDRAILS — every layout in `recommended_layouts` MUST satisfy:
+  =================================================================
     1. SOLVABLE: bounds (0..4 x 0..4), Manhattan(start, goal) >= 4,
        exactly 3 distinct fire cells none equal to start/goal, at least
        one fire-free path. Invalid layouts are dropped + warned by
        _validate_layout, and unsolvable layouts are skipped at BFS-
-       collection time. Either way they are wasted slots that also
-       wasted a future rollout episode (because the dynamic pool grows
-       monotonically).
-    2. UNIQUE WITHIN THIS OUTPUT: no two layouts in your JSON should
-       share corridor + fire-blocking pattern unless their start/goal
-       directions differ.
-    3. NOT a verbatim copy of any failure layout in the PER-FAILURE
-       LAYOUTS block above. Those are listed there to ground your
-       cluster reasoning, NOT as prescriptions.
-    4. INSIDE the failure-mode envelope identified by cross-episode
-       reasoning. If cross-episode reasoning says cluster A is a left-
-       edge fire-block failure, your layouts for cluster A must
-       exercise that.
+       collection time. Either way they are wasted slots.
+    2. NOT a verbatim copy of any failure layout in the PER-FAILURE
+       LAYOUTS block. Those are listed there to ground cluster
+       reasoning, NOT as prescriptions.
 
-  COUNT DISCIPLINE — mirror cross-episode reasoning:
-    * Cross-episode reasoning is responsible for the holistic minimum.
-      If it prescribed N layouts across K clusters, do NOT collapse to
-      fewer.
-    * Do NOT shrink to 1-2 layouts overall — that does not close the
-      held-out gap on a randomised distribution.
-    * Do NOT pad either. Every extra layout costs one expert query, one
-      retraining sample, and one extra rollout episode every future
-      round (the pool grows monotonically).
-    * total_demonstrations_needed MUST equal the sum of all
-      `demonstration_prescriptions[].n_repetitions`.
+  =================================================================
+  HOW TO STRUCTURE THE JSON WHEN A CLUSTER HAS MANY LAYOUTS:
+  =================================================================
+  If cross-episode reasoning identified 1 cluster with 6 layouts, the
+  CORRECT JSON shape is:
+      demonstration_prescriptions: [
+        {
+          demo_id: 1,
+          corridor: "<KAG name>",
+          ...,
+          n_repetitions: 6,                          # = number of layouts
+          recommended_layouts: [L1, L2, L3, L4, L5, L6]   # 6 distinct
+        }
+      ]
+  NOT:
+      demonstration_prescriptions: [
+        { ..., n_repetitions: 6, recommended_layouts: [L1] }   # WRONG
+      ]
+  The repetition count is informational; the actual training data
+  comes from each entry in recommended_layouts.
 
+  =================================================================
   HOW TO CITE TKF / KAG / RAG IN THE JSON:
+  =================================================================
     * cluster.corridor: KAG corridor name when KAG is provided.
-    * cluster.source_final_recs: corridor strings from the FINAL_REC
-      table for episodes in that cluster, IN ORDER.
-    * demonstration_prescriptions[].rationale: name the TKF verdict
-      (NOT_FOUND / PARTIAL / FOUND) when TKF is provided, OR the RAG
-      retrieval ranks (when RAG is provided), OR both. The point is to
-      make the JSON output auditable — every layout traceable to a
-      specific signal.
+    * cluster.source_final_recs: corridor strings from FINAL_REC for
+      episodes in that cluster, IN ORDER.
+    * demonstration_prescriptions[].rationale: (a) name the TKF verdict
+      (NOT_FOUND / PARTIAL / FOUND) when TKF is provided, (b) cite RAG
+      retrieval ranks when RAG is provided, AND (c) explain how the
+      proposed layouts vary on the diversity axes (corridor / fire-
+      block / start-edge / goal-edge).
 
-  INFORMATION YOU DO NOT HAVE:
-    No held-out layouts. No held-out success counts. Do NOT mention
-    held-out information in any field. Every grounded statement comes
-    from correction-pool failures + the demo-bank context blocks above.
+  =================================================================
+  WHY THIS REVISION EXISTS:
+  =================================================================
+  Earlier prompts asked you to mirror the cross-episode count, but you
+  collapsed 5+ layouts into n_repetitions=5 with a single layout in
+  recommended_layouts, AND/OR reduced the per-cluster count under the
+  banner of "smallest set". The downstream consumer reads
+  recommended_layouts directly — n_repetitions is informational only,
+  not a multiplier on a single-layout cluster. So those collapses
+  silently shrank the actual training increment per round, the policy
+  plateaued at heldout SR ~0.86, and a random-sampling baseline beat
+  it. This rewrite fixes that.
