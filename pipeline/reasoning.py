@@ -373,6 +373,14 @@ def run_analysis(
     client = _oai_client()
     analysis_prompt = build_analysis_prompt(episode, vision_report, kag_context, rag_context)
 
+    # Optional gated addendum: callers (e.g. Equivariant_pathway/p4_only) may
+    # supply llm_cfg["prompt_addendum_reasoning"] to append run-specific
+    # directives (e.g. sample-efficiency / minimum-layouts emphasis) without
+    # forking the shared prompt. Empty / missing = identical legacy behaviour.
+    addendum = str(llm_cfg.get("prompt_addendum_reasoning", "") or "").strip()
+    if addendum:
+        analysis_prompt = f"{analysis_prompt}\n\n{addendum}"
+
     try:
         return _chat_reasoning(
             client, model,
