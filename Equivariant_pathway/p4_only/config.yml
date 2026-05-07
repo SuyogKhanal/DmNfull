@@ -7,9 +7,20 @@
 # initial_demos, initial_epochs, round_epochs, target_sr, and
 # train_from_scratch.
 
+# ---- Layouts ----
+# p4_only does NOT generate any layout YAML. It reads three from baseline_only/
+# (which is the source of truth for layouts so both methods see the SAME
+# training distribution and the SAME held-out distribution):
+#
+#   baseline_only/training_layouts.yaml    -> initial demos (copied)
+#   baseline_only/correction_layouts.yaml  -> rollout pool the LLM analyses
+#   baseline_only/heldout_layouts.yaml     -> pure eval set; never written to
+#
+# Make sure baseline_only has been run with the new code so all three exist.
+
 # ---- Initial-training fallback ----
-# These are used ONLY when baseline_only/checkpoints/initial_best_eq_policy.pth
-# is missing (i.e. baseline_only was completed before the snapshot fix). When
+# Used ONLY when baseline_only/checkpoints/initial_best_eq_policy.pth is
+# missing (i.e. baseline_only was completed before the snapshot fix). When
 # the snapshot exists, p4_only copies it verbatim and skips initial training.
 initial_demos: 20
 initial_epochs: 500

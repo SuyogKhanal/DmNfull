@@ -6,8 +6,20 @@
 # Equivariant_pathway/baseline_only/pipeline.py.
 
 # ---- Layouts ----
-initial_demos: 20         # number of training layouts (one BFS demo each)
-heldout_n: 50             # number of heldout layouts (eval set)
+# Three signature-disjoint sets are generated on first run:
+#   training_layouts.yaml     (initial_demos)  -> initial BFS demos, one per layout
+#   correction_layouts.yaml   (correction_n)   -> DAgger correction pool; the
+#                                                  policy rolls out and fails
+#                                                  here, BFS expert resumes,
+#                                                  corrective demos saved
+#   heldout_layouts.yaml      (heldout_n)      -> PURE EVAL only; no demo
+#                                                  collector ever writes data
+#                                                  derived from these layouts.
+# Disjointness is enforced at sampling time so the heldout SR curve measures
+# real generalisation, not memorisation of the correction pool.
+initial_demos: 20
+correction_n: 50
+heldout_n: 50
 
 # ---- Training epochs ----
 initial_epochs: 500       # epochs for the initial train on the 20 demos

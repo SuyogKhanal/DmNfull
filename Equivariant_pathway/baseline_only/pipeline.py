@@ -57,11 +57,13 @@ CKPT_DIR = ROOT / "checkpoints"
 RESULTS_DIR = ROOT / "results"
 TRAIN_YAML = ROOT / "training_layouts.yaml"
 HELDOUT_YAML = ROOT / "heldout_layouts.yaml"
+CORRECTION_YAML = ROOT / "correction_layouts.yaml"
 
 TARGET_SR = 0.90
 DEFAULT_TRAIN_EVERY_N = 10
 DEFAULT_INITIAL_DEMOS = 20
 DEFAULT_HELDOUT_N = 50
+DEFAULT_CORRECTION_N = 50
 DEFAULT_INITIAL_EPOCHS = 500
 DEFAULT_ROUND_EPOCHS = 100
 
@@ -85,10 +87,28 @@ def _count_demos() -> int:
     return sum(1 for _ in DEMO_DIR.rglob("*.json"))
 
 
-def _ensure_layouts(seed: int, n_train: int, n_heldout: int) -> None:
-    """Sample heldout layouts FIRST, then sample training layouts with the
-    heldout signatures blocked. Guarantees signature-disjointness between
-    training and heldout."""
+def _ensure_layouts(seed: int, n_train: int, n_heldout: int, n_correction: int) -> None:
+    """Generate three signature-disjoint layout sets, in this order:
+
+      1. heldout_layouts.yaml   (n_heldout)   — PURE EVAL only, never written
+                                                 to by a demo collector.
+      2. training_layouts.yaml  (n_train)     — the small pool from which
+                                                 the initial BFS demos are
+                                                 drawn (one demo per layout).
+      3. correction_layouts.yaml (n_correction) — the DAgger / LLM-analysis
+                                                 correction pool. Every
+                                                 active-loop round runs the
+                                                 policy on these and turns
+                                                 failures into corrective
+                                                 demos. Disjoint from both
+                                                 of the above so SR measured
+                                                 on heldout is never
+                                                 contaminated by a layout
+                                                 the model trained on.
+
+    Each subsequent set is sampled with the union of previously-written
+    YAML signatures as the blocked-signature pool — so by construction
+    no signature appears in more than one set."""
     from Equivariant_pathway.layout_sampler import (
         sample_layouts, write_yaml, _load_blocked_signatures,
     )
@@ -122,6 +142,18 @@ def _ensure_layouts(seed: int, n_train: int, n_heldout: int) -> None:
               f"(disjoint from heldout by signature)")
     else:
         _info(f"using existing {TRAIN_YAML}")
+
+    if not CORRECTION_YAML.exists():
+        blocked = _load_blocked_signatures([str(HELDOUT_YAML), str(TRAIN_YAML)])
+        c_layouts = sample_layouts(
+            n=n_correction, grid_size=5, num_fires=3,
+            min_manhattan=4, seed=seed + 31337, blocked_signatures=blocked,
+        )
+        write_yaml(c_layouts, CORRECTION_YAML, grid_size=5)
+        _info(f"wrote {len(c_layouts)} correction-pool layouts -> {CORRECTION_YAML} "
+              f"(disjoint from training and heldout by signature)")
+    else:
+        _info(f"using existing {CORRECTION_YAML}")
 
 
 def _initial_collect(seed: int, n_demos: int) -> None:
@@ -220,7 +252,15 @@ def main():
     p.add_argument("--initial_demos", type=int,
                    default=int(cfg.get("initial_demos", DEFAULT_INITIAL_DEMOS)))
     p.add_argument("--heldout_n", type=int,
-                   default=int(cfg.get("heldout_n", DEFAULT_HELDOUT_N)))
+                   default=int(cfg.get("heldout_n", DEFAULT_HELDOUT_N)),
+                   help="Size of the heldout EVAL set (never written to by any "
+                        "demo collector; SR measured on these layouts is what we "
+                        "report in the learning curve).")
+    p.add_argument("--correction_n", type=int,
+                   default=int(cfg.get("correction_n", DEFAULT_CORRECTION_N)),
+                   help="Size of the DAgger correction pool — the layouts the "
+                        "policy is allowed to fail on and where corrective demos "
+                        "are recorded. Disjoint from --heldout_n by signature.")
     p.add_argument("--initial_epochs", type=int,
                    default=int(cfg.get("initial_epochs", DEFAULT_INITIAL_EPOCHS)))
     p.add_argument("--round_epochs", type=int,
@@ -256,22 +296,24 @@ def main():
     _section("BASELINE-DAGGER-ONLY EQUIVARIANT PIPELINE")
     _info(f"baseline_only root: {ROOT}")
     _info(f"seed={args.seed}  initial_demos={args.initial_demos}  "
-          f"heldout_n={args.heldout_n}  initial_epochs={args.initial_epochs}  "
-          f"round_epochs={args.round_epochs}  train_every_n={args.train_every_n}")
+          f"heldout_n={args.heldout_n}  correction_n={args.correction_n}  "
+          f"initial_epochs={args.initial_epochs}  "
+          f"round_epochs={args.round_epochs}  train_every_n={args.train_every_n}  "
+          f"train_from_scratch={args.train_from_scratch}")
 
     if args.force_restart:
         _info("--force_restart: wiping demos/, checkpoints/, results/, layout YAMLs.")
         for d in (DEMO_DIR, CKPT_DIR, RESULTS_DIR):
             if d.exists():
                 shutil.rmtree(d)
-        for f in (TRAIN_YAML, HELDOUT_YAML):
+        for f in (TRAIN_YAML, HELDOUT_YAML, CORRECTION_YAML):
             if f.exists():
                 f.unlink()
     for d in (DEMO_DIR, CKPT_DIR, RESULTS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
     _section("PHASE 1: LAYOUTS", char="-")
-    _ensure_layouts(args.seed, args.initial_demos, args.heldout_n)
+    _ensure_layouts(args.seed, args.initial_demos, args.heldout_n, args.correction_n)
 
     _section("PHASE 2: INITIAL DEMO COLLECTION", char="-")
     if _count_demos() < args.initial_demos:
@@ -330,8 +372,15 @@ def main():
     for rnd in range(1, args.max_rounds + 1):
         _section(f"ROUND {rnd}", char="-")
         pass_dir = RESULTS_DIR / f"round_{rnd:03d}_pass"
+        # CRITICAL: the DAgger correction pass runs on the CORRECTION pool,
+        # NOT the heldout set. Corrective demos written to demo_dir come
+        # from this pool only. The heldout YAML is touched ONLY by the
+        # _eval_heldout call below — no demo collector ever writes data
+        # derived from heldout layouts. That's what makes the heldout SR
+        # curve a real generalisation measurement instead of a memorisation
+        # curve.
         summary = run_dagger_correction_pass(
-            layouts_yaml=HELDOUT_YAML,
+            layouts_yaml=CORRECTION_YAML,
             checkpoint=CKPT_DIR / "best_eq_policy.pth",
             demo_dir=DEMO_DIR,
             out_dir=pass_dir,
@@ -340,7 +389,7 @@ def main():
             train_every_n=args.train_every_n,
             train_demo_paths=None,
             epochs=args.round_epochs,
-            n_episodes=args.heldout_n,
+            n_episodes=args.correction_n,
             train_from_scratch=args.train_from_scratch,
         )
         n_corr = int(summary.get("n_corrected_in_pass", 0) or 0)
@@ -389,6 +438,7 @@ def _persist_curve(history: List[Dict]) -> None:
         "demo_dir": str(DEMO_DIR),
         "checkpoint_dir": str(CKPT_DIR),
         "heldout_yaml": str(HELDOUT_YAML),
+        "correction_yaml": str(CORRECTION_YAML),
         "training_yaml": str(TRAIN_YAML),
         "history": history,
     }
