@@ -145,15 +145,51 @@ def _bootstrap(seed: int, initial_epochs: int, initial_demos: int) -> None:
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # baseline_only/demos/ at top-level holds BOTH the initial BFS demos AND
+    # every corrective demo baseline's DAgger loop appended. They are
+    # distinguishable by the `source` field in the JSON payload:
+    #   - "equivariant_pathway_bfs"     -> initial demos (collect_demos.py)
+    #   - "baseline_dagger_correction"  -> DAgger corrections (baseline_dagger._save_corrective_demo)
+    # Copying everything would mean p4_only starts with 20 + N demos and
+    # would skew every comparison against baseline. So we filter by source
+    # and copy ONLY the initial BFS demos. Files we cannot decode or that
+    # lack a recognisable source are skipped with a warning rather than
+    # silently let through.
     n_copied = 0
+    n_skipped_dagger = 0
+    n_skipped_unknown = 0
     for src in sorted(BO_DEMOS.glob("*.json")):
+        try:
+            with open(src, "r") as f:
+                payload = json.load(f)
+        except Exception as e:
+            _info(f"demos: skipping unreadable {src.name} ({e!r})")
+            n_skipped_unknown += 1
+            continue
+        source = (payload.get("source") or "").strip()
+        if source == "baseline_dagger_correction":
+            n_skipped_dagger += 1
+            continue
+        if source != "equivariant_pathway_bfs":
+            _info(f"demos: skipping {src.name} (unrecognised source={source!r})")
+            n_skipped_unknown += 1
+            continue
         dst = DEMO_DIR / src.name
         if not dst.exists():
             shutil.copy2(src, dst)
             n_copied += 1
     n_now = sum(1 for _ in DEMO_DIR.glob("*.json"))
-    _info(f"demos: copied {n_copied} initial demos from {BO_DEMOS} "
-          f"(top-level total now: {n_now})")
+    _info(
+        f"demos: copied {n_copied} initial BFS demos from {BO_DEMOS}; "
+        f"skipped {n_skipped_dagger} baseline-DAgger corrections, "
+        f"{n_skipped_unknown} unknown. Total now in {DEMO_DIR}: {n_now}."
+    )
+    if n_now == 0:
+        raise SystemExit(
+            f"After filtering, p4_only/demos is empty. baseline_only/demos has no\n"
+            f"files with source=='equivariant_pathway_bfs'. Re-run baseline_only/run.sh\n"
+            f"so the initial 20 demos are regenerated."
+        )
 
     snap_best = BO_CKPT / "initial_best_eq_policy.pth"
     snap_last = BO_CKPT / "initial_last_eq_policy.pth"
