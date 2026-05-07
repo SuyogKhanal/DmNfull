@@ -1,0 +1,46 @@
+# p6_dynamic_pool configuration. CLI args override these.
+# Keep these aligned with baseline_only / p4_only / p6_only for fair comparisons.
+
+# ---- Layouts ----
+# p6_dynamic_pool reads layouts from baseline_only/ and maintains its own
+# growing dynamic_pool.yaml seeded from baseline_only/correction_layouts.yaml.
+# heldout_layouts.yaml is read-only (pure eval).
+initial_demos: 20
+
+# ---- Initial-training fallback ----
+# Used ONLY when baseline_only/checkpoints/initial_best_eq_policy.pth is
+# missing. When the snapshot exists, this method copies it verbatim.
+initial_epochs: 500
+
+# ---- Per-round retrain ----
+round_epochs: 500
+
+# ---- Loop ----
+max_rounds: 50
+max_steps: 60
+target_sr: 0.90
+
+# ---- Training mode ----
+train_from_scratch: true
+
+# ---- Stagnation gating for the LLM ----
+# Pool SR threshold above which the LLM fires. The DAgger-saturation story
+# is most compelling when the LLM ONLY fires at saturation (so the
+# heldout-SR gains are clearly attributable to LLM-driven pool extensions
+# rather than to having the LLM tinker every round).
+#
+#   0.0   -> LLM fires every round (default; useful for ablation)
+#   0.85  -> LLM fires only when pool_sr >= 85% (saturation gate)
+#   0.95  -> LLM fires only when the pool is essentially solved
+#
+# When skipped, the round still records pool_sr and heldout_sr so the
+# learning curve is continuous.
+stagnation_threshold: 0.0
+
+# ---- Misc ----
+seed: 0
+
+# ---- Prompts ----
+# prompts/{reasoning,cross_episode,aggregator}.yml each have an `addendum:`
+# field appended verbatim to the corresponding LLM stage's user prompt.
+# Edit them to tune p6_dynamic_pool's prompting without touching code.

@@ -1,0 +1,42 @@
+# Per-episode reasoning addendum for p6_dynamic_pool. Appended verbatim to
+# pipeline/reasoning.py:run_analysis when prompt_addendum_reasoning is set.
+addendum: |
+  -------------------------------------------------------------------
+  P6 DYNAMIC-POOL PER-EPISODE ANALYSIS DIRECTIVE
+  -------------------------------------------------------------------
+  CONTEXT — what role this episode plays:
+  This failure was observed while the policy rolled out on the CURRENT
+  CORRECTION POOL. Note that this pool is GROWING: every round the
+  downstream cross-episode reasoner adds new layouts to it, and the
+  policy must learn to handle the entire growing pool. Your analysis,
+  combined with the other failures from this round, will inform which
+  NEW layouts get appended to the pool next.
+
+  Crucially: there is also a separate held-out evaluation set of 50
+  layouts that you will NEVER see and that no demo collector ever
+  touches. The held-out SR is the only published number. Do NOT
+  speculate about specific held-out configurations.
+
+  WHAT TO REASON ABOUT:
+    * The FAILURE MODE this episode reveals — corridor side, fire-block
+      pattern, visual feature missed, recovery the policy lacks.
+    * Whether the TKF block (when present) flags this corridor / mode as
+      NOT_FOUND, PARTIAL, or FOUND in the existing demo bank. The bank
+      reflects everything the policy has been trained on so far. TKF
+      gaps are exactly what dynamic-pool expansion targets.
+    * Whether the RAG retrievals indicate this is recurring across rounds
+      — recurrence is evidence that previous pool extensions did not
+      cover this mode adequately.
+    * Whether the KAG vocabulary contains a name that fits this episode;
+      use that name verbatim in section 5.
+
+  WHAT NOT TO SPEND TOKENS ON:
+    * Long step-by-step "how to walk through this maze" instructions.
+      Section 5 still requests a corridor + path as a sanity anchor —
+      keep it short. Movement-level planning is the prescription stage's
+      job, not yours; your value is failure-mode identification grounded
+      in TKF / KAG / RAG signals.
+    * Held-out speculation. You do not see the held-out set.
+
+  Be specific to THIS episode but written so the cross-episode reasoner
+  can extract the failure-mode signature in one pass.
