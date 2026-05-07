@@ -43,13 +43,56 @@ echo "[$(date)]   checkpoints,results,dynamic_pool.yaml} are wiped and"
 echo "[$(date)]   re-bootstrapped from baseline_only/ on every submission."
 echo "[$(date)]   baseline_only/ stays read-only."
 
-if [ ! -f "Equivariant_pathway/baseline_only/heldout_layouts.yaml" ] \
-   || [ ! -f "Equivariant_pathway/baseline_only/correction_layouts.yaml" ] \
-   || [ ! -d "Equivariant_pathway/baseline_only/demos" ]; then
-    echo "[$(date)] ERROR: baseline_only/ has not been run with the new"
-    echo "[$(date)]        correction-pool architecture yet."
+# Detailed precheck — print which specific artefact is missing so the
+# user can self-diagnose. The previous "has not been run" message hid
+# whether the issue was a missing YAML, an empty demos/, or running
+# from the wrong working directory.
+echo "[$(date)] precheck: looking for baseline_only/ artefacts"
+echo "[$(date)]   working directory: $(pwd)"
+need_run_baseline=false
+required_files=(
+    "Equivariant_pathway/baseline_only/heldout_layouts.yaml"
+    "Equivariant_pathway/baseline_only/correction_layouts.yaml"
+    "Equivariant_pathway/baseline_only/training_layouts.yaml"
+)
+required_dirs=(
+    "Equivariant_pathway/baseline_only/demos"
+)
+for f in "${required_files[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "[$(date)]   MISSING file: $f"
+        need_run_baseline=true
+    else
+        echo "[$(date)]   found:        $f"
+    fi
+done
+for d in "${required_dirs[@]}"; do
+    if [ ! -d "$d" ]; then
+        echo "[$(date)]   MISSING dir:  $d"
+        need_run_baseline=true
+    else
+        n=$(find "$d" -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
+        echo "[$(date)]   found:        $d  ($n top-level *.json files)"
+        if [ "$n" -eq 0 ]; then
+            echo "[$(date)]                 (directory is empty — counts as missing)"
+            need_run_baseline=true
+        fi
+    fi
+done
+
+if [ "${need_run_baseline}" = true ]; then
+    echo "[$(date)] ============================================================"
+    echo "[$(date)] ERROR: baseline_only/ is missing one or more required artefacts."
+    echo "[$(date)] Run baseline_only first to regenerate them:"
+    echo "[$(date)]   sbatch Equivariant_pathway/baseline_only/run.sh"
+    echo "[$(date)] (or interactively: bash Equivariant_pathway/baseline_only/run.sh)"
+    echo "[$(date)] That populates: heldout_layouts.yaml, correction_layouts.yaml,"
+    echo "[$(date)]   training_layouts.yaml, demos/, checkpoints/."
+    echo "[$(date)] Then re-submit this job."
+    echo "[$(date)] ============================================================"
     exit 1
 fi
+echo "[$(date)] precheck: all required baseline_only/ artefacts present."
 
 if [ -f "Equivariant_pathway/baseline_only/checkpoints/initial_best_eq_policy.pth" ]; then
     echo "[$(date)] initial-snapshot present — starting from byte-identical weights:"
