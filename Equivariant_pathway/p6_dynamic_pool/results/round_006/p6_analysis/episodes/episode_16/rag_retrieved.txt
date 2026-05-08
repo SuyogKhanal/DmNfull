@@ -1,0 +1,19 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.973 run=p6_analysis ep=13 ---
+  Dynamic config: start=[1, 1] goal=[0, 4] fires=[['0', '2'], ['1', '3'], ['2', '1']]
+  Summary:        The failure stemmed from not committing to a hazard-avoidant left-edge corridor and instead taking a short-range rightward move that increased exposure to the fires, ultimately leading to a fire collision. The episode’s configuration has start [1,1], goal [0,4], with fires at (0,2), (1,3), and (2,1), which block direct/top routes and require a robust corridor strategy. The correct approach would have followed the left_edge corridor, staying in column 0 down to row 4, then moving along row 4 toward the goal and finally up to [0,4]. In short, adopt a long-horizon left-edge path: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4).
+  Root cause:     pending
+
+--- rank=2 sim=0.973 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        - Root cause: The agent failed to generalize a safe hazard-avoidance corridor, drifting from the top-edge path into the central region and mismanaging the central fire near the goal. The earliest wrong decision was stepping DOWN from (0,2) to (1,2) instead of continuing RIGHT along the top edge. The policy showed a late-stage hesitation to re-route safely, ending at (2,2) with the goal (2,4) still out of reach.
+
+- Key configuration: Start (0,0); Goal (2,4); Fires at (1,0), (2,3), (3,0).
+
+- Correct path: Follow the top-edge corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+  Root cause:     pending
+
+--- rank=3 sim=0.959 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        The failure stems from a fire-avoidance generalization gap: the agent did not reliably follow a safe corridor to avoid hazards, leading to near-fire exposure and no goal reach. Key configuration: start at (4,4), goal at (1,0), with fires at (1,2), (4,0), and (4,2); the episode proceeded largely toward the upper-left but remained in hazard-adjacent areas and ended at (1,3). The correct path should have used the top-edge corridor to bypass central fires, e.g., (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0). This approach avoids the fires while progressing to the goal.
+  Root cause:     pending

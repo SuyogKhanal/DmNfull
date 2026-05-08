@@ -1,0 +1,19 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 3
+demo_variations: rag rank=1 top_edge variant; rag rank=2 bottom_edge variant; rag rank=3 central_mixed variant rejected due to proximity to fires
+rationale: 'Left-edge corridor: Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure context shows dangerous top-fire clustering near (0,1) and (0,3) and a bottom-fire near (4,1). In this episode the analysis picks the left_edge corridor as a safe path to the goal (4,0) by moving toward the left edge and then down, avoiding the top hazards and the bottom-fire cluster that blocks other routes.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the left_edge corridor’s spirit: start at [1,3], move left to column 0, descend to row 4, then proceed along row 4 to the goal at [4,0]. The demonstrated path is: [1,3] -> [1,2] -> [1,1] -> [1,0] -> [2,0] -> [3,0] -> [4,0].
+
+3. WHAT will the AI learn from seeing that walkthrough? The AI will learn to bias its decisions toward using the leftmost safe corridor when fires cluster near the top or bottom blocks the other routes. The RAG retrievals show several fire-avoidance demonstrations across different corridors, underscoring the need to generalize corridor-based avoidance rather than always favoring the same route.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Three demonstrations are provided:
+- Variation 1 (linked to Rag rank=1): a top-edge-oriented avoidance idea adapted to the same scenario.
+- Variation 2 (linked to Rag rank=2): a bottom-edge-oriented avoidance idea adapted to the same scenario.
+- Variation 3 (linked to Rag rank=3): central_mixed variant, which is rejected here due to proximity to fires; the left-edge corridor remains the target. The three variants cover minor route differences across corridors while emphasizing safe fire avoidance.

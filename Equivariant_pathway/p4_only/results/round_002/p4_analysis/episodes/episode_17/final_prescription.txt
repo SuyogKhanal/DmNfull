@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: Top-edge corridor path from start to goal: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+rationale: Address the fire_collision by selecting the top-edge corridor, which 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to collide with fire tiles when trying to navigate from the given start; the suggested corridor to fix this issue is the top_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts at [2,0], climbs up to the top row by moving to [1,0] and then [0,0], and then travels along the top row to reach the goal at [0,3] via [0,1] and [0,2], ending at [0,3].
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid central fire tiles by using the top edge of the maze, staying on row 0 to reach the goal, which reduces the risk of stepping onto fire tiles and avoids dead-end/timeout patterns.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The demonstration uses the top_edge corridor path shown in the steps. If more coverage were needed later, variations could introduce small shifts in the initial ascent (still favoring the top edge) or slight changes in the order of horizontal moves along row 0, but for this failure, a single, targeted top-edge example suffices.

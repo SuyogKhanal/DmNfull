@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: Variation 1: Left-edge corridor full-route demonstration from (1,1) to GOAL (0,4), showing safe path along left column then bottom row to GOAL.
+rationale: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to stray from a simple, safe corridor when central fires block the middle area, and the earliest misstep described in the analysis occurred around Step 7 in the central-right detour. The FINAL_REC targets the left_edge corridor to avoid that trap.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A clean, corridor-driven route along the left edge: start at (1,1), move left to (1,0), then go down the left column to (4,0), traverse right along the bottom row to (4,4), and finally go up the rightmost column to reach the GOAL at (0,4): (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to rely on a robust, hazard-avoiding corridor (the left-edge path) that stays away from the central fire cluster, providing a reliable route from the top-left starting region to the GOAL even when central fires appear.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use Variation 1 as the single corrective demonstration: a complete left-edge corridor route from (1,1) to (0,4) that shows the safe, fire-avoiding progression.

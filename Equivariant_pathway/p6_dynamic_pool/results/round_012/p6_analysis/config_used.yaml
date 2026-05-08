@@ -1,0 +1,178 @@
+maze:
+  name: multimodal
+rollout:
+  n_episodes: 40
+  seed: 12000
+  checkpoint_path: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/checkpoints/best_eq_policy.pth
+tracking:
+  output_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_012
+pipeline:
+  use_vlm: true
+  use_reasoning: true
+  use_cross_episode_reasoning: true
+  use_kag: true
+  use_rag: true
+  use_tkf: true
+  use_plain_llm: true
+  use_aggregator: true
+llm:
+  prompt_addendum_reasoning: "-------------------------------------------------------------------\n\
+    P6 DYNAMIC-POOL PER-EPISODE ANALYSIS DIRECTIVE\n-------------------------------------------------------------------\n\
+    CONTEXT \u2014 what role this episode plays:\nThis failure was observed while\
+    \ the policy rolled out on the CURRENT\nCORRECTION POOL. Note that this pool is\
+    \ GROWING: every round the\ndownstream cross-episode reasoner adds new layouts\
+    \ to it, and the\npolicy must learn to handle the entire growing pool. Your analysis,\n\
+    combined with the other failures from this round, will inform which\nNEW layouts\
+    \ get appended to the pool next.\n\nCrucially: there is also a separate held-out\
+    \ evaluation set of 50\nlayouts that you will NEVER see and that no demo collector\
+    \ ever\ntouches. The held-out SR is the only published number. Do NOT\nspeculate\
+    \ about specific held-out configurations.\n\nWHAT TO REASON ABOUT:\n  * The FAILURE\
+    \ MODE this episode reveals \u2014 corridor side, fire-block\n    pattern, visual\
+    \ feature missed, recovery the policy lacks.\n  * Whether the TKF block (when\
+    \ present) flags this corridor / mode as\n    NOT_FOUND, PARTIAL, or FOUND in\
+    \ the existing demo bank. The bank\n    reflects everything the policy has been\
+    \ trained on so far. TKF\n    gaps are exactly what dynamic-pool expansion targets.\n\
+    \  * Whether the RAG retrievals indicate this is recurring across rounds\n   \
+    \ \u2014 recurrence is evidence that previous pool extensions did not\n    cover\
+    \ this mode adequately.\n  * Whether the KAG vocabulary contains a name that fits\
+    \ this episode;\n    use that name verbatim in section 5.\n\nWHAT NOT TO SPEND\
+    \ TOKENS ON:\n  * Long step-by-step \"how to walk through this maze\" instructions.\n\
+    \    Section 5 still requests a corridor + path as a sanity anchor \u2014\n  \
+    \  keep it short. Movement-level planning is the prescription stage's\n    job,\
+    \ not yours; your value is failure-mode identification grounded\n    in TKF /\
+    \ KAG / RAG signals.\n  * Held-out speculation. You do not see the held-out set.\n\
+    \nBe specific to THIS episode but written so the cross-episode reasoner\ncan extract\
+    \ the failure-mode signature in one pass."
+  prompt_addendum_cross_episode: "-------------------------------------------------------------------\n\
+    P6 DYNAMIC-POOL CROSS-EPISODE PRESCRIPTION DIRECTIVE (v2)\n-------------------------------------------------------------------\n\
+    YOUR JOB IN ONE SENTENCE:\nOutput a list of NEW maze layouts that, taken together,\
+    \ would let\nthe policy generalise to a randomised held-out distribution you\n\
+    cannot see. The held-out set is drawn uniformly from 5x5 / 3-fire /\nManhattan>=4\
+    \ layouts. Covering it requires VARIETY, not minimum\ncleverness.\n\nWHAT YOU\
+    \ PRODUCE:\nConcrete (start_pos, goal_pos, fire_positions) layouts that get\n\
+    appended to the active correction pool. Demos are collected on them\nvia BFS and\
+    \ the policy is retrained.\n\n=================================================================\n\
+    HARD COUNT RULE \u2014 overrides any prior conservative guidance:\n=================================================================\n\
+    Total recommended_layouts across all clusters MUST be at least\n    max(5, ceil(n_failure_episodes\
+    \ / 2))\ne.g.  3 failures  -> at least  5 layouts\n     10 failures  -> at least\
+    \  5 layouts\n     20 failures  -> at least 10 layouts\n\nThis is a HARD FLOOR.\
+    \ Single-digit prescriptions plateau the policy\nbefore reaching the held-out\
+    \ distribution. Going below this floor is\na directive violation regardless of\
+    \ how few clusters you find.\n\nUpper guide: do not exceed 2 * n_failure_episodes.\n\
+    \n=================================================================\nDIVERSITY\
+    \ RULE \u2014 also a hard rule:\n=================================================================\n\
+    Define each layout's signature as the 4-tuple:\n    (corridor, fire_block_pattern,\
+    \ start_edge, goal_edge)\nwhere:\n    corridor             = KAG corridor name\
+    \ (left_edge / top_edge / ...)\n    fire_block_pattern   = qualitative description\
+    \ of how the 3 fires\n                           obstruct the corridor (e.g. \"\
+    two-fire wall\n                           at row 2, third fire at corner\")\n\
+    \    start_edge / goal_edge = which side of the grid the position sits\n     \
+    \                        on (top / bottom / left / right / interior)\n\nNo two\
+    \ recommended layouts in your output may share ALL FOUR axes.\nEach pair must\
+    \ differ in at least 2 of the 4. The intent is to\nspread coverage; do NOT stack\
+    \ near-duplicates of one failed pattern.\n\n=================================================================\n\
+    CLUSTER COUNT IS NOT A LIMIT:\n=================================================================\n\
+    Even if you only see 1 cluster of failures, you still meet the count\nfloor by\
+    \ generating VARIANTS within that cluster \u2014 different start\nsides, different\
+    \ fire arrangements, different reachable corners. The\ncluster identifies a failure\
+    \ mode; the prescription must spread\nvariation around that mode, not just dot\
+    \ it once.\n\nCONSTRUCTION PROCEDURE (follow in order):\n  Step 1: List every\
+    \ distinct corridor / failure pattern across all\n          failures.\n  Step\
+    \ 2: For each pattern, generate 2-4 layouts that target that\n          pattern\
+    \ but differ from each other on at least 2 of the\n          4 diversity axes.\n\
+    \  Step 3: For each TKF NOT_FOUND corridor (whether or not it\n          appeared\
+    \ in this round's failures), generate at least 2\n          layouts to seed coverage\
+    \ there.\n  Step 4: Verify total count >= max(5, ceil(n_failures/2)). If\n   \
+    \       short, generate additional VARIANT layouts within already-\n         \
+    \ identified patterns until the floor is met.\n  Step 5: Verify the diversity\
+    \ rule pairwise across all layouts.\n\n=================================================================\n\
+    HARD GUARDRAILS \u2014 every recommended layout MUST satisfy:\n=================================================================\n\
+    \  1. SOLVABLE \u2014 the BFS expert that will collect the demo must reach\n \
+    \    the goal:\n       * start_pos and goal_pos in [0..4] x [0..4]\n       * Manhattan(start,\
+    \ goal) >= 4\n       * EXACTLY 3 distinct fire cells, none equal to start or goal\n\
+    \       * at least one fire-free path from start to goal\n     Unsolvable layouts\
+    \ are silently skipped (= wasted slot).\n  2. NOT IDENTICAL to any failure layout\
+    \ in the PER-FAILURE LAYOUTS\n     block (those grounded the analysis; they are\
+    \ NOT prescriptions).\n  3. NOT IDENTICAL to any layout already in the correction\
+    \ pool.\n\n=================================================================\n\
+    CONTEXT YOU HAVE / DO NOT HAVE:\n=================================================================\n\
+    HAVE:\n  * Per-episode reasoning + per-episode FINAL_REC for every\n    confirmed\
+    \ failure observed on the current pool.\n  * Verbatim numeric layout (start, goal,\
+    \ fires) of every confirmed\n    failure (the PER-FAILURE LAYOUTS block).\n  *\
+    \ KAG corridor / failure-mode vocabulary \u2014 use it for naming.\n  * RAG retrievals\
+    \ from past failure rounds.\n  * TKF demo-coverage block: NOT_FOUND / PARTIAL\
+    \ / FOUND verdicts on\n    corridors. NOT_FOUND corridors are EXPANSION TARGETS.\
+    \ Spend\n    layouts there.\n\nDO NOT HAVE \u2014 do not invent:\n  * Any specific\
+    \ held-out layout.\n  * Any held-out success/failure count.\n\nWHY THIS REVISION\
+    \ EXISTS:\nEarlier versions told you to be parsimonious. In practice the JSON\n\
+    aggregator that consumes your output collapsed prescriptions to\n1-2 layouts per\
+    \ round and started re-proposing layouts already in\nthe pool. The policy plateaued\
+    \ at heldout SR ~0.86 while a random-\nsampling baseline (with no failure analysis\
+    \ at all) reached 0.94 by\nout-spending the LLM's tiny prescriptions. This v2\
+    \ prompt fixes that\nby mandating both a count floor and diversity. Your prescriptions\n\
+    are now expected to be the SAME ORDER OF MAGNITUDE as the failure\ncount, not\
+    \ 10% of it.\n\nOutput is consumed by the JSON-formatting aggregator that is told\n\
+    NOT to contradict you and NOT to shrink your count. Your prescription\nIS the\
+    \ final answer; the JSON step is just structural formatting."
+  prompt_addendum_aggregator: "-------------------------------------------------------------------\n\
+    P6 DYNAMIC-POOL STRUCTURED PRESCRIPTION DIRECTIVE (v2)\n-------------------------------------------------------------------\n\
+    ROLE OF THIS STAGE:\nFormat the cross-episode reasoning's prescription as JSON.\
+    \ You are\nNOT inventing prescriptions. You are NOT reducing the layout count.\n\
+    Every layout the cross-episode reasoning proposed MUST appear in\nyour JSON exactly\
+    \ once.\n\n=================================================================\n\
+    ABSOLUTE NO-SHRINK RULE:\n=================================================================\n\
+    Count the total layouts in the cross-episode reasoning's proposal.\nCall that\
+    \ number N_PROPOSED. Then:\n    sum( recommended_layouts across all demonstration_prescriptions\
+    \ )\n    MUST equal N_PROPOSED.\nReducing this count is a directive violation.\
+    \ Specifically:\n  * Do NOT collapse multiple distinct layouts into one prescription\n\
+    \    with high n_repetitions. (n_repetitions=5 on a single layout is\n    NOT\
+    \ equivalent to 5 distinct layouts in recommended_layouts.)\n  * Do NOT drop layouts\
+    \ because they \"look similar\" to other layouts.\n    The cross-episode stage\
+    \ already enforced diversity; trust it.\n  * Do NOT drop layouts because you think\
+    \ the policy might already\n    handle them. You don't know that.\n\n=================================================================\n\
+    COUNT FLOOR (independent check):\n=================================================================\n\
+    Even if for some reason the cross-episode reasoning produced fewer\nthan max(5,\
+    \ ceil(n_failure_episodes / 2)) layouts, your final JSON\noutput MUST still contain\
+    \ at least that many layouts. Generate\nvariant layouts (consistent with the cross-episode\
+    \ clusters and the\ndiversity rule below) to make up the gap.\n\n=================================================================\n\
+    DIVERSITY RULE (mirror the cross-episode rule exactly):\n=================================================================\n\
+    No two layouts in `recommended_layouts` may share all four of:\n    (corridor,\
+    \ fire_block_pattern, start_edge, goal_edge).\nEach pair must differ on at least\
+    \ 2 of those 4 axes.\n\n=================================================================\n\
+    HARD GUARDRAILS \u2014 every layout in `recommended_layouts` MUST satisfy:\n=================================================================\n\
+    \  1. SOLVABLE: bounds (0..4 x 0..4), Manhattan(start, goal) >= 4,\n     exactly\
+    \ 3 distinct fire cells none equal to start/goal, at least\n     one fire-free\
+    \ path. Invalid layouts are dropped + warned by\n     _validate_layout, and unsolvable\
+    \ layouts are skipped at BFS-\n     collection time. Either way they are wasted\
+    \ slots.\n  2. NOT a verbatim copy of any failure layout in the PER-FAILURE\n\
+    \     LAYOUTS block. Those are listed there to ground cluster\n     reasoning,\
+    \ NOT as prescriptions.\n\n=================================================================\n\
+    HOW TO STRUCTURE THE JSON WHEN A CLUSTER HAS MANY LAYOUTS:\n=================================================================\n\
+    If cross-episode reasoning identified 1 cluster with 6 layouts, the\nCORRECT JSON\
+    \ shape is:\n    demonstration_prescriptions: [\n      {\n        demo_id: 1,\n\
+    \        corridor: \"<KAG name>\",\n        ...,\n        n_repetitions: 6,  \
+    \                        # = number of layouts\n        recommended_layouts: [L1,\
+    \ L2, L3, L4, L5, L6]   # 6 distinct\n      }\n    ]\nNOT:\n    demonstration_prescriptions:\
+    \ [\n      { ..., n_repetitions: 6, recommended_layouts: [L1] }   # WRONG\n  \
+    \  ]\nThe repetition count is informational; the actual training data\ncomes from\
+    \ each entry in recommended_layouts.\n\n=================================================================\n\
+    HOW TO CITE TKF / KAG / RAG IN THE JSON:\n=================================================================\n\
+    \  * cluster.corridor: KAG corridor name when KAG is provided.\n  * cluster.source_final_recs:\
+    \ corridor strings from FINAL_REC for\n    episodes in that cluster, IN ORDER.\n\
+    \  * demonstration_prescriptions[].rationale: (a) name the TKF verdict\n    (NOT_FOUND\
+    \ / PARTIAL / FOUND) when TKF is provided, (b) cite RAG\n    retrieval ranks when\
+    \ RAG is provided, AND (c) explain how the\n    proposed layouts vary on the diversity\
+    \ axes (corridor / fire-\n    block / start-edge / goal-edge).\n\n=================================================================\n\
+    WHY THIS REVISION EXISTS:\n=================================================================\n\
+    Earlier prompts asked you to mirror the cross-episode count, but you\ncollapsed\
+    \ 5+ layouts into n_repetitions=5 with a single layout in\nrecommended_layouts,\
+    \ AND/OR reduced the per-cluster count under the\nbanner of \"smallest set\".\
+    \ The downstream consumer reads\nrecommended_layouts directly \u2014 n_repetitions\
+    \ is informational only,\nnot a multiplier on a single-layout cluster. So those\
+    \ collapses\nsilently shrank the actual training increment per round, the policy\n\
+    plateaued at heldout SR ~0.86, and a random-sampling baseline beat\nit. This rewrite\
+    \ fixes that."
+tkf:
+  demo_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/demos
+rag:
+  bank_path: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/rag_bank/round_012

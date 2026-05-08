@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)
+n_demos: 1
+demo_variations: Single corrective demonstration along the Top-edge corridor from start to goal
+rationale: It enforces the Top-edge corridor path to avoid bottom fires, per the KAG fact 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets confused right at the start area near the top region, choosing an interior Left move instead of staying on the Top-edge corridor (top_edge) that would keep it away from bottom-row fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough keeps the agent on the top edge: from [1,4], move Up to [0,4], then traverse left along the top row to [0,0], and finally descend down the first column to reach the goal area at [3,0]. In coordinates: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to select the Top-edge corridor when fires are expected on or near the lower rows, avoiding the hazard region and steering toward the goal via the fire-free top row before descending.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, with no variations (one corrective demonstration targeting the Top-edge corridor). If more failures appear in other episodes, you could add variations such as different top-edge start offsets or slight horizontal shifts along the top row, but for this episode one targeted Top-edge corridor demonstration suffices.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)
+n_demos: 1
+demo_variations: No variations; a single corrective demonstration suffices.
+rationale: Top-edge corridor chosen to avoid bottom-fire hazards, consistent with the KAG rule 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets misled in the region near the top-right, choosing a left move from the start (1,4) instead of heading up to the top edge (top_edge corridor). The failure pattern centers on not committing to the top-edge corridor when hazards are in the bottom row.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust top-edge traversal: start at (1,4), move Up to (0,4), then sweep left along the top row: (0,3), (0,2), (0,1), (0,0), and finally descend the goal column: (1,0), (2,0), (3,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit early to the top-edge corridor in this fire layout, avoiding the bottom-row hazards and reliably reaching the GOAL when start/goal/fire are dynamic.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos: 1. Use the single corrective top-edge corridor demonstration as described. Variation: none for this episode, since the failure is a single-corridor generalization gap; if future episodes reveal other corridor-specific gaps (e.g., different fire placements requiring left-edge or right-column corridors), add targeted demonstrations for those corridors in separate rounds.

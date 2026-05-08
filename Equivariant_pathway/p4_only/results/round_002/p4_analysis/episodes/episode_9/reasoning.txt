@@ -1,0 +1,21 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)>
+n_demos: 1
+demo_variations: Top-edge corridor demonstration: start at (0,0), traverse the top row to (0,4), then descend to (2,4) to reach the goal.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It would typically try to follow a path along the left edge, which has fires at (1,0) and (3,0), causing a fire collision or getting stuck. The top-edge corridor is the safer alternative in this configuration.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the top-edge corridor: start at (0,0), move right along the top row to (0,4), then move down to (2,4) to reach the goal at (2,4). The exact coordinate sequence is (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer a top-edge route that stays on the top row and only descends near the goal, effectively avoiding left-edge fires and the central fire that would otherwise cause a failure.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 in this setup, since the failure is addressed by a single robust top-edge path for the given start/goal with fires placed as shown. If more coverage were desired, you could later add variations starting at nearby top-row cells (e.g., (0,1)) or with slightly different fire placements to reinforce the top-edge strategy, but for now one targeted demo suffices.

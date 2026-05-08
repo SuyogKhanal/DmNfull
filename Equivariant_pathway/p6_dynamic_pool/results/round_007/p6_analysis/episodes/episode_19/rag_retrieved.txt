@@ -1,0 +1,27 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.985 run=p6_analysis ep=13 ---
+  Dynamic config: start=[1, 1] goal=[0, 4] fires=[['0', '2'], ['1', '3'], ['2', '1']]
+  Summary:        Root cause: The agent misgeneralized fire avoidance under dynamic fire placement, resulting in a hazardous drift that led to stepping into a fire tile (0,2) instead of committing to a safe corridor.
+
+Key configuration: Start at (1,1); goal at (0,4); fires placed at (0,2), (1,3), and (2,1); no immediate walls nearby, but a central-fire cluster creates a risky central route.
+
+Correct path: Follow the left-edge corridor to avoid central fires: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+One-sentence justification: The left-edge corridor path stays clear of central hazards and provides a deterministic route to the goal under this dynamic fire layout.
+  Root cause:     pending
+
+--- rank=2 sim=0.983 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent failed to consistently commit to the safe top-edge corridor, misgeneralizing fire-avoidance under dynamic fire placements and drifting into central areas where fires are more hazardous.
+
+Key configuration: 5x5 grid with start at [0,0], goal at [2,4], and fires at [1,0], [2,3], and [3,0] (fires are hazardous and randomised per episode).
+
+What the correct path should have been: Stay on the top edge along row 0 from (0,0) to (0,4), then descend along column 4 to the goal: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+
+Episode outcome: The agent failed, ending at step 60 with negative reward, having not reached the goal and having deviated early from the top-edge corridor (highest-loss frame at step 5).
+  Root cause:     pending
+
+--- rank=3 sim=0.980 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        The failure occurred because the agent did not commit to the safe top-edge corridor and wandered into hazardous central areas near the fires. The key configuration has a start at (4,4), a goal at (1,0), with fire placements designed to steer movement toward the top-edge corridor. The correct path should be: move up along the rightmost column (4,4 → 3,4 → 2,4 → 1,4 → 0,4), then traverse left along the top row (0,4 → 0,3 → 0,2 → 0,1 → 0,0), and finally step down into the goal (1,0). This uses the top-edge corridor as the safe route to the goal.
+  Root cause:     pending

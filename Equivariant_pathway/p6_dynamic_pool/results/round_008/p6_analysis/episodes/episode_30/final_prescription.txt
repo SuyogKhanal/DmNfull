@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: rag rank=1 variant (left-edge perimeter path around central fires); rag rank=2 variant (central_mixed corridor avoidance); rag rank=3 variant (top_edge corridor avoidance)
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI runs into a central fire tile (2,3) because it doesn’t consistently follow a fire-avoidant perimeter corridor (left_edge) in this fireLayout, so it ends up stepping onto a FIRE tile near the right side.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough would hug the perimeter: start at (4,0), stay on the bottom edge to (4,4), then ascend the right edge to the goal at (0,4). The exact coordinate sequence used here is: (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? The demonstration reinforces the RAG-identified lesson that fire-avoidance generalizes across dynamic layouts by preferring a perimeter corridor (left_edge) when central hazards threaten progress, aligning with retrieved cases that emphasize fire avoidance via safe corridors.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for a local failure, but TKF coverage notes the corridor gaps; to cover potential variations, one could later add 1-2 more variations (e.g., alternative left-edge path or a top-edge variant) if more robust coverage is desired. For now, the single left-edge perimeter demonstration is the targeted correction for the current failure.

@@ -1,0 +1,50 @@
+VISION REPORT
+Maze=heldout_006 Steps=60 Reward=-8.90 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis for start_frame (step 0)
+
+1) Agent location and adjacent cells
+- Agent: (4, 2)
+- Adjacent: North (3, 2) = Fire; South (5, 2) = out of bounds; West (4, 1) = empty; East (4, 3) = empty
+- Nearby hazards: Fire directly to the north (3, 2). Goal is at (1, 0) and not adjacent.
+
+2) Goal location and Manhattan distance
+- Goal: (1, 0)
+- Manhattan distance: |4−1| + |2−0| = 3 + 2 = 5
+
+3) Fire hazards relative to the agent
+- Fires: (3, 2), (3, 0), (2, 4)
+- Distances to agent (4, 2): 
+  - (3, 2) distance 1 (immediate hazard, adjacent)
+  - (3, 0) distance 3
+  - (2, 4) distance 4
+- Immediate risk is the adjacent fire at (3, 2); other fires are further but still hazards if pathing returns toward them.
+
+4) First corrective demonstration move
+- Action: Move Left (to 4, 1)
+- Justification: avoids the immediate fire at (3, 2), remains on a safe path toward the goal, and reduces distance from 5 to 4 on the next step (goal distance becomes |4−1| + |1−0| = 3 + 1 = 4).
+
+--- highest_loss_frame frame step 3 ---
+
+
+--- end_frame frame step 60 ---
+Structured analysis for end_frame (step 60)
+
+1) Agent location and adjacents
+- Agent: (row 4, col 0) i.e., bottom-left corner.
+- Adjacent cells (4-neighborhood): Up → (3,0) = Fire (hazard). Right → (4,1) = Safe (blue tile). Left/Down are out of bounds.
+- Nearby features: Fire at (3,0) directly above; goal at (1,0) is two rows above the fire path; no walls shown.
+
+2) Goal location and Manhattan distance
+- Goal: (1,0).
+- Manhattan distance from (4,0) to (1,0): |4−1| + |0−0| = 3. End-frame display confirms Dist 3.
+
+3) Fire hazards relative to the agent
+- Nearest fire: (3,0) (distance 1, directly above) blocks a straight north move.
+- Other fires: (3,2) (distance 3) and (2,4) (distance 6) are further away and not immediately threatening.
+- Overall hazard: immediate risk to move up; safer path requires detouring to the right.
+
+4) First corrective demonstration move
+- Action: Move RIGHT to (4,1).
+- Justification: Upward move into (3,0) is a fire; bypassing to the right provides a safe route toward the goal (via (4,1) → (4,2) … → (1,0) while avoiding the fire).

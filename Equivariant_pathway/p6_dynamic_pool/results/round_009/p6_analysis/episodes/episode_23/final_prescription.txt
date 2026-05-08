@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)
+n_demos: 3
+demo_variations: RAG rank1 ep=13 not applicable; rank2 ep=9 partial (top-edge hugging); rank3 ep=0 top-edge (not applicable); TKF: NOT_FOUND left_edge coverage; three left-edge corridor demonstrations: (A) (0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4); (B) (0,0)->(1,0)->(2,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4); (C) (0,0)->(1,0)->(2,0)->(3,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)
+rationale: Choosing left_edge is justified by the KAG corridor fact 'Left-edge corridor: path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.', which describes a hazard-avoidant route that aligns with the observed top-edge fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI gets stuck in the top-left area and keeps oscillating near (0,0) and (0,1) because the top edge is blocked by fires. It fails to commit to the Left-edge corridor, which would safely route down column 0 and along the bottom row to the goal.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would start at (0,0), move down the first column to (4,0), then travel along the bottom row to the goal at (4,4): (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4). This stays inside the left-edge corridor for the bulk of the path and avoids the top-edge fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The demonstrations teach the policy to commit to the left-edge corridor when the top edge is hazardous, rather than wandering along the top-left area. The RAG results show mixed signals (rank 1 not applicable, rank 2 partial guidance toward top-edge hugging, rank 3 top-edge-focused failures), so these demos explicitly bias the agent toward the hazard-avoiding left-edge path when fires block alternative corridors.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Use 3 demonstrations to cover the left-edge corridor under small variations: one direct left-edge path, one with a single backtrack within the column (to show tolerance for brief deviation while staying on the left-edge corridor), and one with a deeper backtrack within the column. This ensures the agent learns to stay on the left-edge corridor despite minor perturbations.

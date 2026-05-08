@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: 'RAG rank=1 top_edge variant; TKF coverage FOUND; single demonstration along the top-edge corridor: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4).'
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column,' which identifies the top-edge corridor as the safe route in this configuration.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It drifts away from the top-edge corridor (top_edge) early on and ends up in the central area around (1,2), increasing exposure to the central fire at (2,3) and failing to commit to the safe corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough would strictly follow the top-edge corridor: start at (0,0), move right along row 0 to (0,4), then drop down the final column to the goal at (2,4) via (1,4) and finally (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI should learn to commit to the top-edge corridor in similar fire configurations to avoid central hazards. The RAG retrievals (rank=1) emphasize the same failure mode—not sticking to the safe top-edge corridor—and demonstrate this corridor as the robust route under dynamic fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, using a single top-edge corridor walkthrough. The TKF evidence shows top-edge coverage is FOUND, so one targeted demo along the top-edge path is considered sufficient; additional variations could be added later if more diverse start/goal/fire configurations arise.

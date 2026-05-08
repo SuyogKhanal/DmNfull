@@ -1,0 +1,91 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_011/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_011/p6_analysis",
+  "n_failures": 1,
+  "test_layout_failures": [
+    {
+      "episode_id": 9,
+      "maze_name": "heldout_010",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        2,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 1,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              2,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                3,
+                0
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "This layout mirrors the cluster's failure by placing three fires in the top-edge region while the start and goal lie within reach, requiring the agent to avoid the stated hazards while progressing along the corridor."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_top_edge_fire",
+        "episodes_in_cluster": [
+          9
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "corridor_top_edge",
+        "where_it_fails": "In episode 9, the agent starts at [0,0] and aims for [2,4] while three fires are placed at [1,0], [2,3], and [3,0], within the top-edge corridor region. The policy entered a FIRE tile, terminating the episode with a large negative reward.",
+        "what_it_does_wrong": "The agent does not consistently avoid FIRE tiles in this corridor configuration, indicating a lack of generalisation to this start/goal/fire placement in the top-edge corridor.",
+        "source_final_recs": [
+          "top_edge"
+        ]
+      }
+    ]
+  }
+}

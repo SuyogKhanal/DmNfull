@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 1
+demo_variations: Start near the top-left with central-fire clustering; follow the top-edge corridor by moving right along row 0 to (0,4) then descend down column 4 to the goal (4,4).
+rationale: 'corridor_top_edge: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The failure centers on the Top-edge corridor (top_edge). The agent deviated around step 5 (at (0,3)) and did not progress along the top edge toward (0,4), ending up not reaching the goal within 60 steps.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A solid walkthrough would stay on the top row, moving right from (0,0) to the top-right corner (0,4), then descend the final column down to the goal at (4,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This keeps away from central fires and completes the corridor to the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the safe Top-edge corridor when central fires block the middle region, maintaining forward progress toward the goal without stepping onto hazard tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, focusing on the top-edge corridor. The variation describes starting near the top-left with central-fire clustering and following the top-edge path to the goal to reinforce safe sequential movement along the corridor.

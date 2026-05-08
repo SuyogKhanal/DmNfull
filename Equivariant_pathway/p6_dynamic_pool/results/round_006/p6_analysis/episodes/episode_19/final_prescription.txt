@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)>
+n_demos: 1
+demo_variations: RIGHT_EDGE corridor demonstration (FOUND by TKF); RAG rank=1 left_edge variant rejected; rank=2 top_edge variant rejected; rank=3 left_edge variant rejected
+rationale: Choosing the right-column corridor ('Right-column corridor: path_description=Reach column 4 along the top, then descend column 4 to the goal row.') keeps progress inside a hazard-free corridor from start (0,4) to the goal (3,2), avoiding the fire at (1,2) while remaining aligned with KAG corridor guidance
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It was veering toward the hazard zone near the top center (fire at (1,2)) from the top-right start, so it tended to drift along the top/right area instead of committing to a safe, hazard-avoidant corridor.
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough follows the right-edge corridor: move down along the rightmost column from (0,4) to (3,4), then step left along row 3 to reach the goal at (3,2) without stepping on any fire tile.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to a hazard-avoidant corridor (right_edge) from the top-right start, avoiding the dangerous (1,2) area, which aligns with RAG observations that top-edge paths risk fire and that a clear corridor path improves safety; the learning is reinforced by TKF coverage showing the value of a right-edge approach.
+4. HOW MANY walkthroughs are needed and how should they vary? One targeted walkthrough using the right_edge corridor is provided here (n_demos = 1); if needed, you could add a second variation with a similar right-edge path from a different start position, but for this local failure a single, hazard-avoiding right-edge demonstration suffices.

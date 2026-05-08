@@ -1,0 +1,48 @@
+VISION REPORT
+Maze=heldout_010 Steps=60 Reward=-8.75 Success=False
+---
+--- start_frame frame step 0 ---
+1) Agent location and adjacents:
+- Agent is at (0,0) (tile shows A).
+- Adjacent cells: (0,1) is empty; (1,0) is a fire; (−1,0) and (0,−1) are out of bounds. No walls visible in this frame.
+
+2) Goal location and Manhattan distance:
+- Goal is at (2,4) (tile labeled G).
+- Manhattan distance from (0,0) to (2,4) = |2| + |4| = 6.
+
+3) Fire hazards relative to the agent:
+- Fires at (1,0) (immediate below) and (3,0) and (2,3) (further away). The closest hazard is (1,0), directly adjacent, while the others are several steps away.
+
+4) First corrective demonstration move:
+- Action: Move Right to (0,1) (East).
+- Justification: The only safe adjacent move (avoids the immediate fire at (1,0)); progresses toward the goal and reduces the distance to 5 (to (0,1) from (2,4)).
+
+--- highest_loss_frame frame step 7 ---
+Structured analysis (frame: highest_loss_frame, step 7)
+
+1) Agent location and adjacent cells
+- Agent at (3,2). Adjacent cells: 
+  - Up (2,2): empty/safe
+  - Down (4,2): empty/safe
+  - Left (3,1): empty/safe
+  - Right (3,3): empty/safe
+- Nearby hazards: fires are at (1,0), (2,3), and (3,0). No adjacent fire in the four-neighborhood. Goal at (2,4) is two steps away, not adjacent.
+
+2) Goal location and Manhattan distance
+- Goal is at (2,4).
+- Manhattan distance from the agent: |2−3| + |4−2| = 3.
+
+3) Fire hazards relative to the agent
+- Fires: (1,0), (2,3), (3,0).
+- Distances to agent (3,2): to (2,3) = 2, to (3,0) = 2, to (1,0) = 4.
+- No immediate (adjacent) fire. A direct northeast path via (2,3) would encounter a fire, so the next choice should avoid that cell.
+
+4) First corrective demonstration move
+- Exact action: Move East to (3,3).
+- Justification: This preserves progress toward the goal while avoiding the fire at (2,3) on the potential NE path. After this move, the remaining route is (3,4) then (2,4), maintaining a shortest viable path with distance reduced from 3 to 2.
+
+--- end_frame frame step 60 ---
+Structured analysis (≈150 words)
+
+1) Agent location and adjacent cells
+- Agent is at (2,2). Adjacent cells: up (2,1) = safe, down (2,3) = fire risk (hazardous), left (1,2) = safe,

@@ -1,0 +1,23 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 3
+demo_variations: Top-edge corridor baseline; Top-edge corridor with one off-corridor detour to (1,3) and back; Top-edge corridor with two micro-detours (1,3) and again (1,3) before resuming
+rationale: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to wander off the safe top-edge corridor and drift toward the central region where the fire is located, as seen in the episode’s hints that suggest re-routing from the center rather than sticking to the top_row corridor (top_edge).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe, top-edge-focused walk: stay on the top row from the start (0,0) across to the goal column (0,4), then descend down the column to reach the goal at (2,4). The concrete path is: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4). This keeps the agent away from central fires and only descends once at the last moment.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn to prioritize corridor-based hazard avoidance, specifically using the top_edge corridor when fires occupy the middle rows. The RAG retrieval (rank=1) highlighted a fire-avoidance generalization gap and pointed to the top-edge corridor as the remedy, so a demonstration emphasizing that corridor should strengthen the generalization to unseen layouts.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 3 walkthroughs are used here, all focusing on the top_edge corridor but with variations:
+  - Baseline: straight top-edge path without off-corridor detours.
+  - Variation with a micro detour to (1,3) and back to (0,3) to test robustness to small off-corridor moves.
+  - Variation with two micro-detours to further test consistent preference for the corridor while still allowing minor hazard checks.

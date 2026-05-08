@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: Single demonstration from start (1,3) with the given fire layout, illustrating the left-edge corridor path to the goal
+rationale: This decision follows the KAG corridor fact 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- At the start area near (1,3), the AI tends to head toward the top edge to bypass obstacles and may risk stepping onto a FIRE tile on the top row (e.g., (0,3)) if not guided to a safe route.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough is: from (1,3) move left to (1,2), then to (1,1), then to (1,0); from there descend in column 0 to (4,0), which is the goal. This follows the left-edge corridor pattern: stay in column 0 while descending, then reach the goal along row 4.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid the top-row fire hazards by sticking to the left-edge corridor after an initial alignment step, i.e., prioritize moving to column 0 early and descend along it to reach the goal safely.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this local failure. If there were more varied fire placements or start positions creating additional safe alternatives, we would add 2-5 demos to cover multiple safe corridors or fire patterns; with this single local failure, one targeted demonstration is sufficient.

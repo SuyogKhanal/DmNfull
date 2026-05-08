@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: Top-edge corridor path: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4) with slight jitter in the initial top-row steps to reflect natural variability
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column' justifies the top_edge corridor choice to avoid the central fire at (2,3) in this episode.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion exists in the top_edge corridor region of the maze, where the safe route would be to stay on the top row; the problematic decision previously occurred when deviating near the middle-right area, but the recommended corridor is top_edge to avoid central fires.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough should follow the top-edge corridor: move along the top row from (0,0) to (0,4), then descend down the rightmost column to reach the goal at (2,4), specifically (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4).
+3. WHAT will the AI learn from seeing that walkthrough? The AI will learn to commit early to the top-edge corridor when central fire hazards are present, preserving a safe path to the goal by staying on the top row until a safe column is reached and then descending.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 is sufficient to address the local failure; variation can be minor jitter in the initial top-row steps to reflect natural variability (e.g., slight alternate timing but the same top-edge route).

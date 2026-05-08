@@ -1,0 +1,29 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.581): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 2 (similarity=0.573): A demonstration starting at (0, 2) with goal at (4, 2) and fires at [(1, 1), (1, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.569): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 4 (similarity=0.562): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.561): A demonstration starting at (1, 0) with goal at (3, 4) and fires at [(1, 4), (2, 3), (4, 4)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 6 steps with actions: 4x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To set up a complex network with multiple VLANs, start by configuring each VLAN on your network devices to segment traffic properly. Next, enable inter-VLAN routing so that devices on different VLANs can communicate securely and efficiently. Apply security policies, such as access control lists, to regulate traffic between VLANs and protect sensitive information. Use scripting tools to automate these configurations for consistency and ease of deployment. Finally, validate your setup using network monitoring tools to ensure routing is working as expected and security policies are being enforced, preventing errors and maintaining a coordinated multi-device environment. This approach helps create a reliable and secure network topology with thorough end-to-end verification.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)
+n_demos: 1
+demo_variations: RAG rank=3 right_col variant covers corridor_right_col; TKF FOUND; demonstrates the right-edge corridor path (0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)
+rationale: 'Reach column 4 along the top, then descend column 4 to the goal row' is selected as the right-edge corridor to avoid the episode's central fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drift from the top-right start (0,4) toward central hazards because it doesn’t commit to the safe right-edge corridor when fires are placed as in this episode.
+2. WHAT should a good walkthrough look like in that area? A strong demonstration should follow the right-edge corridor: from the start (0,4) go down the rightmost column to (3,4), then move left along row 3 to reach the goal column (3,2).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to a safe corridor (the right-edge corridor) to avoid central fire tiles, aligning with the RAG-provided right-column corridor examples and the TKF coverage of corridor_right_col.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 is chosen here because a single targeted right-edge corridor demonstration suffices to address this failure, given the TKF FOUND coverage and a relevant RAG rank-3 example; variations are not strictly necessary for this localized failure.

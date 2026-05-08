@@ -1,0 +1,69 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION — step-by-step reconstruction from available evidence
+
+- Episode setup (context from KAG and episode snippet)
+  - Start: [0,0], Goal: [2,4], Fires at [1,0], [2,3], [3,0].
+  - The dynamic config is active: random start/goal/fire per episode with min Manh. distance >= 4 (here distance is 6).
+  - The maze view shows a safe top row from the start, but a fire directly below the start at (1,0) and a fire near the goal at (2,3) create a strong incentive to hug the top edge and avoid central lanes.
+
+- Step 0 (start frame)
+  - Agent at (0,0). Immediate options: (0,1) is free; (1,0) is a fire. No goal adjacent.
+  - Immediate inference: The safe forward option is to explore along the top row; down is hazardous.
+
+- Step 1
+  - First corrective demonstration move observed in the narrative: MoveRight to (0,1).
+  - Rationale (from the analysis): The top row is the only forward-safe path from the start given the fire at (1,0); distance to goal shrinks if we stay on the top row.
+
+- Steps 2–4 (inferred high-level trajectory since exact per-step log isn’t provided)
+  - Likely continued along the top edge: (0,1) -> (0,2) -> (0,3) -> (0,4) as long as the corridor remains hazard-free.
+  - This would place the agent on the top-right corner of the grid (0,4) by step 4, which matches the intended “top-edge corridor” behavior described in the KAG.
+
+- Step 5 (highest_loss_frame)
+  - The Vision report marks step 5 as the moment of the highest loss frame, implying a sudden deviation or misprediction soon after the top-edge approach began.
+  - Exact observed action at step 5 is not provided, but this frame suggests the policy began to stray from the safe top-edge corridor shortly after attempting the top-row approach.
+
+- Steps 6–60 (trajectory evolution with final state)
+  - The end frame (step 60) shows the agent at (2,2) with a fire at (2,3) to the right.
+  - The final position (2,2) is well inside the grid and far from the goal (2,4); this indicates a substantial drift from the intended top-edge corridor path and no successful descent along the goal column.
+  - Total steps: 60; Total reward: -8.80; Episode: failure (not reaching the goal).
+
+- Key observations tying to failure taxonomy
+  - The agent did not complete the Top-edge corridor all the way to the goal column in the observed episode, despite the top edge being the safest intuitive path given the immediate fire hazards.
+  - The late-stage ending at (2,2) with a fire neighbor on the right (2,3) points to a mis-generalization of fire-avoidance and/or a breakdown of long-horizon planning in this randomised-fire setting.
+
+2) FIRST WRONG DECISION — earliest deviation from the safe corridor
+
+- Safe corridor reference
+  - The baseline safe corridor for this episode given the fire layout is the Top-edge corridor: Stay on row 0 as long as possible to reach the goal column, then descend along that column.
+  - KAG verbatim for context (corridor_top_edge): 
+    - path_description=Stay in row
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.639): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 2 (similarity=0.632): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.630): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.630): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.630): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To improve the agent's navigation, it is important to provide a demonstration that consistently follows the top-edge corridor from the start to the goal column before moving downward. This pathway along the top row avoids hazards effectively, especially fire placements near the start and goal areas. The demonstration should clearly show the agent committing to this safe route, even when fires are randomly placed in central lanes. This will help the agent learn long-horizon planning and prevent it from incorrectly generalizing fire avoidance strategies that steer it into dangerous paths. By focusing on the top row path, the agent will consistently reach the goal with minimal risk of encountering fire obstacles.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 3
+demo_variations: Three top-edge hugging demonstrations with varying fire placements to stress consistent top-edge behavior; TKF coverage for this corridor is NOT_FOUND, so provide three targeted layouts.
+rationale: 'corridor_top_edge' path_description=Stay in row 0 while traversing to the goal column, then descend along that column.
+<<<END_FINAL_REC>>>
+
+Plain-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drift off the safe top-edge corridor and either wander into central lanes or get distracted by nearby fires, especially when fires appear near the middle rows.
+
+2. WHAT should a good walkthrough look like in that area? Show a clear, uninterrupted hug along the top edge: start at (0,0), move right along (0,1), (0,2), (0,3), (0,4), then descend the final column with (1,4) and (2,4) to reach the goal, avoiding all fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to the top-edge corridor as the reliable long-horizon strategy in this fire-distributed maze, aligning with the retrieved failures that emphasize top-edge hugging as a safer path.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Use 3 demos (n_demos=3) that all follow the top-edge hugging path but with different fire placements in the surrounding area to test robustness without changing the core corridor strategy.

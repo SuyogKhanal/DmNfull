@@ -1,0 +1,69 @@
+VISION REPORT
+Maze=heldout_017 Steps=5 Reward=-10.50 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis for start_frame (step 0)
+
+1) Agent location and adjacent cells
+- Agent at (1, 3).
+- Adjacent cells: up (0, 3) = Fire; down (2, 3) = empty; left (1, 2) = empty; right (1, 4) = empty.
+- No walls shown; fires present at (0, 1), (0, 3), and (4, 1).
+
+2) Goal location and Manhattan distance
+- Goal at (4, 0).
+- Manhattan distance = |4-1| + |0-3| = 3 + 3 = 6.
+
+3) Fire hazards relative to the agent
+- Immediate hazard: fire at (0, 3) is directly north of the agent (adjacent risk if moving up).
+- Other fires: (0, 1) at distance 3, and (4, 1) at distance 5; not an immediate hazard but should be avoided on close routing.
+
+4) First corrective demonstration move
+- Action: Down (to (2, 3)).
+- Justification: Avoids stepping into the adjacent fire above, while reducing the distance to the goal from 6 to 5 and keeping a viable path toward (4,0). (Left to (1,2) would also reduce distance by 1, but Down provides a straightforward forward move toward the goal.)
+
+--- highest_loss_frame frame step 1 ---
+Structured analysis of highest_loss_frame (step 1)
+
+1) Agent location and adjacency
+- Agent at (2, 3). Adjacent cells: 
+  - Up: (1, 3) — likely empty
+  - Down: (3, 3) — likely empty
+  - Left: (2, 2) — likely empty
+  - Right: (2, 4) — likely empty
+- Nearby hazards: Fires at (0, 1), (0, 3), and (4, 1) are not in the immediate four-neighborhood. The goal is at (4, 0), not adjacent.
+
+2) Goal location and Manhattan distance
+- Goal: (4, 0)
+- Manhattan distance from agent: |4−2| + |0−3| = 2 + 3 = 5
+
+3) Fire hazards relative to the agent
+- Distances to fires:
+  - (0, 1): 4
+  - (0, 3): 2
+  - (4, 1): 4
+- The closest fire is at (0, 3) (distance 2). No adjacent fire cells, but moving Up would bring you closer to that fire (to distance 1) if pursued aggressively.
+
+4) First corrective demonstration move
+- Action: Move Left (to 2, 2)
+- Justification: Reduces distance to the goal (from 5 to 4) and keeps you on a safe, fire
+
+--- end_frame frame step 5 ---
+Structured analysis for end_frame (step 5)
+
+1) Agent location and adjacent cells
+- Agent is at (4, 1) (Pos: (4,1)).
+- Adjacent cells: left (4,0) is the goal, right (4,2) is empty, up (3,1) appears as a blue-tiled cell (not a wall), down is out of bounds.
+- Nearby hazards: no fires appear in the immediate neighbors on the map view; the only visible hazards are at the top row (0,1) and (0,3), far away from the agent.
+
+2) Goal location and Manhattan distance
+- Goal is at (4, 0).
+- Manhattan distance from the agent: |4−4| + |1−0| = 1.
+
+3) Fire hazards relative to the agent
+- Fires are listed at (0, 1), (0, 3), and (4, 1) per config.
+- Distances: to (0,1) is 4; to (0,3) is 6; to (4,1) is 0 (the agent’s current cell).
+- Implication: there is an active fire on the agent’s current cell in the config, which would be a direct hazard; the frame map shows the agent on a safe tile, indicating a possible mismatch between config and frame. In any case, no adjacent fires are immediately surrounding the agent.
+
+4) First corrective demonstration move
+- Action: LEFT (to 4,0).
+- Justification: it directly reaches the goal in one safe step; reduces the distance to 0 and is the shortest safe correction from the current position.

@@ -1,0 +1,63 @@
+maze:
+  name: multimodal
+rollout:
+  n_episodes: 20
+  seed: 1000
+  checkpoint_path: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p4_only/checkpoints/best_eq_policy.pth
+tracking:
+  output_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p4_only/results/round_001
+pipeline:
+  use_vlm: true
+  use_reasoning: true
+  use_cross_episode_reasoning: true
+  use_kag: true
+  use_rag: false
+  use_tkf: false
+  use_plain_llm: true
+  use_aggregator: true
+llm:
+  prompt_addendum_reasoning: "SAMPLE-EFFICIENCY DIRECTIVE \u2014 pick the smallest\
+    \ n_demos that closes the failure mode,\nbut never zero when a failure is present.\n\
+    The orchestrator pays one BFS-expert demonstration per layout that the downstream\n\
+    prescription LLM recommends. A baseline-DAgger controller can already converge\
+    \ by\nrecording ONE corrective demo per failed episode; the entire reason this\
+    \ P4 pipeline\nexists is to identify the MINIMUM, most informative demos that\
+    \ fix the failure mode\nin fewer expert queries. When the analysis discusses corridor\
+    \ + path proposals in\nsection 5, frame n_demos accordingly: prefer 1-2 unless\
+    \ the failure is genuinely\nmulti-modal (two distinct corridors, two distinct\
+    \ fire-blocking patterns), and never\nsuggest 6+ demos without explicit evidence\
+    \ of multiple non-overlapping failure modes\nin this episode. Treat extra demos\
+    \ as a cost, not a safety margin.\nHARD FLOOR: this episode IS a failure. n_demos\
+    \ for this episode must be >= 1. Zero\nis not a valid answer \u2014 if you cannot\
+    \ decide between two patterns, pick the one\nbest supported by the trace and recommend\
+    \ exactly one demo for it."
+  prompt_addendum_aggregator: "HOLISTIC SAMPLE-EFFICIENCY DIRECTIVE \u2014 minimise\
+    \ total layouts across all failures,\nbut never return zero when failures are\
+    \ present.\nTreat the failure summaries above as a SET to be covered, not a list\
+    \ to be itemised.\n1. Read every failure together. Identify the smallest grouping\
+    \ (one or more clusters)\n   that explains them. If a single corridor / fire-blocking\
+    \ pattern accounts for the\n   majority of failures, prefer one cluster; do not\
+    \ split for cosmetic balance.\n2. For each cluster, recommend the SMALLEST set\
+    \ of concrete layouts that, taken\n   together, force the policy to learn the\
+    \ missing behaviour. If one well-chosen\n   layout teaches the corridor, recommend\
+    \ exactly one \u2014 even if six episodes failed.\n3. You are competing against\
+    \ a baseline-DAgger controller that pays one expert query\n   per failed episode.\
+    \ Your value is sample efficiency: total recommended_layouts\n   summed across\
+    \ clusters should normally be MUCH smaller than n_failure_episodes.\n4. Do NOT\
+    \ pad recommended_layouts to match cluster count or to look thorough. The\n  \
+    \ orchestrator runs until heldout success rate >= 0.90; if a single round under-\n\
+    \   prescribes, the next round's failures will justify the additional layout.\
+    \ Over-\n   prescribing is a permanent cost, under-prescribing is at most one\
+    \ extra round.\n5. n_repetitions on each layout should mirror this discipline:\
+    \ 1-2 unless the layout\n   sits at the intersection of several failure modes.\n\
+    6. HARD FLOOR \u2014 MANDATORY: if n_failure_episodes >= 1, the response MUST\
+    \ contain at\n   least one cluster, at least one demonstration_prescription, at\
+    \ least one\n   recommended_layout, and total_demonstrations_needed >= 1. Returning\
+    \ zero clusters\n   or zero layouts when there is at least one failure is INVALID\
+    \ and will be\n   rejected \u2014 the orchestrator interprets an empty prescription\
+    \ as a stall and\n   terminates the run, which is strictly worse than a 1-layout\
+    \ under-prescription.\n   The minimum is 1, not 0. If the failures look heterogeneous\
+    \ and you are unsure\n   how to cluster them, fall back to one cluster covering\
+    \ the most representative\n   failure and recommend exactly one layout for it."
+tkf:
+  demo_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/p4_only/demos

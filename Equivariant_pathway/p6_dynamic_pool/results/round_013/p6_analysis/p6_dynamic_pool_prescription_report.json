@@ -1,0 +1,91 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/p6_analysis",
+  "n_failures": 1,
+  "test_layout_failures": [
+    {
+      "episode_id": 21,
+      "maze_name": "llm_round001_idx001",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        4,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 1,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              4,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                2
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                3,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Illustrates avoiding a FIRE tile in a top-edge corridor layout while progressing toward the goal, highlighting fire avoidance in the same corridor as the failure episode."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_top_edge_fire_collision",
+        "episodes_in_cluster": [
+          21
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "top_edge",
+        "where_it_fails": "In episode 21, the agent started at [0,0] and aimed for [4,4] with fires positioned at (1,2), (2,3), and (3,1); the policy entered a FIRE tile in that configuration, terminating the episode prematurely.",
+        "what_it_does_wrong": "The policy fails to generalise fire-avoidance for the top-edge corridor configuration with the given start/goal and fire placements, leading to stepping onto a FIRE tile.",
+        "source_final_recs": [
+          "top_edge"
+        ]
+      }
+    ]
+  }
+}

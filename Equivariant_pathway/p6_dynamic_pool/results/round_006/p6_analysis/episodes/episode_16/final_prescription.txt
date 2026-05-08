@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: covers rag rank=1 left_edge corridor variant
+rationale: 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column' (left_edge corridor) justifies a hazard-avoidant path to the goal from the given start; per KAG corridor_left_edge.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drop downward from the start (1,3) instead of committing to the hazard-avoiding left-edge corridor, which would keep it in safer columns and lead toward the goal without stepping on fires.
+2. WHAT should a good walkthrough look like in that area? A safe left-edge corridor walkthrough from the start would move left along the same row to reach column 0 (e.g., (1,3) -> (1,2) -> (1,1) -> (1,0)) and then descend down the leftmost column (to (2,0) -> (3,0) -> (4,0)) to reach the goal without stepping on any fire tiles.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to a hazard-avoidant corridor (left_edge) when fires occupy the top row, aligning with the rank-1 left_edge failure-correction examples in the RAG results that emphasize staying in column 0 to avoid fires.
+4. HOW MANY walkthroughs are needed and how should they vary? Use 1 demo for this local failure (n_demos = 1) since it directly demonstrates the left_edge corridor path; variation is not strictly necessary here because the key lesson is committing early to the left-edge corridor from the given start, though additional variations could cover slight re-entries to the corridor if more coverage were available.

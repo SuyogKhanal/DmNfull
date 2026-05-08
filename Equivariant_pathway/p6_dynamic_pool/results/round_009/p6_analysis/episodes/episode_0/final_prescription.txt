@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 3
+demo_variations: NOT_FOUND: three top-edge demonstrations with varying safe-fire placements (V1: (1,2),(4,0),(4,2); V2: (2,1),(2,3),(3,0); V3: (1,1),(2,3),(3,3))
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It struggles to consistently leverage the top-edge (top_edge) corridor when fires are placed to block or tempt alternative routes, so top-edge hugging is underrepresented in demonstrations.
+2. WHAT should a good walkthrough look like in that area? Start at (4,4), move up to the top boundary along column 4, travel left along the top row to column 0, then drop down to the goal at (1,0) while staying on the top boundary as long as possible.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize the top-edge path when feasible, avoiding central hazards by riding the top boundary and then descending to the goal, enabling better generalization across fire layouts.
+4. HOW MANY walkthroughs are needed and how should they vary? 3 demonstrations are provided (n_demos = 3), each with different fire placements to stress-test top-edge hugging without altering the intended top-edge route. Variation 1 uses the episode-like fire set, Variation 2 places fires in central-adjacent cells, Variation 3 places fires to challenge near-top-edge decisions while keeping the top-edge path valid.

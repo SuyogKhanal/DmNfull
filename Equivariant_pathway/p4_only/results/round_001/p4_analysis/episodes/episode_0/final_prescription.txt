@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: One-path demonstration: start at (4,4), use the right-column corridor to reach (0,4), then sweep left along the top row to (0,0) and finish at (1,0)
+rationale: 'Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row, ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets stuck trying to reach the goal while avoiding fires, despite starting in the bottom-right; the chosen corrective corridor is the right_edge (Right-column corridor) strategy, which emphasizes moving up the rightmost column and then moving left along the top edge to bypass central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Begin at (4,4), move up along column 4: (3,4) -> (2,4) -> (1,4) -> (0,4). Then traverse left along the top edge: (0,3) -> (0,2) -> (0,1) -> (0,0). Finally drop down to the goal at (1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn a hazard-avoiding corridor pattern that prioritizes progressing toward the goal via the top-right region when central fires block direct routes—demonstrating a safe, near-term path that keeps most movement within a single corridor structure before making the final approach to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single walkthrough uses the right-column corridor with a top-edge detour. If more demonstrations were added later, they could vary by starting slightly offset within the same corridor or by swapping the detour to emphasize different hazard-avoidance patterns, but for this failure, one focused demonstration suffices.

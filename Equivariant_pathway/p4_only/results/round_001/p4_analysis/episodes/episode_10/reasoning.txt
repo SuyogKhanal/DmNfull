@@ -1,0 +1,100 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode basics from the provided data:
+  - Start position: (row, col) = (1, 4)
+  - Goal position: (3, 0)
+  - Fire hazards: (4,0), (4,3), (4,4) (row 4 bottom-fire cluster)
+  - Episode length: 60 steps, total reward -8.65, success False
+  - Key anchors:
+    - Step 0: Start frame at step 0 (location implied: (1,4)).
+    - Step 9: Highest_loss_frame at step 9 with agent location (3,1) and distance to goal = 1.
+    - Step 60: End frame at step 60 with agent location (3,2) and distance to goal = 2.
+- Anchored trajectory points (from the evidence):
+  - Step 0: Location (1,4). The Vision analysis shows the first corrective demonstration move suggested is Left to (1,3). This is a demonstrated corrective action, not necessarily the executed step, but it anchors the initial region and the corrective guidance provided.
+  - Step 9: Location (3,1). The agent has moved down and left from the start area; the distance to the goal (3,0) is 1 at this frame. The nearest hazard remains in the bottom row but not adjacent (nearest is (4,0), distance 2).
+  - Step 60: Location (3,2). The agent ends at (3,2) with distance to the goal 2; no fire tile was hit (the fire tiles are all in row 4), and the episode terminates without success.
+- Observations about progress and hazards:
+  - At the start, the immediate surroundings are clear of fire or walls (no immediate hazard in (0,4), (1,3), etc.). Fires are in the far bottom row, not adjacent in step 0.
+  - By step 9, the agent has already moved into the region around (3,1), which is close to the goal but not yet at (3,0).
+  - The final frame shows the agent still missed the goal and remains near it but did not execute a corrective move to reach (3,0) within 60 steps.
+  - The episode did not involve stepping onto a fire tile (no FIRE tile encountered), but the agent failed to reach the GOAL within the step budget, earning a negative cumulative reward largely from step penalties.
+
+- Summary of the trajectory narrative:
+  - The episode starts at (1,4) and drifts downward-left into the vicinity of the goal (reaching (3,1) by step 9) but then stalls, ending at (3,2) after 60 steps without reaching (3,0). Demonstrations suggest the policy was being guided to consider a corrective leftward action toward the goal, but the actual execution did not complete the path to the GOAL within 60 steps.
+
+2) FIRST WRONG DECISION
+
+- Earliest step where the agent diverged from a clearly safe/goal-focused corridor path:
+  - Step 0: Action chosen (as indicated by the corrective demonstration log) was Left from (1,4) to (1,3). The “correct” corridor-guided path that would reliably reach the goal given the hazard layout would begin by moving Up to the top row (0,4) and then traverse the top edge to the left, before descending down the goal column. The immediate Left move at step 0 is the first divergence from that corridor-guided plan.
+- Specifics:
+  - Step 0 (start at (1,4)):
+    - Taken action: LEFT -> (1,3)
+    - Should-have-taken (corridor-guided ideal starting move): UP -> (0,4)
+- Rationale grounding the choice:
+  - The top-edge corridor description in the KAG prescribes: “Stay in row 0 while traversing to the goal column, then descend along that column.” Starting by moving Up activates the top-edge corridor immediately and keeps clear of the bottom fire cluster; moving Left diverts from the corridor that would avoid the bottom-fire cluster most reliably, given the fire layout in this episode.
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode(s) observed here:
+  - Primary failure mode indicated by the episode: fire_collision is not the landing here (no fire was hit), but the policy fails to generalize to the randomized fire layout and randomized start/goal. The episode demonstrates a failure to consistently select the fire-avoiding corridor (the top-edge corridor) when the start/goal/fire configuration changes across episodes.
+  - Evidence from the dynamic config block:
+    - DynamicConfig randomizes start, goal, and fire positions each episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The min_start_goal_manhattan constraint enforces a nontrivial distance (>= 4) between start and goal, increasing the planning horizon and the risk of non-obvious coordination with hazards.
+    - Observation/Prediction Horizons (obs_horizon=4, pred_horizon=3) with a 4-step observation window and 3-step action horizon means the policy must infer longer-range corridor choices from a short history and a single forward roll. In dynamic hazard settings, this increases the chance of getting stuck in a suboptimal local plan if the training demonstrations did not consistently cover the top-edge corridor in configurations like this episode.
+  - Evidence in the episode’s trace:
+    - The earliest corrective demonstration (Step 0) chose to Left from the start, which is not aligned with the top-edge corridor that would likely avoid the bottom-row hazards. This suggests the policy over-relied on near-field cues or prior demonstration biases rather than committing to the robust corridor path in the current hazard arrangement.
+    - By step 9, the agent sits at (3,1) with the goal just one step away, indicating a failed commitment to completing the corridor path to (3,0). The final position (3,2) at step 60 shows the agent did not complete the corridor path and did not reach the GOAL, despite being in plausible proximity to the target.
+  - The absence of a fire collision in this episode underscores that the failure was about corridor selection and path commitment rather than failure to avoid fires once in a corridor. It is a generalization failure to the corridor-avoidance pattern under dynamic randomization, not a single-fire mishap.
+- Summary grounded in KAG terms:
+  - The episode evidences the dynamic-generalization failure to prefer a safe corridor (Top-edge corridor) under randomized start/goal/fire, rather than a local, non-committal path that meanders toward the goal but misses the optimal corridor in this configuration. The corrective demonstration at step 0 confirms the misalignment with the corridor-based strategy that would have yielded a clean top-edge traversal in this fire layout.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- No retrieved cases. As per the provided environment knowledge graph section:
+  - Section 4 states: "No retrieved cases." Therefore, there are no cross-episode retrieved correlations or precedent cases to cite for this particular failure pattern in this episode.
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor to prioritize (name from KAG) and exact quote:
+  - Corridor: Top-edge corridor (id=corridor_top_edge)
+  - Supporting corridor fact (verbatim quote from KAG, in single quotes): 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+- Concrete corrective path (start -> ... -> goal) that avoids all fires in this episode:
+  - Start: (1, 4)
+  - Up to top row: (0, 4)
+  - Traverse left along top row: (0, 3) -> (0, 2) -> (0, 1) -> (0, 0)
+  - Descend the goal column: (1, 0) -> (2, 0) -> (3, 0)  [Goal]
+  - Full coordinate sequence: (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0) -> (2,0) -> (3,0)
+  - Action sequence (aligned with the same corridor): UP, LEFT, LEFT, LEFT, LEFT, DOWN, DOWN, DOWN
+- One-sentence justification (grounded in sections 3 and 4):
+  - Given the episode’s fire layout (fires on the bottom row) and the dynamic start/goal, committing early to the Top-edge corridor avoids bottom-row hazards and reaches the GOAL efficiently; the demonstrated misstep at step 0 (left instead of up) is precisely the divergence from this robust corridor path that this corrective demo is designed to correct.
+- n_demos and variations (per the SAMPLE-EFFICIENCY DIRECTIVE and HARD FLOOR):
+  - n_demos: 1
+  - demo_variations: 0 (no variations needed beyond a single corrective demonstration)
+- Rationale tying back to section 3:
+  - The failure arises from a misalignment with the corridor-based safe strategy in a dynamically scrambled environment. A single corrective demonstration that starts from the same (1,4) start and shows the Top-edge corridor path to the GOAL directly addresses the core generalization gap: the policy must learn to commit to a robust corridor early when hazards are present in the bottom region. The provided path uses the Top-edge corridor rule quoted above to avoid bottom-row fires, aligning with the failure analysis that the policy failed to generalize corridor choice under dynamic changes.
+
+Notes for the prescription system (FINAL_REC derivation context):
+- The Corridor-based corrective path leverages the Top-edge corridor rule as the single most robust strategy in this specific fire-layout episode, given that the fires are in the bottom row and the start lies near the top-right quadrant. The dedicated single demo (n_demos=1) is sufficient because the failure is a single-pattern generalization gap (corridor choice) rather than a multi-modal failure requiring multiple divergent demos. If further episodes reveal additional fire-placement patterns (e.g., fires occupying the central rows), a second corrective demo along a different corridor might be warranted, but for this episode the Top-edge corridor suffices and is grounded in the KAG quote.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)
+n_demos: 1
+demo_variations: No variations; a single corrective demonstration suffices.
+rationale: Top-edge corridor chosen to avoid bottom-fire hazards, consistent with the KAG rule 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets misled in the region near the top-right, choosing a left move from the start (1,4) instead of heading up to the top edge (top_edge corridor). The failure pattern centers on not committing to the top-edge corridor when hazards are in the bottom row.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust top-edge traversal: start at (1,4), move Up to (0,4), then sweep left along the top row: (0,3), (0,2), (0,1), (0,0), and finally descend the goal column: (1,0), (2,0), (3,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit early to the top-edge corridor in this fire layout, avoiding the bottom-row hazards and reliably reaching the GOAL when start/goal/fire are dynamic.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos: 1. Use the single corrective top-edge corridor demonstration as described. Variation: none for this episode, since the failure is a single-corridor generalization gap; if future episodes reveal other corridor-specific gaps (e.g., different fire placements requiring left-edge or right-column corridors), add targeted demonstrations for those corridors in separate rounds.

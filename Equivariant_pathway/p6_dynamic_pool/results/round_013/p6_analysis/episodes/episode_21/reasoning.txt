@@ -1,0 +1,59 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode configuration (as given): 5x5 grid, random start and goal, 3 fires per episode (locations here: (1,2), (2,3), (3,1)), walls not otherwise specified. Start = [0,0], Goal = [4,4]. Fires: [['1','2'], ['2','3'], ['3','1']]. Max steps per episode = 200.
+- Episode outcome: Failure (success=False), total steps = 60, total reward = -8.85. Final position not reported.
+- Step-by-step trace unavailable in the logs; we rely on the provided frames and summaries:
+  - Step 0 (start_frame): Agent at (0,0). Adjacent free cells at (0,1) and (1,0); fires at (1,2), (2,3), (3,1) are not adjacent. Goal at (4,4). Manhattan distance from start to goal = 8.
+  - Step 5 (highest_loss_frame): Agent at (0,3). Fires still not adjacent; nearby risks include two fires at distance 2 (not adjacent yet): (1,2) and (2,3). The top row remains a viable corridor option.
+  - Step 60 (end_frame): Agent at (0,2). Adjacent cells: left to (0,1) and right to (0,3) are free; down to (1,2) is a FIRE tile. Fires remain at (1,2), (2,3), (3,1). The agent is on the top row with the nearest fire directly below at (1,2). No fire collision occurred by step 60; the agent did not reach the goal within 60 steps.
+- Vision-derived micro-observations:
+  - The top-edge corridor remains the cleanest near-start option because central fires (1,2) and (2,3) constrain moves toward the center.
+  - The end-state snapshot shows no entry into a FIRE tile yet, but the agent has not advanced along the top edge toward the goal in a way that completes the corridor to (4,4) within 60 steps.
+
+2) FIRST WRONG DECISION
+- Grounded claim (earliest divergence from a safe corridor): Step 5 at position (0,3).
+- Specifics:
+  - Position (row, col): (0,3)
+  - Action taken by agent (as inferred from the trajectory narrative): The step log does not explicitly list per-step actions, but the vision-frame annotations describe the agent at (0,3) at step 5.
+  - Action it should have taken to stay on a safe corridor: RIGHT to (0,4) to continue along the Top-edge Corridor path toward (0,4) and then descend along column 4 to reach the goal (4,4). This would maintain the Top-edge corridor while keeping away from central fires.
+- Rationale: From (0,3), the Top-edge corridor prescribes moving to (0,4) to minimize exposure to central fires and to keep descending along the safer edge route. Moving DOWN from (0,3) would threaten stepping closer to the central fire cluster (notably (1,2) and (2,3)) and would diverge from the safe corridor plan.
+- Note: The logs do not provide a full step-by-step action chain, so this earliest divergence is anchored to the highest-loss frame’s position and the implied corridor-following heuristic. The corrective demonstration later references moving to (0,4) (as per Step 5 narrative) but the end-state at step 60 shows the agent ended up at (0,2), indicating overall stagnation along the corridor after the initial misalignment window.
+
+3) WHY THE POLICY FAILED
+- Core failure mode indicated by evidence: The episode does not show a fire collision (the agent did not enter a FIRE tile by step 60), and it did not reach the goal within 60 steps. The failure is a lack of forward progress and failed generalization to the dynamic fire placements, not a simple collision.
+- Grounded factors from the provided data:
+  - DynamicConfig and environment: fires are randomised per episode (default 3 fires), goal/start are randomised, and min_start_goal_manhattan = 4 constrains distance but
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.619): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 2 (similarity=0.614): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 3 (similarity=0.613): A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]
+  Match 4 (similarity=0.612): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 5 (similarity=0.611): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 1
+demo_variations: Start near the top-left with central-fire clustering; follow the top-edge corridor by moving right along row 0 to (0,4) then descend down column 4 to the goal (4,4).
+rationale: 'corridor_top_edge: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The failure centers on the Top-edge corridor (top_edge). The agent deviated around step 5 (at (0,3)) and did not progress along the top edge toward (0,4), ending up not reaching the goal within 60 steps.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A solid walkthrough would stay on the top row, moving right from (0,0) to the top-right corner (0,4), then descend the final column down to the goal at (4,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This keeps away from central fires and completes the corridor to the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the safe Top-edge corridor when central fires block the middle region, maintaining forward progress toward the goal without stepping onto hazard tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, focusing on the top-edge corridor. The variation describes starting near the top-left with central-fire clustering and following the top-edge path to the goal to reinforce safe sequential movement along the corridor.

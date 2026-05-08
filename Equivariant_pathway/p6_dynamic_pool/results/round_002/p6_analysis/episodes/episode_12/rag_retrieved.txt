@@ -1,0 +1,15 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.958 run=p6_analysis ep=9 ---
+  Dynamic config: start=[0, 0] goal=[2, 4] fires=[['1', '0'], ['2', '3'], ['3', '0']]
+  Summary:        Root cause: The agent deviated from the intended fire-avoidant corridor, with step 7 at (3,2) indicating a drift into interior regions and an improper recovery, leading to a failed episode despite some progress. Key configuration: Start at (0,0); goal at (2,4); fires at (1,0), (2,3), and (3,0). The initial corrective cue favored a safe first move to (0,1), but the trajectory diverged from the robust corridor pattern. Correct path: Follow the top-edge corridor: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+  Root cause:     pending
+
+--- rank=2 sim=0.956 run=p6_analysis ep=0 ---
+  Dynamic config: start=[4, 4] goal=[1, 0] fires=[['1', '2'], ['4', '0'], ['4', '2']]
+  Summary:        The failure was a fire_collision outcome driven by an early misstep: at step 5 the agent chose Left from (2,3) to (2,2) instead of committing to a safe corridor that avoids central fires. The episode had start at (4,4), goal at (1,0), and fires at (1,2), (4,0), and (4,2), with 60 steps allowed. The correct path should follow the top-edge corridor: (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0). This corridor keeps the agent away from central fires and leads to the goal along the top row before descending.
+  Root cause:     pending
+
+--- rank=3 sim=0.949 run=p6_analysis ep=6 ---
+  Dynamic config: start=[0, 0] goal=[1, 4] fires=[['1', '1'], ['2', '0'], ['3', '2']]
+  Summary:        The failure stems from the policy’s inability to generalize a fire-avoidant corridor, leading to a suboptimal first move and a subsequent fire collision. The episode starts at (0,0) with the goal at (1,4) and fires at (1,1), (2,0), and (3,2); the agent moves down to (1,0) and then into (1,1), ending in a large negative reward. The correct path should follow the top-edge corridor to avoid central fires: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4). This top-edge route aligns with the demonstrated safe strategy and would have reached the goal without hitting fires.
+  Root cause:     pending

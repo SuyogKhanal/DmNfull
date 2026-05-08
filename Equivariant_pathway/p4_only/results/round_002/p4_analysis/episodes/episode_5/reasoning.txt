@@ -1,0 +1,39 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (grounded facts):
+  - Start: (4, 2). Fires exist at (3,0), (3,2), (2,4). Goal: (1,0). Manhattan(start, goal) = 5.
+  - Immediate hazard: fire tile at (3,2) is adjacent to the start (north of the agent).
+  - Episode length: 60 steps; final position reported as (4,0); goal not reached.
+- Step-by-step trace (as available from the provided frames and notes):
+  - Step 0 (start): Agent at (4,2). Adjacent: (3,2)=FIRE (immediate hazard), (4,1)=FREE, (4,3)=FREE, (5,2)=OOB.
+  - Step 1: First corrective demonstration move observed/recorded: Move LEFT to (4,1). Rationale given: avoid the adjacent fire at (3,2) and reduce distance to goal.
+  - Step 2: No explicit step-log entry available for what the policy did exactly here.
+  - Step 3 (highest_loss_frame): Agent location noted as (4,1). The provided corrective demonstration at this moment is Move Up to (3,1) (the first corrective move described for step 3). This indicates an attempted shift toward a more vertical path while staying off the fire cells.
+  - Steps 4–59: No detailed per-step logs are provided. The summary shows the trajectory continued for many steps but ultimately did not reach the goal.
+  - Step 60 (end_frame): Final position is (4,0). Fires adjacent to the final location include (3,0) directly above, i.e., a FIRE tile would be encountered if moving up; the agent did not reach the goal in this episode.
+- Grounded observation: The agent started by moving left to (4,1) (safe). By step 3, the agent had not yet left the vicinity of the bottom row and faced a nearby fire obstacle (3,0 to the north or (3,2) further north-east). The episode concluded with the agent still on the bottom row, at (4,0), unable to reach the goal due to the fire placements and the path taken (or attempted) in the remaining steps.
+
+2) FIRST WRONG DECISION
+- Earliest divergence from a safe corridor (as evidenced by the earliest explicit corrective move):
+  - Step 0→Step 1: Move LEFT to (4,1) is a safe, fire-avoiding move given the immediate hazard at (3,2). This is not the “wrong” decision.
+  - Step 1→Step 2: The step-log for Step 2 is not provided. Given the ensuing highest-loss frame occurs at Step 3 where the agent is still at (4,1) and the corrective move shown for Step 3 is Up to (3,1), the most plausible interpretation is:
+    - Step 2 attempted action: Up to (3,2) (fire) or an attempted ascent toward (3,1) that briefly flirted with the wrong neighbor (the only clearly dangerous immediate neighbor in that vicinity is (3,2)=FIRE). The presence of the nearby fire at (3,2) makes any Up move toward that cell a likely ground for a poor decision.
+  - Therefore, First Wrong Decision (hypothesized with grounding in the frame data): Step 2, action Up to (3,2) (fire tile). Rationale: this would immediately trigger the fire collision/penalty path and is clearly unsafe given the proximal fire at (3,2) and the demonstrated corrective emphasis on avoiding the fire.
+- If Step 2 was instead a different, non-fatal choice (e.g., Up to (3,1) or Right, etc.), the earliest detectable corrective move occurs at Step 3 when the demonstrator prescribes Up to (3,1). In either case, the step 3 corrective demonstrates the policy recognizing the safe option would be to stay in the bottom region longer or move toward (3,1) rather than stepping into (3,2). Grounded claim: Step 2 was the most plausible earliest misstep given the adjacent fire at (3,2) and Step 3’s emphasis on avoiding the northern-fire cluster by moving to (3,1).
+
+3) WHY THE POLICY FAILED
+- Core failure mode: fire_collision (KAG: fm_fire_collision)
+  - Evidence grounding: The episode’s immediate hazard (3,2) was directly adjacent to the start. The earliest correction shown emphasizes avoiding that hazard by moving to (4,1) and then to (3,1). The presence of a fire tile so close to the start makes it critical for the policy to generalize fire avoidance in near-start configurations with randomized fires and goals; the absence of a safe, steady corridor path in this layout led to a failed attempt to navigate around the central-fire cluster.
+- How the dynamic config contributed:
+  - Randomized start/goal/fire per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire) creates a wide distribution of configurations. The min_start_goal_manhattan constraint (>= 4) prevents trivial paths but still allows fire placements that force nontrivial detours.
+  - Training data (human demonstrations) may have provided limited exposure to this particular fire arrangement (fires at (3,0), (3,2), (2,4)) relative to the given start and goal. The policy’s diffusion-based, vision-conditioned encoding (CellAlignedEncoder) and horizon-limited prediction (obs_horizon=4, pred_horizon=3) rely on representative demonstrations to generalize. The observed failure suggests insufficient coverage of near-start fire placements in the demonstrated set.
+- Root-cause interpretation:
+  - The agent’s policy failed to generalize fire-avoidance to this specific arrangement, particularly around the central-fire cluster near the bottom row. The presence of a FIRE tile directly above the starting row (3,2) and another fire nearby (3,0) constrained viable routes (e.g., along column 0) and likely caused the policy to oscillate or hesitate rather than commit to a safe corridor, contributing to the timeout-like behavior (step count reached 200 with no success) and the eventual end at (4,0).
+  - The observed end-state (final pos (4,0)) and the absence of a valid, detected goal reach indicate the policy did not anchor to a robust corridor (Left-edge, Top-edge, or Right-column) under these fire placements. The KAG-cited corridors provide explicit safe routes in specific fire arrangements; this episode’s fire distribution aligns with a scenario where a Top-edge corridor would be most robust, but the agent did not discover or commit to that corridor path during the episode, leading to failure.
+- Additional contributing factors:
+  - The Stochastic DDPM Inference (pc_stochastic_ddpm) ensures non-deterministic action sequences; while this is intended, it can amplify failure when the policy has not learned stable fire-avoidance across similar configurations.
+  - The Observations include a 14-dim state vector with a 3x3 local neighborhood; if that neighborhood is insufficient to fully disambigu
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+

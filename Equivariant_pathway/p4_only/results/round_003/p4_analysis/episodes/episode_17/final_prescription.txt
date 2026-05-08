@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: Top-edge corridor variant hugging the top row to avoid central fire cluster; fire-side preference: stay away from the central hazard cluster (e.g., [3,3]).
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure occurs when the agent ends up near the central fire cluster in the lower/middle region and risks stepping into a fire (notably the moment around step 7 where moving Up would hit a fire). The selected corridor (top_edge) targets avoiding that area.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough uses the Top-edge corridor: start at [2,0], move Up to reach the top row, then travel along the top row to the goal at [0,3]. The demonstrated path is [2,0] -> [1,0] -> [0,0] -> [0,1] -> [0,2] -> [0,3].
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to favor corridor-based hazard avoidance, specifically staying on the top edge to bypass the central fire cluster, thereby reducing the chance of fire-collision in similar start/goal/fire layouts and improving generalization to fire placements near the center.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local failure; Variation: a single Top-edge corridor demonstration that emphasizes hugging the top row to avoid central fires. If more failures are encountered, future rounds could add variants that start from nearby positions or emphasize slight fire-adjacency changes, but for this episode one focused top-edge demo is recommended.

@@ -1,0 +1,37 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+Ground-truth episode facts used:
+- Start: [1, 3]. Goal: [4, 0]. Fires at [0,1], [0,3], [4,1].
+- Fires are deadly on contact and terminate the episode.
+- Episode outcome: 5 total steps, total reward -10.50, failure (not reaching the goal).
+- The logged “critical” notes show a corrective demonstration was provided and the final position ends on a FIRE tile.
+
+Reconstructed step-by-step trajectory (one consistent interpretation of the provided logs, noting some data-fragmentation in the frame captions):
+- Step 0 (start): Position (1,3). Up is a FIRE at (0,3). The human corrective demonstration moves Down to (2,3) to avoid the adjacent fire above. This aligns with the noted first corrective demonstration move provided in the start-frame description.
+- Step 1: Position (2,3). The next observed corrective movement in the step-1 narrative is a leftward move to (2,2). This yields a plausible 2nd-step transition consistent with the “highest_loss_frame” narrative, though the exact coordinates in the log fragment are fragmented across frames.
+- Step 2: Position (2,2). Action: Down or Right is plausible, but the constrained, logged narrative describes a continuation toward the goal while avoiding hazards; a concrete plausible step is to move Down to (3,2).
+- Step 3: Position (3,2). Action: Down to (4,2) is consistent with marching toward the bottom row while staying clear of the top-fire region.
+- Step 4: Position (4,2). Action: Left to (4,1), which is a FIRE tile in this episode’s fire-set. Entering this tile terminates the episode with a large negative reward (-10) and matches the observed final outcome (-10.50 total reward including step penalties).
+
+Summary narrative: The agent begins at (1,3) with a dangerous fire directly above. The human-provided corrective path aims to descend toward a safe corridor while avoiding the adjacent fire, but the final approach ends up stepping onto a FIRE tile at (4,1). The episode ends 5 steps in with a Fire collision.
+
+2) FIRST WRONG DECISION
+
+Earliest diverging moment from a safe corridor path (with coordinates and actions):
+- Step 0: At (1,3). The safe corridor most aligned with the KAG’s
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.572): A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]
+  Match 2 (similarity=0.563): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 3 (similarity=0.553): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 4 (similarity=0.497): A demonstration starting at (0, 2) with goal at (4, 2) and fires at [(1, 1), (1, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.492): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To improve the agent’s performance and avoid dangerous fires, provide a clear demonstration that follows the bottom edge of the grid, near the fourth row. This path should stay close to the bottom to bypass all fires at the top and specifically avoid the fire at position (4,1). The demonstration should show the agent moving along the bottom row toward the goal in a manner similar to Match 2, where the agent successfully took a corridor hugging the bottom edge. This approach teaches the agent to take safer routes while still reaching the goal efficiently. Ensuring the demonstration clearly commits to this path will help the agent generalize and choose safe routes in future episodes with similar fire layouts.
+
+=== DEMONSTRATION PRESCRIPTION ===
+

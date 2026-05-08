@@ -1,0 +1,30 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (per KAG): Start = [4,2], Goal = [1,0], Fires = [(2,4), (3,0), (3,2)]. The agent operates on a 5x5 grid with the described tile semantics; FIRE tiles terminate on entry. The episode in this log ends unsuccessfully after 3 steps with a large negative reward.
+- Step 0 (start): Position = (4,2). Immediate hazard to north is a Fire tile at (3,2). The first corrective demonstration move is West to (4,1). Rationale (from the vision report): avoid the adjacent Fire at (3,2) and get closer to a safe corridor toward the goal.
+- Step 1: Position = (4,1). Immediate hazard assessment: fires at (2,4), (3,0), (3,2); nearest hazards are at distance 2 (e.g., (3,0) and (3,2)). The next corrective move is West to (4,0). Rationale: push toward the left edge to initiate a safer routing pattern away from central hazards.
+- Step 2: Position = (4,0). The next action moves Up to (3,0) (a Fire tile). This is the critical safety violation: the agent steps onto a Fire tile, terminating the episode (fm_fire_collision). The vision log also notes that the subsequent corrective idea would be Up to (2,0) to continue toward the goal, but the Fire tile terminates the run.
+- Step 3: Episode termination. The log notes “end_frame step 3” with the attempted move Up to (2,0) described as the corrective demonstration, but the episode ended when stepping onto (3,0). Final position and reward reflect Fire penalty and episode termination.
+
+Grounded interpretation of trajectory:
+- The agent starts at the bottom row and repeatedly tries to move left toward the left edge, then attempts an upward step that lands on a Fire tile (3,0). The path ultimately fails due to stepping onto a hazard that was not reliably avoided given the current policy’s generalization to this (start, goal, fire-placement) configuration.
+
+2) FIRST WRONG DECISION
+- Earliest diverging decision: Step 2 (4,0) -> Up to (3,0) (fire tile).
+- Action taken vs. action that should have been taken:
+  - Actual: Up from (4,0) to (3,0) into a Fire tile (fm_fire_collision).
+  - Safer alternative(s): Either continue laterally along row 4 toward (4,3) or (4,2) to reposition away from central hazards, or at minimum avoid entering any fire tile by selecting a safe horizontal move (e.g., from (4,0) moving East to (4,1) and then (4,2)/(4,3)) rather than stepping north into (3,0).
+- Why this was wrong: The step into (3,0) directly triggers the primary failure mode (fire_collision) and demonstrates a lack of generalization for fire-avoidance given the randomised fire placements; it also bypasses any safe corridor that would have kept the agent in a fire-free neighborhood while making progress toward the goal.
+
+3) WHY THE POLICY FAILED
+- Root cause tied to the FailureMode in the KAG: fm_fire_collision — description=Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.
+- Evidence from this episode:
+  - The episode’s randomised fires included (3,0) in close proximity to the later suggested left-edge corridor path. The agent’s corrective steps ended up forcing a move that entered a nearby Fire tile, indicating the policy did not robustly infer safe routes around Fire hazards that are adjacent to a potential corridor.
+  - Environment config amplifies the generalisation challenge: randomised_start, randomised_goal, randomised_fire (default num_fire_tiles=3) plus min_start_goal_manhattan=4. The agent must generalise fire avoidance across diverse configurations, and this episode demonstrates a configuration where the closest Fire (3,0) blocks a naive left-edge progression.
+  - The observed early safe moves (west to (4,1), then (4,0)) show some attempt to position toward a corridor, but the subsequent Up move into a Fire indicates the policy did not reliably infer a safe, fire-free ascent path in this configuration.
+- Supporting KAG facts to ground this claim (verbatim):
+  - fm_fire_collision: description=Agent entered a FIRE tile. Most common failure. Indicates the policy failed to general
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+[FINAL_REC UNGROUNDED: No fire-free path exists from start [4,2] to goal [1,0] that stays inside the left_edge corridor for the bulk of the route; ascending along column 0 would cross a fire at (3,0), so a valid FINAL_REC cannot be produced.]

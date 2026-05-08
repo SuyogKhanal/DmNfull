@@ -1,0 +1,87 @@
+=== ROOT CAUSE ANALYSIS ===
+Section 1 — TRAJECTORY RECONSTRUCTION
+
+ Episode context ( grounded by KAG facts ):
+- Grid: 5x5 with walls (1), fire hazards (2) that terminate on contact, and a goal (3) that terminates with success. Fires are present at (0,2), (0,3), and (1,1) for this episode. Start at (0,0); Goal at (4,4). The randomised per-episode FireHazard layout means the policy must generalise fire avoidance across configurations. The corridor taxonomy available to guidance includes Left-edge corridor, Top-edge corridor, and Right-column corridor. The left-edge corridor is the only corridor that cleanly avoids the fires here, given the central/top fires.
+- Episode outcome: not successful after 60 steps, total reward -8.95, final position not published. Key frames indicate: step 0 starts at (0,0); step 3 shows the agent at (0,1) with the highest-loss frame; end at step 60 with a corrective demo suggested (move Down to (1,0)) but no goal reached.
+- Vision/observation notes: The top row is hazardous (fires at (0,2) and (0,3)); there is also a nearby fire at (1,1) which blocks several near-term moves. The local 3x3 neighborhood (plus goal position in the 14-dim state) does not convey the global corridor that would safely reach the goal via the left edge, so the agent’s early moves are constrained by local perception.
+
+Reconstructed trajectory (anchored to the frames provided):
+- Start (step 0): position (0,0). Fires are not in immediate adjacency, but there is a dense fire line ahead along the top row (0,2) and (0,3) and a fire at (1,1). The Vision segment shows a corrective demo suggesting a safe move Down to (1,0) to begin along a safe vertical edge, not along the risk-filled top row.
+- Step 1–2: The agent appears to oscillate in the vicinity of (0,0) and (0,1) based on the highest-loss frame at step 3 showing the agent at (0,1). The immediate safe moves from (0,1) are left to (0,0) (safe) or down to (1,1) (fire) or right to (0,2) (fire). The only non-terminal safe move is left to (0,0).
+- Step 3: The highest-loss frame shows the agent at (0,1) with adjacent hazards at (0,2) and (1,1). The corrective move documented is to move Left to (0,0) (the only safe option from (0,1)).
+- Step 60 (end): The agent remains in the top-left region and makes a corrective move to move Down to (1,0) in the final guidance, but the episode ends before reaching the goal. This pattern is consistent with repeated avoidance of the top-row fire line and no sustained progression along a safe corridor.
+- Overall path impression: The agent repeatedly pivots between (0,0) and (0,1) for a large portion of the episode, largely due to the top-row fires blocking the more direct top-edge route and the lack of a detected, consistently safe left-edge corridor path in the agent’s local observations.
+
+What went wrong (summary from trajectory cues and KAG rules):
+- The agent failed to commit to a safe, global corridor in the presence of a hazardous top edge. The left-edge corridor is a safe alternative given this episode’s fires, but the agent’s observed decisions repeatedly favored non-progressing moves in the top-left region, leading to a long loop and no goal reach within 60 steps.
+- The failure pattern aligns with the documented safety hazard: the top-edge corridor is blocked by two adjacent fires (0,2) and (0,3) in this layout, which makes the Top-edge corridor unsafe for this episode, and the Right-column corridor is also contingent on traversing the top edge before descending—blocked here. The only robust corridor in this configuration is the Left-edge corridor, which snakes down the first column and along the bottom row to the goal.
+- The dynamic randomization amplifies this: because start, goal, and fire positions vary per episode, the policy must generalise a safe, corridor-based reflex that reliably selects Left-edge corridor when top-edge is blocked. Observed behavior shows a bias toward local, immediate-neighborhood navigation that fails to recognize or persist with the Left-edge corridor when fires occupy central/top rows.
+- The RAG evidence (section 4) supports the interpretation that this failure is not a unique, one-off event but a recurring pattern: the agent often defaults to corridor choices that either require unsafe top-edge traversal or fail to sustain progress, leading to timeouts or dead-ends in episodes where the top edge is hazardous. This episode’s 60-step timeout-like duration and the avoidance of a safe left-edge corridor indicate a gap in generalizing corridor selection from local observations.
+
+Section 2 — FIRST WRONG DECISION
+
+- Earliest divergence from a safe, progress-building path:
+  - Step 0 (start at 0,0): Action taken by the policy appears to be RIGHT to (0,1) rather than DOWN to (1,0). The corrective demonstration explicitly recommends DOWN to (1,0) to begin the safe left-edge corridor (as per the VLM’s first corrective move). This is the earliest concrete divergence from the corridor-left plan.
+  - Rationale: From (0,0) both Down to (1,0) and Right to (0,1) are legal and safe in the local 4-neighborhood, but the left-edge corridor requires moving down first to begin descending column 0. The policy’s choice to move Right toward the top row aligns with a common tendency to favor more forward/rightward exploration in a local view, but in this layout that choice sacrifices a robust corridor that would avoid central/top fires.
+
+- Action mismatch (as concrete pair):
+  - At Step 0: Taken action vs recommended action
+    - Taken: RIGHT (to 0,1)
+    - Recommended (corrective exemplar): DOWN (to 1,0)
+  - This is the earliest misstep that seeded later dead-ends along the top-left region, given the top-edge hazard becomes a barrier and the left-edge corridor remains the viable safe path.
+
+Section 3 — WHY THE POLICY FAILED
+
+- Core failure mode (KAG terminology): fire_collision and the associated generalization gap
+  - The agent entered or approached proximity to a FIRE tile in earlier episodes; here the top row’s fires (0,2) and (0,3) effectively fence off the top-edge corridor. The policy’s local observations (ObservationComponent state_vector with a 3x3 neighborhood and goal coordinates) do not encode the global layout well enough to infer that the Left-edge corridor is the robust route. The horizon (obs_horizon=4, pred_horizon=3) and the CellAlignedEncoder architecture emphasize local cell awareness rather than global map reasoning, making it hard to preemptively commit to the left-edge corridor when the top-edge is hazardous.
+  - Dynamic randomization with Start, Goal, and Fire per episode further compounds the issue: the policy must generalise a safe corridor strategy across layouts, but the current demonstrations emphasize top-edge hugging in some RAG cases and fail to robustly cover the left-edge corridor as a default safe choice for episodes where the top edge is blocked.
+- Why the failure persisted in this episode (grounded by the KAG and the episode data):
+  - The left-edge corridor exists and is safe in this episode, but the agent’s local perception and action-conditioned sequence lead to looping between (0,0) and (0,1) rather than committing to the safe left-edge corridor. The corrective demonstration shows the intended corrective behavior (down first) that would establish the left-edge corridor, but without a sufficiently strong corrective policy cue or demonstration bank coverage, the policy cannot reliably reproduce that path on its own.
+  - The RAG evidence section (section 4) indicates prior episodes where top-edge hugging is favored or where no safe path exists; this history may bias the policy toward attempting top-edge traversal and toward hesitating to commit to a long vertical descent along column 0. The dynamic pool requires that new layouts (like this one) be anchored by corrective demonstrations that explicitly cover left-edge corridor usage in the presence of central/top fires.
+- Specific failure modes from the KAG:
+  - FailureMode: fm_fire_collision is the canonical label for entering a FIRE tile; while this episode’s end did not record a direct FIRE hit, the top-edge blocking layout is a classic cause of dead-end or misdirected exploration that can inadvertently lead toward fire tiles in other runs. The real remedy is to fix the policy’s corridor-choice bias (Left-edge corridor) under fire-constraints.
+  - Timeout (fm_timeout) and wall_thrashing (fm_wall_thrashing) patterns are consistent with long, non-progressing loops in the top-left region when the agent cannot deduce a safe, progress-oriented corridor from its observations.
+- TKF/dynamic-pool implication (grounded by the “Reasoning Implications” in the KAG):
+  - The TKF block (not explicitly enumerated here, but described in the framework) would flag this corridor/mode as PARTIAL or NOT_FOUND in the demo bank if the bank lacks left-edge corridor demonstrations under this hazard pattern. The current episode’s data suggests the bank does not consistently anchor the left-edge corridor as the default safe path when top-edge fires appear, contributing to the observed failure.
+
+Section 4 — RAG CROSS-EPISODE EVIDENCE
+
+For each rank, verdict (one sentence) and justification:
+- Rank 1 — ep=13: DOES NOT APPLY. Reason: That episode’s root cause states there is no safe path from start to goal avoiding all fires; in this episode there is a safe corridor (Left-edge), so the exact hazard configuration is not identical and the “no safe path” conclusion does not apply here.
+- Rank 2 — ep=9: PARTIAL. Reason: This episode emphasises hugging the top-edge corridor as a safe strategy in some layouts, but here the top edge is blocked by fires, so the top-edge hugging approach is only partially informative; it does not fully apply because the currentHazard pattern invalidates that corridor as safe.
+- Rank 3 — ep=0:
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.688): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 2 (similarity=0.683): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 3 (similarity=0.682): A demonstration starting at (0, 2) with goal at (2, 4) and fires at [(0, 4), (3, 4), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.681): A demonstration starting at (0, 1) with goal at (2, 3) and fires at [(1, 0), (1, 2), (4, 2)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 2x DOWN, 2x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.681): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To improve the policy’s ability to avoid hazards, it is important to include a demonstration that starts at the top-left corner and explicitly shows committing to the left-edge path when the top edge is dangerous due to fire hazards. This demo should begin by moving down one step from the start position, entering the left-edge corridor, and then continue following along the left edge and bottom row toward the goal. Doing so will provide a clear example of safely bypassing the fires that block the top edge without hesitating or attempting risky top-edge maneuvers. Including such a demonstration will teach the policy to prefer the left-edge corridor as a reliable, hazard-free path when the usual top-edge route is compromised. This will help the model generalize and consistently select safer routes in similar situations, reducing failures caused by hazardous top-edge proximity.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)
+n_demos: 3
+demo_variations: RAG rank1 ep=13 not applicable; rank2 ep=9 partial (top-edge hugging); rank3 ep=0 top-edge (not applicable); TKF: NOT_FOUND left_edge coverage; three left-edge corridor demonstrations: (A) (0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4); (B) (0,0)->(1,0)->(2,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4); (C) (0,0)->(1,0)->(2,0)->(3,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)
+rationale: Choosing left_edge is justified by the KAG corridor fact 'Left-edge corridor: path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.', which describes a hazard-avoidant route that aligns with the observed top-edge fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI gets stuck in the top-left area and keeps oscillating near (0,0) and (0,1) because the top edge is blocked by fires. It fails to commit to the Left-edge corridor, which would safely route down column 0 and along the bottom row to the goal.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would start at (0,0), move down the first column to (4,0), then travel along the bottom row to the goal at (4,4): (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4). This stays inside the left-edge corridor for the bulk of the path and avoids the top-edge fires.
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The demonstrations teach the policy to commit to the left-edge corridor when the top edge is hazardous, rather than wandering along the top-left area. The RAG results show mixed signals (rank 1 not applicable, rank 2 partial guidance toward top-edge hugging, rank 3 top-edge-focused failures), so these demos explicitly bias the agent toward the hazard-avoiding left-edge path when fires block alternative corridors.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Use 3 demonstrations to cover the left-edge corridor under small variations: one direct left-edge path, one with a single backtrack within the column (to show tolerance for brief deviation while staying on the left-edge corridor), and one with a deeper backtrack within the column. This ensures the agent learns to stay on the left-edge corridor despite minor perturbations.

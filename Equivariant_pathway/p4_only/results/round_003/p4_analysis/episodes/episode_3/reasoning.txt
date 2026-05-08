@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(3,3)
+n_demos: 2
+demo_variations: Two variations: start at (0,2) and start at (0,1); both follow the left-edge corridor to the GOAL avoiding central fires.
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion tends to arise when attempting top-edge or central-path routes near the top row, especially with fires placed near the top; the left_edge corridor is chosen to guide the AI away from the central fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts at the given start, moves left along the top row to reach column 0, then descends straight down column 0 to row 4, travels right along row 4 to column 3, and finally moves up to the GOAL at (3,3). In coordinates: (0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(3,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the left-edge corridor when central fires block immediate top-row progress, demonstrating how to stay in a safe corridor, descend to a safe row, and then approach the GOAL without stepping on any FIRE tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Two targeted walkthroughs are provided (n_demos = 2). They vary the starting offset slightly (start at (0,2) and start at (0,1)) but both illustrate the same safe left-edge corridor strategy to avoid central fires and reach the GOAL.

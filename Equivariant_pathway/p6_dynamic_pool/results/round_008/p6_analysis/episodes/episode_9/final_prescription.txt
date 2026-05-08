@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 3
+demo_variations: Three top-edge corridor corrective demos from start [0,0] to goal [2,4] following the top-edge path (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4); RAG rank=1 central_mixed path rejected due to mismatch with current episode; TKF coverage NOT_FOUND for top-edge corridor, hence three targeted demos are provided.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to leave the safe top-edge corridor and wander into the central area around the middle rows, particularly early in the episode, instead of staying on the top edge as recommended by the top_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough along the top-edge corridor would start at [0,0], move right along the top row to [0,4], then descend the final column to reach the goal at [2,4], following the exact sequence: [0,0] -> [0,1] -> [0,2] -> [0,3] -> [0,4] -> [1,4] -> [2,4].
+
+3. WHAT will the AI learn from seeing that walkthrough? (tie this to the RAG-retrieved cases by rank)
+- The AI will learn that sticking to a fire-avoidant top-edge corridor is a reliable strategy when the center is hazardous, countering prior tendencies (as seen in the RAG retrieval, which included a central_mixed path but was rejected here due to mismatch with this episode’s start/goal/fire layout). This reinforces corridor-based navigation signals that favor fire avoidance and monotonic progress toward the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Three targeted top-edge corridor demonstrations are provided (n_demos = 3) to address the NOT_FOUND gap in TKF coverage for the top-edge path. The variations describe multiple runs across the same corridor strategy to reinforce consistent fire-avoidant behavior, while explicitly noting the RAG case (rank=1 central_mixed path) that is not applicable to this corridor in this episode.

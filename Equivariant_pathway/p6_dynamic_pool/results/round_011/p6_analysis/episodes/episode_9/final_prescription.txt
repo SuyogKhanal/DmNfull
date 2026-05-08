@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: TKF FOUND: top_edge corridor; single top-edge corridor demonstration illustrating staying on row 0 to the goal column, then descending to the goal.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1) WHERE in the maze does the AI get confused? It tends to stray from the top-edge corridor when there are central fires, with the earliest divergence seen near (1,2) where it moves from (1,2) to (1,3) instead of continuing along the top edge toward the goal.
+
+2) WHAT should a good walkthrough look like in that area? A good walkthrough keeps the agent on the top row (row 0) from the start, moving right along (0,1), (0,2), (0,3), (0,4), then drops down to the goal along the final column: (1,4) then (2,4).
+
+3) WHAT will the AI learn from seeing that walkthrough? It will learn to commit to the top-edge corridor when fires occupy the middle rows, avoiding risky detours into rows that bring it closer to central fires, and then descend to the goal once past hazards.
+
+4) HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 in thisRec, using a single top-edge corridor demonstration that stays on row 0 to the goal column before descending; this leverages TKF coverage which FOUND the top_edge corridor as a viable path, and establishes the core safe behavior for this layout.

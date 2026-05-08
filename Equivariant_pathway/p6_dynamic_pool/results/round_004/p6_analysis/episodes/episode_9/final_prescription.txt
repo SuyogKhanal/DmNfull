@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 3
+demo_variations: Three top-edge corridor demonstrations: (a) standard top-edge path (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4); (b) near-top detour via row 1 (0,0)->(0,1)->(0,2)->(1,2)->(1,3)->(1,4)->(2,4); (c) alternate detour staying partly on the top edge (0,0)->(0,1)->(0,2)->(0,3)->(1,3)->(1,4)->(2,4)
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It struggles in the top-edge corridor (top_edge) region, especially around the transition to descending at the goal column, as shown by the need for corrective demonstrations when the model drifts off the top row.
+2. WHAT should a good walkthrough look like in that area? A solid walkthrough stays on the top row from the start to column 4, then descends to the goal: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4). The variations show safe detours that stay near the top edge when needed (e.g., dipping to row 1 briefly and then rejoining the top-edge path).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to generalize the safe corridor strategy for dynamic fire layouts by prioritizing top-edge navigation (ranked in RAG as applicable to mis-generalization of fire-avoidance) and recognizing when small detours near the top edge are safer than drifting into the center.
+4. HOW MANY walkthroughs are needed and how should they vary? Use 3 demonstrations (n_demos=3) to cover variations: a standard top-edge path, a near-top detour that keeps proximity to the top edge, and an alternate detour that briefly leaves the top edge to rejoin later.

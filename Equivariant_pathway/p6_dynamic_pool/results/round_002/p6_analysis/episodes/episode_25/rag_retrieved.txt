@@ -1,0 +1,15 @@
+=== RAG — SIMILAR PAST FAILURES ===
+--- rank=1 sim=0.974 run=p6_analysis ep=20 ---
+  Dynamic config: start=[0, 0] goal=[1, 4] fires=[['2', '2'], ['3', '1'], ['4', '3']]
+  Summary:        The failure stemmed from the agent wandering into the central area and coming too close to fires, instead of following the safer top-edge corridor, causing the episode to exceed the 60-step limit without reaching the goal. The task configuration has start at (0,0), goal at (1,4), with fires at (2,2), (3,1), and (4,3). The correct path is to travel along the top edge: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4). This top-edge route stays away from central fires and reaches the goal efficiently.
+  Root cause:     pending
+
+--- rank=2 sim=0.953 run=p6_analysis ep=16 ---
+  Dynamic config: start=[1, 3] goal=[4, 0] fires=[['0', '1'], ['0', '3'], ['4', '1']]
+  Summary:        Root cause: The agent failed to generalize fire-avoidance for this dynamic layout and ventured into a fire-adjacent path, triggering a fire_collision risk rather than reaching the goal. Key misstep: Step 1 moved DOWN from (1,3) to (2,3) instead of following a safer corridor, leading toward central fires. Configuration: start (1,3), goal (4,0), fires at (0,1), (0,3), and (4,1). Correct path: follow the left-edge corridor: (1,3) -> (1,2) -> (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0), avoiding all fires.
+  Root cause:     pending
+
+--- rank=3 sim=0.946 run=p6_analysis ep=12 ---
+  Dynamic config: start=[4, 4] goal=[0, 0] fires=[['1', '4'], ['3', '1'], ['4', '1']]
+  Summary:        The episode failed primarily due to the policy’s poor generalization in dynamic layouts, failing to take the immediate safety path from a near-goal position instead of drifting into an interior detour. Key configuration: start at [4,4], goal at [0,0], fires at (1,4), (3,1), (4,1). The observed trajectory reaches (1,0) (step 9) but never steps onto the goal, ending around (1,1) after 60 steps, with no fire collisions. The correct path would have taken the direct Up move from (1,0) to (0,0) to reach the goal in one step, or equivalently follow a top-edge corridor that moves toward the goal while avoiding central fires.
+  Root cause:     pending

@@ -1,0 +1,305 @@
+{
+  "cross_episode_reasoning": "",
+  "parsed_prescription": {
+    "n_failure_episodes_analysed": 1,
+    "failure_modes_found": 1,
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_top_edge_fire_collision",
+        "episodes_in_cluster": [
+          21
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "top_edge",
+        "where_it_fails": "In episode 21, the agent started at [0,0] and aimed for [4,4] with fires positioned at (1,2), (2,3), and (3,1); the policy entered a FIRE tile in that configuration, terminating the episode prematurely.",
+        "what_it_does_wrong": "The policy fails to generalise fire-avoidance for the top-edge corridor configuration with the given start/goal and fire placements, leading to stepping onto a FIRE tile.",
+        "source_final_recs": [
+          "top_edge"
+        ]
+      }
+    ],
+    "demonstration_prescriptions": [
+      {
+        "demo_id": 1,
+        "corridor": "top_edge",
+        "guidance": "Demonstrate safe navigation in the top-edge corridor configuration starting near the top-left, avoiding the three fire placements while reaching the bottom-right goal.",
+        "target_region": "Top-edge corridor with start at the top-left region and goal at bottom-right region; fires fixed at (1,2), (2,3), (3,1).",
+        "what_it_teaches": "Teaches fire-avoidance strategy within the top-edge corridor for a start-goal pair with Manhattan distance 8 and a fixed three-fire pattern, emphasizing early corridor choice and careful turning to avoid fire tiles.",
+        "n_repetitions": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              4,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                2
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                3,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Illustrates avoiding a FIRE tile in a top-edge corridor layout while progressing toward the goal, highlighting fire avoidance in the same corridor as the failure episode."
+          }
+        ]
+      }
+    ],
+    "total_demonstrations_needed": 1,
+    "overall_summary": "This analysis isolates a single failure episode where the agent hit a FIRE tile in the top-edge corridor with a fixed 3-fire pattern. The prescribed demonstration targets fire-avoidance behavior within that corridor to improve generalisation under dynamic fire placements.",
+    "confidence": 0.72
+  },
+  "per_episode_prescriptions": [
+    {
+      "episode_id": 21,
+      "seed": 13021,
+      "total_steps": 60,
+      "total_reward": -8.85000000000001,
+      "success": false,
+      "dynamic_config": {
+        "start_pos": [
+          0,
+          0
+        ],
+        "goal_pos": [
+          4,
+          4
+        ],
+        "fire_positions": [
+          [
+            "1",
+            "2"
+          ],
+          [
+            "2",
+            "3"
+          ],
+          [
+            "3",
+            "1"
+          ]
+        ]
+      },
+      "summary": "Root cause: The agent deviated from the safe top-edge corridor early (at position (0,3)), failing to progress along the edge toward the goal, resulting in stagnation within 60 steps despite no fire collisions. Key configuration: 5x5 grid with start (0,0), goal (4,4), and fires at (1,2), (2,3), (3,1). Correct path: stay on the top edge by moving right from (0,0) to (0,4), then descend the rightmost column: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4). The demonstrated policy should have followed the top_edge corridor to make continuous forward progress toward the goal.",
+      "vlm_report": "VISION REPORT\nMaze=llm_round001_idx001 Steps=60 Reward=-8.85 Success=False\n---\n--- start_frame frame step 0 ---\nStructured analysis for start_frame (step 0)\n\n1) Agent location and adjacent cells\n- Agent at (0,0) (A).\n- Adjacent cells: (0,1) to the east is empty; (1,0) to the south is empty. North and west are outside the 5x5 grid (blocked by boundary). No walls nearby; only fires are at other positions.\n\n2) Goal location and Manhattan distance\n- Goal at (4,4) (G).\n- Manhattan distance from (0,0) to (4,4) = |4-0| + |4-0| = 8.\n\n3) Fire hazards relative to the agent\n- Fires located at (1,2), (2,3), (3,1).\n- Distances from the agent: to (1,2) = 3, to (2,3) = 5, to (3,1) = 4.\n- No fire is in an adjacent cell to the agent (0,0). The nearest fire is distance 3 away.\n\n4) First corrective demonstration move\n- Action: Move East (to 0,1).\n- Justification: Safe initial step that starts along a clear path toward the goal (top row then down), avoids immediate fire vicinity, and reduces the remaining distance to the goal from 8 to 7. After this move, the agent at (0,1) would have a remaining distance to the goal of 7.\n\n--- highest_loss_frame frame step 5 ---\nStructured analysis (approx. 150 words)\n\n1) Agent location and adjacents:\n- Current position: (0, 3).\n- Adjacent cells: (0, 2) left, (0, 4) right, (1, 3) down; up is out of bounds.\n- Nearby hazards: No walls; fires are at (1, 2), (2, 3), (3, 1) and none of the immediate neighbors are on fire.\n\n2) Goal location and Manhattan distance:\n- Goal: (4, 4).\n- Manhattan distance: |4\u22120| + |4\u22123| = 5.\n\n3) Fire hazards relative to the agent:\n- Fire cells: (1, 2), (2, 3), (3, 1).\n- Distances from agent (0, 3): d((1,2))=2, d((2,3))=2, d((3,1))=5.\n- No fire is adjacent; two fires are at distance 2, which could influence path choices if veering toward them.\n\n4) First corrective demonstration move:\n- Action: Move Right (to 0, 4).\n- Justification: Safest immediate option that reduces distance by 1 without stepping toward a fire; sets up a straightforward top-row route toward the goal (now at (4,4) via (0,4) \u2192 (1,4) \u2192 (2,4) \u2192 (3,4) \u2192 (4,4)).\n\n--- end_frame frame step 60 ---\nStructured analysis (end_frame, step 60)\n\n1) Agent location and adjacents\n- Agent is at (0, 2). Adjacent cells:\n  - Left: (0, 1) \u2013 empty\n  - Right: (0, 3) \u2013 empty\n  - Down: (1, 2) \u2013 fire\n  - Up: outside grid (wall)\n- Nearby goal not adjacent; top row edges constrain movement.\n\n2) Goal location and Manhattan distance\n- Goal is at (4, 4).\n- Manhattan distance from (0, 2): |4\u22120| + |4\u22122| = 6.\n\n3) Fire hazards relative to the agent\n- Fires occupy (1, 2), (2, 3), and (3, 1).\n- Immediate hazard is (1, 2) directly below. Other fires are two steps away (not adjacent right now). Any path should avoid stepping onto (1, 2).\n\n4) First corrective demonstration move\n- Action: RIGHT (to (0, 3)).\n- Justification: avoids the immediate fire at (1, 2) and progresses toward the goal; reduces the distance to 5, providing a safe next step option while staying on a clear top-row path.",
+      "kag_context": "=== KAG \u2014 ENVIRONMENT KNOWLEDGE GRAPH ===\nDomain: dynamic_maze_navigation\nCoordinate system: (row, col), origin top-left, row increases downward, col increases rightward\nGrid shape: [5, 5]\nDescription: Structured knowledge graph describing the dynamic 5x5 maze navigation environment used in the diffusion-policy imitation learning research project. Consumed by the Reasoning LLM to ground failure analysis in verified environment facts (geometry, dynamics, rewards, failure taxonomy, policy constraints). All coordinates use (row, col) with top-left = (0,0) and bottom-right = (4,4).\n\n[GridWorld]\n  - Dynamic 5x5 Maze (id=gw_main): grid_size=5, num_cells=25, top_left=[0, 0], bottom_right=[4, 4], max_steps_per_episode=200, layout_name=multimodal\n\n[Tile]\n  - FREE (id=tile_free): value=0, enterable=True, reward_on_enter=-0.1, description=Normal passable cell. Entering costs the step penalty only.\n  - WALL (id=tile_wall): value=1, enterable=False, reward_on_hit=-0.5, description=Impassable cell. Attempting to move into a wall keeps the agent in place and applies the wall-hit penalty.\n  - FIRE (id=tile_fire): value=2, enterable=True, terminates_episode=True, reward_on_enter=-10.0, description=Hazard cell. Entering terminates the episode immediately with large negative reward.\n  - GOAL (id=tile_goal): value=3, enterable=True, terminates_episode=True, reward_on_enter=10.0, description=Target cell. Entering terminates the episode with large positive reward (success).\n\n[Agent]\n  - Navigating Agent (id=agent_main): controller=MazeDiffusionPolicy, action_selection=argmax over one-hot action_dim=4 channels of the first predicted action in the denoised sequence, render_colour_rgb=[30, 100, 220]\n\n[Goal]\n  - Episode Goal (id=goal_main): randomised_per_episode=True, render_colour_rgb=[50, 200, 80]\n\n[FireHazard]\n  - Fire Hazards (id=fire_hazard_main): default_count=3, configurable=True, randomised_per_episode=True, render_colour_rgb=[220, 60, 20], danger=Instant termination on contact. Agent must never step onto a FIRE tile.\n\n[Wall]\n  - Maze Walls (id=wall_main): source=configs/maze_layouts.py layout['grid'] values == 1\n\n[Action]\n  - UP (id=act_up): index=0, delta=[-1, 0]\n  - DOWN (id=act_down): index=1, delta=[1, 0]\n  - LEFT (id=act_left): index=2, delta=[0, -1]\n  - RIGHT (id=act_right): index=3, delta=[0, 1]\n\n[Corridor]\n  - Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.\n  - Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.\n  - Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.\n\n[FailureMode]\n  - fire_collision (id=fm_fire_collision): description=Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.\n  - timeout (id=fm_timeout): description=Episode reached MAX_STEPS (200) without reaching the goal. Indicates looping, hesitation, or oscillation.\n  - wall_thrashing (id=fm_wall_thrashing): description=Agent repeatedly hit walls while failing to progress toward the goal. Usually co-occurs with timeout.\n\n[RewardSignal]\n  - GOAL_REWARD (id=rew_goal): value=10.0\n  - FIRE_PENALTY (id=rew_fire): value=-10.0\n  - WALL_PENALTY (id=rew_wall): value=-0.5\n  - STEP_PENALTY (id=rew_step): value=-0.1\n  - REVISIT_PENALTY (id=rew_revisit): value=-0.05\n\n[ObservationComponent]\n  - state_vector (id=obs_state): shape=[14], dtype=float32, layout=[agent_row/4, agent_col/4, goal_row/4, goal_col/4, 3x3 local neighbourhood values / 3.0 (9 entries), steps_remaining / 200], notes=The goal position is always present in state[2:4], so the policy can condition on any goal placement.\n  - image (id=obs_image): shape=[64, 64, 3], dtype=uint8 (rendered); normalised to float32 [0,1] before encoder, description=Bird's-eye RGB render. Blue=agent, Green=goal, Red=fire, Dark=wall, Light=free.\n\n[DynamicConfig]\n  - randomize_start (id=cfg_rand_start): flag=randomize_start, default=True, target=agent_pos\n  - randomize_goal (id=cfg_rand_goal): flag=randomize_goal, default=True, target=goal_pos\n  - randomize_fire (id=cfg_rand_fire): flag=randomize_fire, default=True, target=fire_positions, num_fire_tiles_default=3\n  - min_start_goal_manhattan (id=cfg_min_sg_dist): value=4, description=Enforced minimum Manhattan distance between start and goal to prevent trivially short episodes.\n\n[PolicyConstraint]\n  - Stochastic DDPM Inference (id=pc_stochastic_ddpm): num_diffusion_steps=200, description=Inference draws a fresh Gaussian noise tensor and denoises over 200 steps. Identical observations can yield different action sequences run-to-run \u2014 this is intended probabilism, not a bug.\n  - CellAlignedEncoder (id=pc_cell_encoder): architecture=1x1 Conv2d stack followed by AvgPool2d(kernel_size=cell_px, stride=cell_px), feature_dim=128, grid_size=5, cell_px=16, description=Custom grid-cell-aware vision encoder with zero cross-cell bleed. Each grid cell's pixels are pooled independently into one feature before projection. Not a ResNet.\n  - Observation/Prediction Horizons (id=pc_horizons): obs_horizon=4, pred_horizon=3, action_dim=4, description=Policy observes the last 4 (state, image) pairs and predicts the next 3 one-hot actions; only the first action of the sequence is executed each step.\n  - UNet1D backbone (id=pc_unet_shape): dim=64, dim_mults=[1, 2, 4]\n\n[RELATIONS]\n  Dynamic 5x5 Maze --[HAS_TILE]--> FREE\n  Dynamic 5x5 Maze --[HAS_TILE]--> WALL\n  Dynamic 5x5 Maze --[HAS_TILE]--> FIRE\n  Dynamic 5x5 Maze --[HAS_TILE]--> GOAL\n  Navigating Agent --[CAN_ENTER]--> FREE\n  Navigating Agent --[CAN_ENTER]--> FIRE  {'warning': 'Entering terminates the episode with -10 reward.'}\n  Navigating Agent --[CAN_ENTER]--> GOAL\n  Navigating Agent --[CAN_ENTER]--> WALL  {'blocked': True, 'effect': 'Agent remains in place; wall penalty -0.5 applied.'}\n  Navigating Agent --[TERMINATES_ON]--> FIRE  {'failure_mode': 'fire_collision'}\n  Navigating Agent --[SUCCEEDS_ON]--> GOAL\n  GOAL --[PENALISES]--> GOAL_REWARD  {'sign': 'positive'}\n  FIRE --[PENALISES]--> FIRE_PENALTY\n  WALL --[PENALISES]--> WALL_PENALTY\n  Navigating Agent --[PENALISES]--> STEP_PENALTY  {'applied_every_step': True}\n  Navigating Agent --[PENALISES]--> REVISIT_PENALTY  {'applied_when': 'agent re-enters a previously visited free cell'}\n  Navigating Agent --[NAVIGATES_VIA]--> Left-edge corridor\n  Navigating Agent --[NAVIGATES_VIA]--> Top-edge corridor\n  Navigating Agent --[NAVIGATES_VIA]--> Right-column corridor\n  Left-edge corridor --[AVOIDS]--> Fire Hazards\n  Top-edge corridor --[AVOIDS]--> Fire Hazards\n  Right-column corridor --[AVOIDS]--> Fire Hazards\n  Left-edge corridor --[CONNECTS_TO]--> Episode Goal\n  Top-edge corridor --[CONNECTS_TO]--> Episode Goal\n  Right-column corridor --[CONNECTS_TO]--> Episode Goal\n  Navigating Agent --[OBSERVES]--> state_vector\n  Navigating Agent --[OBSERVES]--> image\n  randomize_start --[RANDOMISES]--> Navigating Agent\n  randomize_goal --[RANDOMISES]--> Episode Goal\n  randomize_fire --[RANDOMISES]--> Fire Hazards\n  min_start_goal_manhattan --[RANDOMISES]--> Dynamic 5x5 Maze  {'constraint': 'min_manhattan(start, goal) >= 4'}\n  FIRE --[CAUSES_FAILURE]--> fire_collision\n  Dynamic 5x5 Maze --[CAUSES_FAILURE]--> timeout  {'trigger': 'step_count >= 200 and agent has not reached goal'}\n  WALL --[CAUSES_FAILURE]--> wall_thrashing  {'trigger': 'repeated wall-hit penalties without progress'}\n  Navigating Agent --[ENFORCES]--> Stochastic DDPM Inference\n  Navigating Agent --[ENFORCES]--> CellAlignedEncoder\n  Navigating Agent --[ENFORCES]--> Observation/Prediction Horizons\n  Navigating Agent --[ENFORCES]--> UNet1D backbone\n\n[REASONING IMPLICATIONS]\n  * fire_collision_per_episode: If the agent stepped onto FIRE, the policy has not generalised fire-avoidance to this particular (start, goal, fire-placement) configuration. Prescribe a corrective demonstration that starts from a similar region and shows the safe corridor (left-edge, top-edge, or right-column) appropriate to this fire placement.\n  * timeout_per_episode: If the agent timed out, it is likely oscillating or hesitating. Prescribe demonstrations that commit to one corridor without backtracking.\n  * wall_thrashing_per_episode: If the agent hit many walls, it is not using the state vector's local-neighbourhood signal effectively. Prescribe demonstrations that include approach-and-turn behaviour near walls.\n  * dynamic_randomisation_caveat: Because start, goal, and fire are all randomised per episode, the policy must generalise across configurations. A demo prescription should describe the SITUATION (fire placement pattern relative to start/goal) rather than a fixed coordinate path.\n",
+      "rag_context": "",
+      "analysis_text": "1) TRAJECTORY RECONSTRUCTION\n- Episode configuration (as given): 5x5 grid, random start and goal, 3 fires per episode (locations here: (1,2), (2,3), (3,1)), walls not otherwise specified. Start = [0,0], Goal = [4,4]. Fires: [['1','2'], ['2','3'], ['3','1']]. Max steps per episode = 200.\n- Episode outcome: Failure (success=False), total steps = 60, total reward = -8.85. Final position not reported.\n- Step-by-step trace unavailable in the logs; we rely on the provided frames and summaries:\n  - Step 0 (start_frame): Agent at (0,0). Adjacent free cells at (0,1) and (1,0); fires at (1,2), (2,3), (3,1) are not adjacent. Goal at (4,4). Manhattan distance from start to goal = 8.\n  - Step 5 (highest_loss_frame): Agent at (0,3). Fires still not adjacent; nearby risks include two fires at distance 2 (not adjacent yet): (1,2) and (2,3). The top row remains a viable corridor option.\n  - Step 60 (end_frame): Agent at (0,2). Adjacent cells: left to (0,1) and right to (0,3) are free; down to (1,2) is a FIRE tile. Fires remain at (1,2), (2,3), (3,1). The agent is on the top row with the nearest fire directly below at (1,2). No fire collision occurred by step 60; the agent did not reach the goal within 60 steps.\n- Vision-derived micro-observations:\n  - The top-edge corridor remains the cleanest near-start option because central fires (1,2) and (2,3) constrain moves toward the center.\n  - The end-state snapshot shows no entry into a FIRE tile yet, but the agent has not advanced along the top edge toward the goal in a way that completes the corridor to (4,4) within 60 steps.\n\n2) FIRST WRONG DECISION\n- Grounded claim (earliest divergence from a safe corridor): Step 5 at position (0,3).\n- Specifics:\n  - Position (row, col): (0,3)\n  - Action taken by agent (as inferred from the trajectory narrative): The step log does not explicitly list per-step actions, but the vision-frame annotations describe the agent at (0,3) at step 5.\n  - Action it should have taken to stay on a safe corridor: RIGHT to (0,4) to continue along the Top-edge Corridor path toward (0,4) and then descend along column 4 to reach the goal (4,4). This would maintain the Top-edge corridor while keeping away from central fires.\n- Rationale: From (0,3), the Top-edge corridor prescribes moving to (0,4) to minimize exposure to central fires and to keep descending along the safer edge route. Moving DOWN from (0,3) would threaten stepping closer to the central fire cluster (notably (1,2) and (2,3)) and would diverge from the safe corridor plan.\n- Note: The logs do not provide a full step-by-step action chain, so this earliest divergence is anchored to the highest-loss frame\u2019s position and the implied corridor-following heuristic. The corrective demonstration later references moving to (0,4) (as per Step 5 narrative) but the end-state at step 60 shows the agent ended up at (0,2), indicating overall stagnation along the corridor after the initial misalignment window.\n\n3) WHY THE POLICY FAILED\n- Core failure mode indicated by evidence: The episode does not show a fire collision (the agent did not enter a FIRE tile by step 60), and it did not reach the goal within 60 steps. The failure is a lack of forward progress and failed generalization to the dynamic fire placements, not a simple collision.\n- Grounded factors from the provided data:\n  - DynamicConfig and environment: fires are randomised per episode (default 3 fires), goal/start are randomised, and min_start_goal_manhattan = 4 constrains distance but",
+      "prescription": "<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)\nn_demos: 1\ndemo_variations: Start near the top-left with central-fire clustering; follow the top-edge corridor by moving right along row 0 to (0,4) then descend down column 4 to the goal (4,4).\nrationale: 'corridor_top_edge: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n- The failure centers on the Top-edge corridor (top_edge). The agent deviated around step 5 (at (0,3)) and did not progress along the top edge toward (0,4), ending up not reaching the goal within 60 steps.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)\n- A solid walkthrough would stay on the top row, moving right from (0,0) to the top-right corner (0,4), then descend the final column down to the goal at (4,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This keeps away from central fires and completes the corridor to the goal.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n- It will learn to commit to the safe Top-edge corridor when central fires block the middle region, maintaining forward progress toward the goal without stepping onto hazard tiles.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)\n- n_demos = 1, focusing on the top-edge corridor. The variation describes starting near the top-left with central-fire clustering and following the top-edge path to the goal to reinforce safe sequential movement along the corridor.",
+      "reasoning_combined": "=== ROOT CAUSE ANALYSIS ===\n1) TRAJECTORY RECONSTRUCTION\n- Episode configuration (as given): 5x5 grid, random start and goal, 3 fires per episode (locations here: (1,2), (2,3), (3,1)), walls not otherwise specified. Start = [0,0], Goal = [4,4]. Fires: [['1','2'], ['2','3'], ['3','1']]. Max steps per episode = 200.\n- Episode outcome: Failure (success=False), total steps = 60, total reward = -8.85. Final position not reported.\n- Step-by-step trace unavailable in the logs; we rely on the provided frames and summaries:\n  - Step 0 (start_frame): Agent at (0,0). Adjacent free cells at (0,1) and (1,0); fires at (1,2), (2,3), (3,1) are not adjacent. Goal at (4,4). Manhattan distance from start to goal = 8.\n  - Step 5 (highest_loss_frame): Agent at (0,3). Fires still not adjacent; nearby risks include two fires at distance 2 (not adjacent yet): (1,2) and (2,3). The top row remains a viable corridor option.\n  - Step 60 (end_frame): Agent at (0,2). Adjacent cells: left to (0,1) and right to (0,3) are free; down to (1,2) is a FIRE tile. Fires remain at (1,2), (2,3), (3,1). The agent is on the top row with the nearest fire directly below at (1,2). No fire collision occurred by step 60; the agent did not reach the goal within 60 steps.\n- Vision-derived micro-observations:\n  - The top-edge corridor remains the cleanest near-start option because central fires (1,2) and (2,3) constrain moves toward the center.\n  - The end-state snapshot shows no entry into a FIRE tile yet, but the agent has not advanced along the top edge toward the goal in a way that completes the corridor to (4,4) within 60 steps.\n\n2) FIRST WRONG DECISION\n- Grounded claim (earliest divergence from a safe corridor): Step 5 at position (0,3).\n- Specifics:\n  - Position (row, col): (0,3)\n  - Action taken by agent (as inferred from the trajectory narrative): The step log does not explicitly list per-step actions, but the vision-frame annotations describe the agent at (0,3) at step 5.\n  - Action it should have taken to stay on a safe corridor: RIGHT to (0,4) to continue along the Top-edge Corridor path toward (0,4) and then descend along column 4 to reach the goal (4,4). This would maintain the Top-edge corridor while keeping away from central fires.\n- Rationale: From (0,3), the Top-edge corridor prescribes moving to (0,4) to minimize exposure to central fires and to keep descending along the safer edge route. Moving DOWN from (0,3) would threaten stepping closer to the central fire cluster (notably (1,2) and (2,3)) and would diverge from the safe corridor plan.\n- Note: The logs do not provide a full step-by-step action chain, so this earliest divergence is anchored to the highest-loss frame\u2019s position and the implied corridor-following heuristic. The corrective demonstration later references moving to (0,4) (as per Step 5 narrative) but the end-state at step 60 shows the agent ended up at (0,2), indicating overall stagnation along the corridor after the initial misalignment window.\n\n3) WHY THE POLICY FAILED\n- Core failure mode indicated by evidence: The episode does not show a fire collision (the agent did not enter a FIRE tile by step 60), and it did not reach the goal within 60 steps. The failure is a lack of forward progress and failed generalization to the dynamic fire placements, not a simple collision.\n- Grounded factors from the provided data:\n  - DynamicConfig and environment: fires are randomised per episode (default 3 fires), goal/start are randomised, and min_start_goal_manhattan = 4 constrains distance but\n\n=== TRAINING KNOWLEDGE CHECK ===\nVerdict: FOUND\nWhat was found in existing training demos:\nVerdict: FOUND\n\n  Match 1 (similarity=0.619): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]\n  Match 2 (similarity=0.614): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]\n  Match 3 (similarity=0.613): A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]\n  Match 4 (similarity=0.612): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]\n  Match 5 (similarity=0.611): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]\nAdjusted guidance: To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.\n\n=== DEMONSTRATION PRESCRIPTION ===\n<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)\nn_demos: 1\ndemo_variations: Start near the top-left with central-fire clustering; follow the top-edge corridor by moving right along row 0 to (0,4) then descend down column 4 to the goal (4,4).\nrationale: 'corridor_top_edge: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n- The failure centers on the Top-edge corridor (top_edge). The agent deviated around step 5 (at (0,3)) and did not progress along the top edge toward (0,4), ending up not reaching the goal within 60 steps.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)\n- A solid walkthrough would stay on the top row, moving right from (0,0) to the top-right corner (0,4), then descend the final column down to the goal at (4,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This keeps away from central fires and completes the corridor to the goal.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n- It will learn to commit to the safe Top-edge corridor when central fires block the middle region, maintaining forward progress toward the goal without stepping onto hazard tiles.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)\n- n_demos = 1, focusing on the top-edge corridor. The variation describes starting near the top-left with central-fire clustering and following the top-edge path to the goal to reinforce safe sequential movement along the corridor.\n",
+      "tkf_result": {
+        "needs_description": "The agent is not showing a demonstration of staying on the top_edge corridor all the way to the goal. It needs a demonstration of the correct safe navigation along the top_edge, especially the critical move at step 5 to go RIGHT from (0,3) to (0,4) and then descend safely down column 4 to (4,4). Seeing this would teach the agent how to maintain the top-edge path while avoiding fires and still make forward progress toward the goal. Without this top_edge demonstration, the agent tends to stall near the start and fail to reach the goal.",
+        "verdict": "FOUND",
+        "top_matches": [
+          {
+            "rank": 1,
+            "score": 0.618626058101654,
+            "metadata": {
+              "id": 7,
+              "filename": "demo_multimodal_heldout_007_1778152689031.json",
+              "maze_name": "multimodal",
+              "timestamp": 1778152689031,
+              "n_steps": 4,
+              "start": [
+                4,
+                3
+              ],
+              "goal": [
+                1,
+                4
+              ],
+              "fire_positions": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  2,
+                  4
+                ],
+                [
+                  4,
+                  1
+                ]
+              ],
+              "success": true,
+              "corridor": "central_mixed",
+              "outcome": "success",
+              "description": "A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed."
+            }
+          },
+          {
+            "rank": 2,
+            "score": 0.614034116268158,
+            "metadata": {
+              "id": 4,
+              "filename": "demo_multimodal_heldout_004_1778152608735.json",
+              "maze_name": "multimodal",
+              "timestamp": 1778152608735,
+              "n_steps": 5,
+              "start": [
+                2,
+                0
+              ],
+              "goal": [
+                4,
+                3
+              ],
+              "fire_positions": [
+                [
+                  1,
+                  4
+                ],
+                [
+                  3,
+                  2
+                ],
+                [
+                  3,
+                  3
+                ]
+              ],
+              "success": true,
+              "corridor": "bottom_edge",
+              "outcome": "success",
+              "description": "A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge."
+            }
+          },
+          {
+            "rank": 3,
+            "score": 0.612760066986084,
+            "metadata": {
+              "id": 2,
+              "filename": "demo_multimodal_heldout_002_1778152000105.json",
+              "maze_name": "multimodal",
+              "timestamp": 1778152000105,
+              "n_steps": 7,
+              "start": [
+                3,
+                4
+              ],
+              "goal": [
+                0,
+                0
+              ],
+              "fire_positions": [
+                [
+                  1,
+                  2
+                ],
+                [
+                  1,
+                  3
+                ],
+                [
+                  4,
+                  3
+                ]
+              ],
+              "success": true,
+              "corridor": "top_edge",
+              "outcome": "success",
+              "description": "A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge."
+            }
+          },
+          {
+            "rank": 4,
+            "score": 0.6121008992195129,
+            "metadata": {
+              "id": 3,
+              "filename": "demo_multimodal_heldout_003_1778152134503.json",
+              "maze_name": "multimodal",
+              "timestamp": 1778152134503,
+              "n_steps": 5,
+              "start": [
+                4,
+                4
+              ],
+              "goal": [
+                1,
+                2
+              ],
+              "fire_positions": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  0
+                ],
+                [
+                  2,
+                  3
+                ]
+              ],
+              "success": true,
+              "corridor": "right_edge",
+              "outcome": "success",
+              "description": "A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge."
+            }
+          },
+          {
+            "rank": 5,
+            "score": 0.6114784479141235,
+            "metadata": {
+              "id": 6,
+              "filename": "demo_multimodal_heldout_006_1778152930206.json",
+              "maze_name": "multimodal",
+              "timestamp": 1778152930206,
+              "n_steps": 4,
+              "start": [
+                2,
+                1
+              ],
+              "goal": [
+                1,
+                4
+              ],
+              "fire_positions": [
+                [
+                  0,
+                  4
+                ],
+                [
+                  2,
+                  2
+                ],
+                [
+                  4,
+                  0
+                ]
+              ],
+              "success": true,
+              "corridor": "central_mixed",
+              "outcome": "success",
+              "description": "A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed."
+            }
+          }
+        ],
+        "retrieval_summary": "Verdict: FOUND\n\n  Match 1 (similarity=0.619): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]\n  Match 2 (similarity=0.614): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]\n  Match 3 (similarity=0.613): A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]\n  Match 4 (similarity=0.612): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]\n  Match 5 (similarity=0.611): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]",
+        "adjusted_prescription": "To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.",
+        "fallback_used": false,
+        "fallback_block": ""
+      },
+      "adjusted_prescription": "To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.",
+      "frame_paths": {
+        "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/start.png",
+        "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/high_loss.png",
+        "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/end.png",
+        "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/trajectory.gif"
+      }
+    }
+  ]
+}

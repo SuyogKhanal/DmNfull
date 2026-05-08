@@ -1,0 +1,271 @@
+{
+  "profile": "p4_vlm_reasoning_kag_cross_plain_llm.yaml",
+  "label": "p4_only",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p4_only/results/round_002/correction_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p4_only/results/round_002/p4_analysis",
+  "n_failures": 7,
+  "test_layout_failures": [
+    {
+      "episode_id": 5,
+      "maze_name": "heldout_006",
+      "start_pos": [
+        4,
+        2
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          0
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 9,
+      "maze_name": "heldout_010",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        2,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 12,
+      "maze_name": "heldout_013",
+      "start_pos": [
+        4,
+        4
+      ],
+      "goal_pos": [
+        0,
+        0
+      ],
+      "fire_positions": [
+        [
+          1,
+          4
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 13,
+      "maze_name": "heldout_014",
+      "start_pos": [
+        1,
+        1
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 16,
+      "maze_name": "heldout_017",
+      "start_pos": [
+        1,
+        3
+      ],
+      "goal_pos": [
+        4,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    },
+    {
+      "episode_id": 17,
+      "maze_name": "heldout_018",
+      "start_pos": [
+        2,
+        0
+      ],
+      "goal_pos": [
+        0,
+        3
+      ],
+      "fire_positions": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          3,
+          3
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 18,
+      "maze_name": "heldout_019",
+      "start_pos": [
+        4,
+        0
+      ],
+      "goal_pos": [
+        0,
+        3
+      ],
+      "fire_positions": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 1,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                3,
+                3
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Tests fire-avoidance behavior across a mixed-corridor scenario, ensuring the agent learns to avoid central/fire-prone cells while moving toward a far horizontal goal."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "fire_cluster_majority_mixed_corridors",
+        "episodes_in_cluster": [
+          5,
+          9,
+          12,
+          13,
+          16,
+          17,
+          18
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "mixed",
+        "where_it_fails": "Across the set of failures, the agent steps onto a FIRE tile in configurations where the start/goal placement interacts with fire placements across multiple corridors, indicating poor generalisation for fire avoidance in varied corridor contexts.",
+        "what_it_does_wrong": "The agent does not consistently avoid FIRE tiles when the start and goal are placed such that the central/middle rows contain fire hazards; it sometimes chooses paths that cross a fire tile despite available safe corridors.",
+        "source_final_recs": [
+          "left_edge",
+          "top_edge",
+          "left_edge",
+          "left_edge",
+          "left_edge",
+          "top_edge",
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}

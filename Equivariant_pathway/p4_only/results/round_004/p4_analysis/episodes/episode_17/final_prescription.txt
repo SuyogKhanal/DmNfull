@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: Top-edge corridor path with a variant that first ascends to the top row (two UP moves) before traversing across to the goal.
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- In the top-edge corridor area (top_edge). The failure scenario centers on central fires and the agent needing to decide how to approach the goal while avoiding those fires; the critical confusion point is around moving in ways that could collide with the central fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough along the top-edge corridor would start at the given start position [2,0], move Up twice to reach the top row, then traverse along the top row to the goal column: (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3). This keeps most of the route on the safe top row, avoiding fires in the middle rows.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to bias decisions toward the top-edge corridor when central fire clusters threaten paths, effectively practicing committing to a safe edge path and then completing the route along that edge to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration uses the top-edge corridor path (with a variant that begins with two upward moves to reach the top row). This targets the same failure mode without over-saturating the loop with redundant demonstrations.

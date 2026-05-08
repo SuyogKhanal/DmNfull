@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: single corrective demonstration: start at (2,0); ascend to the top edge via (1,0) and (0,0); traverse row 0 to (0,3)
+rationale: This prescribes the Top-edge corridor because 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets confused in the top_edge corridor area: it initially veers off by not heading up to the top edge from the start, which risks running into the central fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A top-edge corridor walk: from (2,0) go up to (1,0), then up to (0,0), then move right along the top row: (0,1), (0,2), and finally reach the goal at (0,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the top-edge path when central fires are present, avoiding central-fire tiles and proceeding along the top row to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1; Use the single top-edge corrective path described above. If more rounds are needed later, you could add slight start-offset variations or alternate top-edge routes, but this round uses one focused demonstration.

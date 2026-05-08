@@ -1,0 +1,91 @@
+{
+  "profile": "p6_vlm_reasoning_kag_rag_tkf_cross_plain_llm.yaml",
+  "label": "p6_dynamic_pool",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_012/pool_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_012/p6_analysis",
+  "n_failures": 1,
+  "test_layout_failures": [
+    {
+      "episode_id": 16,
+      "maze_name": "heldout_017",
+      "start_pos": [
+        1,
+        3
+      ],
+      "goal_pos": [
+        4,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 1,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              1,
+              3
+            ],
+            "goal_pos": [
+              4,
+              0
+            ],
+            "fire_positions": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                4,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Demonstrates avoidance of top-row fires while progressing along the right-column corridor toward the goal, addressing the fire_collision failure in this corridor."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_ep16_fire_collision_right_edge",
+        "episodes_in_cluster": [
+          16
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "Right-column corridor",
+        "where_it_fails": "The agent started near the top-right area with fires placed in the top middle and bottom-left regions, leading to a fire collision under the right-column corridor routing assumption.",
+        "what_it_does_wrong": "The policy failed to generalize fire-avoidance for this (start, goal, fire placements) configuration within the right-column corridor, stepping onto a FIRE tile instead of following a safe path.",
+        "source_final_recs": [
+          "Right-column corridor"
+        ]
+      }
+    ]
+  }
+}

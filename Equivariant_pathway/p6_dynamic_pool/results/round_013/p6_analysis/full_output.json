@@ -1,0 +1,2530 @@
+{
+  "metadata": {
+    "run_id": "p6_analysis",
+    "timestamp": "2026-05-08T11:41:48.969717",
+    "rerun_of": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout",
+    "pipeline_flags": {
+      "use_vlm": true,
+      "use_reasoning": true,
+      "use_cross_episode_reasoning": true,
+      "use_kag": true,
+      "use_rag": true,
+      "use_tkf": true,
+      "use_plain_llm": true,
+      "use_aggregator": true
+    },
+    "n_episodes": 40,
+    "n_successes": 39,
+    "n_failures": 1,
+    "seed_base": 13000
+  },
+  "config": {
+    "maze": {
+      "name": "multimodal"
+    },
+    "rollout": {
+      "n_episodes": 40,
+      "seed": 13000,
+      "checkpoint_path": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/checkpoints/best_eq_policy.pth"
+    },
+    "tracking": {
+      "output_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013"
+    },
+    "pipeline": {
+      "use_vlm": true,
+      "use_reasoning": true,
+      "use_cross_episode_reasoning": true,
+      "use_kag": true,
+      "use_rag": true,
+      "use_tkf": true,
+      "use_plain_llm": true,
+      "use_aggregator": true
+    },
+    "llm": {
+      "prompt_addendum_reasoning": "-------------------------------------------------------------------\nP6 DYNAMIC-POOL PER-EPISODE ANALYSIS DIRECTIVE\n-------------------------------------------------------------------\nCONTEXT \u2014 what role this episode plays:\nThis failure was observed while the policy rolled out on the CURRENT\nCORRECTION POOL. Note that this pool is GROWING: every round the\ndownstream cross-episode reasoner adds new layouts to it, and the\npolicy must learn to handle the entire growing pool. Your analysis,\ncombined with the other failures from this round, will inform which\nNEW layouts get appended to the pool next.\n\nCrucially: there is also a separate held-out evaluation set of 50\nlayouts that you will NEVER see and that no demo collector ever\ntouches. The held-out SR is the only published number. Do NOT\nspeculate about specific held-out configurations.\n\nWHAT TO REASON ABOUT:\n  * The FAILURE MODE this episode reveals \u2014 corridor side, fire-block\n    pattern, visual feature missed, recovery the policy lacks.\n  * Whether the TKF block (when present) flags this corridor / mode as\n    NOT_FOUND, PARTIAL, or FOUND in the existing demo bank. The bank\n    reflects everything the policy has been trained on so far. TKF\n    gaps are exactly what dynamic-pool expansion targets.\n  * Whether the RAG retrievals indicate this is recurring across rounds\n    \u2014 recurrence is evidence that previous pool extensions did not\n    cover this mode adequately.\n  * Whether the KAG vocabulary contains a name that fits this episode;\n    use that name verbatim in section 5.\n\nWHAT NOT TO SPEND TOKENS ON:\n  * Long step-by-step \"how to walk through this maze\" instructions.\n    Section 5 still requests a corridor + path as a sanity anchor \u2014\n    keep it short. Movement-level planning is the prescription stage's\n    job, not yours; your value is failure-mode identification grounded\n    in TKF / KAG / RAG signals.\n  * Held-out speculation. You do not see the held-out set.\n\nBe specific to THIS episode but written so the cross-episode reasoner\ncan extract the failure-mode signature in one pass.",
+      "prompt_addendum_cross_episode": "-------------------------------------------------------------------\nP6 DYNAMIC-POOL CROSS-EPISODE PRESCRIPTION DIRECTIVE (v2)\n-------------------------------------------------------------------\nYOUR JOB IN ONE SENTENCE:\nOutput a list of NEW maze layouts that, taken together, would let\nthe policy generalise to a randomised held-out distribution you\ncannot see. The held-out set is drawn uniformly from 5x5 / 3-fire /\nManhattan>=4 layouts. Covering it requires VARIETY, not minimum\ncleverness.\n\nWHAT YOU PRODUCE:\nConcrete (start_pos, goal_pos, fire_positions) layouts that get\nappended to the active correction pool. Demos are collected on them\nvia BFS and the policy is retrained.\n\n=================================================================\nHARD COUNT RULE \u2014 overrides any prior conservative guidance:\n=================================================================\nTotal recommended_layouts across all clusters MUST be at least\n    max(5, ceil(n_failure_episodes / 2))\ne.g.  3 failures  -> at least  5 layouts\n     10 failures  -> at least  5 layouts\n     20 failures  -> at least 10 layouts\n\nThis is a HARD FLOOR. Single-digit prescriptions plateau the policy\nbefore reaching the held-out distribution. Going below this floor is\na directive violation regardless of how few clusters you find.\n\nUpper guide: do not exceed 2 * n_failure_episodes.\n\n=================================================================\nDIVERSITY RULE \u2014 also a hard rule:\n=================================================================\nDefine each layout's signature as the 4-tuple:\n    (corridor, fire_block_pattern, start_edge, goal_edge)\nwhere:\n    corridor             = KAG corridor name (left_edge / top_edge / ...)\n    fire_block_pattern   = qualitative description of how the 3 fires\n                           obstruct the corridor (e.g. \"two-fire wall\n                           at row 2, third fire at corner\")\n    start_edge / goal_edge = which side of the grid the position sits\n                             on (top / bottom / left / right / interior)\n\nNo two recommended layouts in your output may share ALL FOUR axes.\nEach pair must differ in at least 2 of the 4. The intent is to\nspread coverage; do NOT stack near-duplicates of one failed pattern.\n\n=================================================================\nCLUSTER COUNT IS NOT A LIMIT:\n=================================================================\nEven if you only see 1 cluster of failures, you still meet the count\nfloor by generating VARIANTS within that cluster \u2014 different start\nsides, different fire arrangements, different reachable corners. The\ncluster identifies a failure mode; the prescription must spread\nvariation around that mode, not just dot it once.\n\nCONSTRUCTION PROCEDURE (follow in order):\n  Step 1: List every distinct corridor / failure pattern across all\n          failures.\n  Step 2: For each pattern, generate 2-4 layouts that target that\n          pattern but differ from each other on at least 2 of the\n          4 diversity axes.\n  Step 3: For each TKF NOT_FOUND corridor (whether or not it\n          appeared in this round's failures), generate at least 2\n          layouts to seed coverage there.\n  Step 4: Verify total count >= max(5, ceil(n_failures/2)). If\n          short, generate additional VARIANT layouts within already-\n          identified patterns until the floor is met.\n  Step 5: Verify the diversity rule pairwise across all layouts.\n\n=================================================================\nHARD GUARDRAILS \u2014 every recommended layout MUST satisfy:\n=================================================================\n  1. SOLVABLE \u2014 the BFS expert that will collect the demo must reach\n     the goal:\n       * start_pos and goal_pos in [0..4] x [0..4]\n       * Manhattan(start, goal) >= 4\n       * EXACTLY 3 distinct fire cells, none equal to start or goal\n       * at least one fire-free path from start to goal\n     Unsolvable layouts are silently skipped (= wasted slot).\n  2. NOT IDENTICAL to any failure layout in the PER-FAILURE LAYOUTS\n     block (those grounded the analysis; they are NOT prescriptions).\n  3. NOT IDENTICAL to any layout already in the correction pool.\n\n=================================================================\nCONTEXT YOU HAVE / DO NOT HAVE:\n=================================================================\nHAVE:\n  * Per-episode reasoning + per-episode FINAL_REC for every\n    confirmed failure observed on the current pool.\n  * Verbatim numeric layout (start, goal, fires) of every confirmed\n    failure (the PER-FAILURE LAYOUTS block).\n  * KAG corridor / failure-mode vocabulary \u2014 use it for naming.\n  * RAG retrievals from past failure rounds.\n  * TKF demo-coverage block: NOT_FOUND / PARTIAL / FOUND verdicts on\n    corridors. NOT_FOUND corridors are EXPANSION TARGETS. Spend\n    layouts there.\n\nDO NOT HAVE \u2014 do not invent:\n  * Any specific held-out layout.\n  * Any held-out success/failure count.\n\nWHY THIS REVISION EXISTS:\nEarlier versions told you to be parsimonious. In practice the JSON\naggregator that consumes your output collapsed prescriptions to\n1-2 layouts per round and started re-proposing layouts already in\nthe pool. The policy plateaued at heldout SR ~0.86 while a random-\nsampling baseline (with no failure analysis at all) reached 0.94 by\nout-spending the LLM's tiny prescriptions. This v2 prompt fixes that\nby mandating both a count floor and diversity. Your prescriptions\nare now expected to be the SAME ORDER OF MAGNITUDE as the failure\ncount, not 10% of it.\n\nOutput is consumed by the JSON-formatting aggregator that is told\nNOT to contradict you and NOT to shrink your count. Your prescription\nIS the final answer; the JSON step is just structural formatting.",
+      "prompt_addendum_aggregator": "-------------------------------------------------------------------\nP6 DYNAMIC-POOL STRUCTURED PRESCRIPTION DIRECTIVE (v2)\n-------------------------------------------------------------------\nROLE OF THIS STAGE:\nFormat the cross-episode reasoning's prescription as JSON. You are\nNOT inventing prescriptions. You are NOT reducing the layout count.\nEvery layout the cross-episode reasoning proposed MUST appear in\nyour JSON exactly once.\n\n=================================================================\nABSOLUTE NO-SHRINK RULE:\n=================================================================\nCount the total layouts in the cross-episode reasoning's proposal.\nCall that number N_PROPOSED. Then:\n    sum( recommended_layouts across all demonstration_prescriptions )\n    MUST equal N_PROPOSED.\nReducing this count is a directive violation. Specifically:\n  * Do NOT collapse multiple distinct layouts into one prescription\n    with high n_repetitions. (n_repetitions=5 on a single layout is\n    NOT equivalent to 5 distinct layouts in recommended_layouts.)\n  * Do NOT drop layouts because they \"look similar\" to other layouts.\n    The cross-episode stage already enforced diversity; trust it.\n  * Do NOT drop layouts because you think the policy might already\n    handle them. You don't know that.\n\n=================================================================\nCOUNT FLOOR (independent check):\n=================================================================\nEven if for some reason the cross-episode reasoning produced fewer\nthan max(5, ceil(n_failure_episodes / 2)) layouts, your final JSON\noutput MUST still contain at least that many layouts. Generate\nvariant layouts (consistent with the cross-episode clusters and the\ndiversity rule below) to make up the gap.\n\n=================================================================\nDIVERSITY RULE (mirror the cross-episode rule exactly):\n=================================================================\nNo two layouts in `recommended_layouts` may share all four of:\n    (corridor, fire_block_pattern, start_edge, goal_edge).\nEach pair must differ on at least 2 of those 4 axes.\n\n=================================================================\nHARD GUARDRAILS \u2014 every layout in `recommended_layouts` MUST satisfy:\n=================================================================\n  1. SOLVABLE: bounds (0..4 x 0..4), Manhattan(start, goal) >= 4,\n     exactly 3 distinct fire cells none equal to start/goal, at least\n     one fire-free path. Invalid layouts are dropped + warned by\n     _validate_layout, and unsolvable layouts are skipped at BFS-\n     collection time. Either way they are wasted slots.\n  2. NOT a verbatim copy of any failure layout in the PER-FAILURE\n     LAYOUTS block. Those are listed there to ground cluster\n     reasoning, NOT as prescriptions.\n\n=================================================================\nHOW TO STRUCTURE THE JSON WHEN A CLUSTER HAS MANY LAYOUTS:\n=================================================================\nIf cross-episode reasoning identified 1 cluster with 6 layouts, the\nCORRECT JSON shape is:\n    demonstration_prescriptions: [\n      {\n        demo_id: 1,\n        corridor: \"<KAG name>\",\n        ...,\n        n_repetitions: 6,                          # = number of layouts\n        recommended_layouts: [L1, L2, L3, L4, L5, L6]   # 6 distinct\n      }\n    ]\nNOT:\n    demonstration_prescriptions: [\n      { ..., n_repetitions: 6, recommended_layouts: [L1] }   # WRONG\n    ]\nThe repetition count is informational; the actual training data\ncomes from each entry in recommended_layouts.\n\n=================================================================\nHOW TO CITE TKF / KAG / RAG IN THE JSON:\n=================================================================\n  * cluster.corridor: KAG corridor name when KAG is provided.\n  * cluster.source_final_recs: corridor strings from FINAL_REC for\n    episodes in that cluster, IN ORDER.\n  * demonstration_prescriptions[].rationale: (a) name the TKF verdict\n    (NOT_FOUND / PARTIAL / FOUND) when TKF is provided, (b) cite RAG\n    retrieval ranks when RAG is provided, AND (c) explain how the\n    proposed layouts vary on the diversity axes (corridor / fire-\n    block / start-edge / goal-edge).\n\n=================================================================\nWHY THIS REVISION EXISTS:\n=================================================================\nEarlier prompts asked you to mirror the cross-episode count, but you\ncollapsed 5+ layouts into n_repetitions=5 with a single layout in\nrecommended_layouts, AND/OR reduced the per-cluster count under the\nbanner of \"smallest set\". The downstream consumer reads\nrecommended_layouts directly \u2014 n_repetitions is informational only,\nnot a multiplier on a single-layout cluster. So those collapses\nsilently shrank the actual training increment per round, the policy\nplateaued at heldout SR ~0.86, and a random-sampling baseline beat\nit. This rewrite fixes that."
+    },
+    "tkf": {
+      "demo_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/demos"
+    },
+    "rag": {
+      "bank_path": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/rag_bank/round_013"
+    }
+  },
+  "phase_a": {
+    "all_rollouts": [
+      {
+        "episode_id": 0,
+        "maze_name": "heldout_001",
+        "seed": 13000,
+        "total_steps": 7,
+        "total_reward": 9.3,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nG \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 F \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            1,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "4",
+              "0"
+            ],
+            [
+              "4",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 7
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_0/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_0/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_0/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_0/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 1,
+        "maze_name": "heldout_002",
+        "seed": 13001,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 \u00b7 F A\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 G \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            4
+          ],
+          "goal_pos": [
+            4,
+            3
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "4"
+            ],
+            [
+              "1",
+              "3"
+            ],
+            [
+              "2",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_1/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_1/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_1/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_1/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 2,
+        "maze_name": "heldout_003",
+        "seed": 13002,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 F G \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 A \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            3
+          ],
+          "goal_pos": [
+            0,
+            3
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_2/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_2/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_2/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_2/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 3,
+        "maze_name": "heldout_004",
+        "seed": 13003,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 A F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 F G \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            2
+          ],
+          "goal_pos": [
+            3,
+            3
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "3"
+            ],
+            [
+              "2",
+              "4"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_3/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_3/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_3/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_3/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 4,
+        "maze_name": "heldout_005",
+        "seed": 13004,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 A \u00b7\nF F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            3
+          ],
+          "goal_pos": [
+            3,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "0"
+            ],
+            [
+              "1",
+              "1"
+            ],
+            [
+              "4",
+              "4"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_4/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_4/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_4/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_4/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 5,
+        "maze_name": "heldout_006",
+        "seed": 13005,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\nF \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 A \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            2
+          ],
+          "goal_pos": [
+            1,
+            0
+          ],
+          "fire_positions": [
+            [
+              "2",
+              "4"
+            ],
+            [
+              "3",
+              "0"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_5/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_5/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_5/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_5/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 6,
+        "maze_name": "heldout_007",
+        "seed": 13006,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 G\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            1,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "0"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_6/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_6/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_6/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_6/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 7,
+        "maze_name": "heldout_008",
+        "seed": 13007,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nA \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 G F \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            2,
+            0
+          ],
+          "goal_pos": [
+            4,
+            2
+          ],
+          "fire_positions": [
+            [
+              "3",
+              "0"
+            ],
+            [
+              "3",
+              "3"
+            ],
+            [
+              "4",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_7/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_7/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_7/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_7/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 8,
+        "maze_name": "heldout_009",
+        "seed": 13008,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 F G F\nA \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            0
+          ],
+          "goal_pos": [
+            0,
+            3
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "0",
+              "4"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_8/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_8/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_8/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_8/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 9,
+        "maze_name": "heldout_010",
+        "seed": 13009,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F G\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            2,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "0"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_9/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_9/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_9/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_9/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 10,
+        "maze_name": "heldout_011",
+        "seed": 13010,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 A\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 F F",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            4
+          ],
+          "goal_pos": [
+            3,
+            0
+          ],
+          "fire_positions": [
+            [
+              "4",
+              "0"
+            ],
+            [
+              "4",
+              "3"
+            ],
+            [
+              "4",
+              "4"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_10/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_10/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_10/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_10/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 11,
+        "maze_name": "heldout_012",
+        "seed": 13011,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "F \u00b7 \u00b7 \u00b7 \u00b7\nA F \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 G \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            0
+          ],
+          "goal_pos": [
+            4,
+            3
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "0"
+            ],
+            [
+              "1",
+              "1"
+            ],
+            [
+              "1",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_11/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_11/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_11/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_11/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 12,
+        "maze_name": "heldout_013",
+        "seed": 13012,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "G \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            0,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "4"
+            ],
+            [
+              "3",
+              "1"
+            ],
+            [
+              "4",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_12/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_12/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_12/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_12/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 13,
+        "maze_name": "heldout_014",
+        "seed": 13013,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 F \u00b7 G\n\u00b7 A \u00b7 F \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            1
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "1",
+              "3"
+            ],
+            [
+              "2",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_13/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_13/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_13/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_13/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 14,
+        "maze_name": "heldout_015",
+        "seed": 13014,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 F \u00b7 \u00b7\nA \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 G\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            0
+          ],
+          "goal_pos": [
+            2,
+            4
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "1",
+              "2"
+            ],
+            [
+              "3",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_14/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_14/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_14/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_14/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 15,
+        "maze_name": "heldout_016",
+        "seed": 13015,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 F \u00b7 A\n\u00b7 G \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            3,
+            4
+          ],
+          "goal_pos": [
+            4,
+            1
+          ],
+          "fire_positions": [
+            [
+              "2",
+              "0"
+            ],
+            [
+              "2",
+              "4"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_15/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_15/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_15/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_15/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 16,
+        "maze_name": "heldout_017",
+        "seed": 13016,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "\u00b7 F \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 A \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nG F \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            1,
+            3
+          ],
+          "goal_pos": [
+            4,
+            0
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "1"
+            ],
+            [
+              "0",
+              "3"
+            ],
+            [
+              "4",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_16/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_16/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_16/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_16/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 17,
+        "maze_name": "heldout_018",
+        "seed": 13017,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 G \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nA \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 F F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            2,
+            0
+          ],
+          "goal_pos": [
+            0,
+            3
+          ],
+          "fire_positions": [
+            [
+              "2",
+              "4"
+            ],
+            [
+              "3",
+              "2"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_17/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_17/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_17/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_17/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 18,
+        "maze_name": "heldout_019",
+        "seed": 13018,
+        "total_steps": 7,
+        "total_reward": 9.3,
+        "success": true,
+        "ascii_grid": "F \u00b7 \u00b7 G \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nA \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            0
+          ],
+          "goal_pos": [
+            0,
+            3
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "0"
+            ],
+            [
+              "1",
+              "4"
+            ],
+            [
+              "2",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 7
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_18/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_18/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_18/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_18/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 19,
+        "maze_name": "heldout_020",
+        "seed": 13019,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 A\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 G \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            4
+          ],
+          "goal_pos": [
+            3,
+            2
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "3",
+              "0"
+            ],
+            [
+              "4",
+              "4"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_19/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_19/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_19/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_19/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 20,
+        "maze_name": "llm_round001_idx000",
+        "seed": 13020,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 G\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            1,
+            4
+          ],
+          "fire_positions": [
+            [
+              "2",
+              "2"
+            ],
+            [
+              "3",
+              "1"
+            ],
+            [
+              "4",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_20/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_20/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_20/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_20/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 21,
+        "maze_name": "llm_round001_idx001",
+        "seed": 13021,
+        "total_steps": 60,
+        "total_reward": -8.85000000000001,
+        "success": false,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 G",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            4,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 5
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 60
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 22,
+        "maze_name": "llm_round001_idx002",
+        "seed": 13022,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            4,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "2"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_22/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_22/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_22/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_22/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 23,
+        "maze_name": "llm_round001_idx003",
+        "seed": 13023,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "A \u00b7 F F \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 G",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            4,
+            4
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "0",
+              "3"
+            ],
+            [
+              "1",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_23/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_23/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_23/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_23/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 24,
+        "maze_name": "llm_round001_idx004",
+        "seed": 13024,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "G \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            0,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "2"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_24/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_24/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_24/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_24/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 25,
+        "maze_name": "llm_round001_idx005",
+        "seed": 13025,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 G\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\nA \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_25/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_25/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_25/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_25/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 26,
+        "maze_name": "llm_round001_idx006",
+        "seed": 13026,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 A\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            4
+          ],
+          "goal_pos": [
+            4,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "3"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_26/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_26/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_26/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_26/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 27,
+        "maze_name": "llm_round002_idx000",
+        "seed": 13027,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 G\n\u00b7 F \u00b7 F \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "1",
+              "3"
+            ],
+            [
+              "2",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_27/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_27/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_27/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_27/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 28,
+        "maze_name": "llm_round002_idx001",
+        "seed": 13028,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "G \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            0,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "4"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_28/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_28/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_28/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_28/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 29,
+        "maze_name": "llm_round002_idx002",
+        "seed": 13029,
+        "total_steps": 5,
+        "total_reward": 9.5,
+        "success": true,
+        "ascii_grid": "\u00b7 A \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            1
+          ],
+          "goal_pos": [
+            4,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "3"
+            ],
+            [
+              "2",
+              "0"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 5
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_29/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_29/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_29/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_29/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 30,
+        "maze_name": "llm_round003_idx000",
+        "seed": 13030,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 G\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\nA \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_30/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_30/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_30/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_30/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 31,
+        "maze_name": "llm_round003_idx001",
+        "seed": 13031,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "G \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            0,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_31/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_31/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_31/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_31/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 32,
+        "maze_name": "llm_round004_idx000",
+        "seed": 13032,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 G\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "3"
+            ],
+            [
+              "2",
+              "2"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_32/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_32/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_32/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_32/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 33,
+        "maze_name": "llm_round005_idx000",
+        "seed": 13033,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 G\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\nA \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "1"
+            ],
+            [
+              "2",
+              "2"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_33/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_33/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_33/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_33/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 34,
+        "maze_name": "llm_round005_idx001",
+        "seed": 13034,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "G \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            0,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "0"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "3",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_34/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_34/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_34/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_34/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 35,
+        "maze_name": "llm_round006_idx000",
+        "seed": 13035,
+        "total_steps": 4,
+        "total_reward": 9.6,
+        "success": true,
+        "ascii_grid": "A \u00b7 \u00b7 \u00b7 G\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "2",
+              "1"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 4
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_35/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_35/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_35/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_35/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 36,
+        "maze_name": "llm_round009_idx000",
+        "seed": 13036,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "G \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 F \u00b7 A",
+        "dynamic_config": {
+          "start_pos": [
+            4,
+            4
+          ],
+          "goal_pos": [
+            0,
+            0
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "4",
+              "0"
+            ],
+            [
+              "4",
+              "2"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_36/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_36/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_36/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_36/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 37,
+        "maze_name": "llm_round009_idx001",
+        "seed": 13037,
+        "total_steps": 8,
+        "total_reward": 9.200000000000001,
+        "success": true,
+        "ascii_grid": "\u00b7 F \u00b7 \u00b7 A\n\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7\nF \u00b7 \u00b7 \u00b7 \u00b7\nG \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            4
+          ],
+          "goal_pos": [
+            4,
+            0
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "1"
+            ],
+            [
+              "1",
+              "4"
+            ],
+            [
+              "3",
+              "0"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 8
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_37/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_37/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_37/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_37/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 38,
+        "maze_name": "llm_round009_idx002",
+        "seed": 13038,
+        "total_steps": 7,
+        "total_reward": 9.3,
+        "success": true,
+        "ascii_grid": "\u00b7 \u00b7 \u00b7 \u00b7 G\nF \u00b7 \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 F \u00b7 \u00b7\nA \u00b7 \u00b7 F \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            3,
+            0
+          ],
+          "goal_pos": [
+            0,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "0"
+            ],
+            [
+              "2",
+              "2"
+            ],
+            [
+              "3",
+              "3"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 7
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_38/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_38/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_38/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_38/trajectory.gif"
+        }
+      },
+      {
+        "episode_id": 39,
+        "maze_name": "llm_round010_idx000",
+        "seed": 13039,
+        "total_steps": 6,
+        "total_reward": 9.4,
+        "success": true,
+        "ascii_grid": "A \u00b7 F \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 F\n\u00b7 \u00b7 \u00b7 \u00b7 G\n\u00b7 F \u00b7 \u00b7 \u00b7\n\u00b7 \u00b7 \u00b7 \u00b7 \u00b7",
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            2,
+            4
+          ],
+          "fire_positions": [
+            [
+              "0",
+              "2"
+            ],
+            [
+              "1",
+              "4"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "key_frames": [
+          {
+            "role": "start_frame",
+            "step_idx": 0
+          },
+          {
+            "role": "highest_loss_frame",
+            "step_idx": 1
+          },
+          {
+            "role": "end_frame",
+            "step_idx": 6
+          }
+        ],
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_39/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_39/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_39/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_39/trajectory.gif"
+        }
+      }
+    ],
+    "success_episode_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "failure_episode_ids": [
+      21
+    ]
+  },
+  "phase_b": {
+    "per_episode": [
+      {
+        "episode_id": 21,
+        "seed": 13021,
+        "total_steps": 60,
+        "total_reward": -8.85000000000001,
+        "success": false,
+        "dynamic_config": {
+          "start_pos": [
+            0,
+            0
+          ],
+          "goal_pos": [
+            4,
+            4
+          ],
+          "fire_positions": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "2",
+              "3"
+            ],
+            [
+              "3",
+              "1"
+            ]
+          ]
+        },
+        "summary": "Root cause: The agent deviated from the safe top-edge corridor early (at position (0,3)), failing to progress along the edge toward the goal, resulting in stagnation within 60 steps despite no fire collisions. Key configuration: 5x5 grid with start (0,0), goal (4,4), and fires at (1,2), (2,3), (3,1). Correct path: stay on the top edge by moving right from (0,0) to (0,4), then descend the rightmost column: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4). The demonstrated policy should have followed the top_edge corridor to make continuous forward progress toward the goal.",
+        "vlm_report": "VISION REPORT\nMaze=llm_round001_idx001 Steps=60 Reward=-8.85 Success=False\n---\n--- start_frame frame step 0 ---\nStructured analysis for start_frame (step 0)\n\n1) Agent location and adjacent cells\n- Agent at (0,0) (A).\n- Adjacent cells: (0,1) to the east is empty; (1,0) to the south is empty. North and west are outside the 5x5 grid (blocked by boundary). No walls nearby; only fires are at other positions.\n\n2) Goal location and Manhattan distance\n- Goal at (4,4) (G).\n- Manhattan distance from (0,0) to (4,4) = |4-0| + |4-0| = 8.\n\n3) Fire hazards relative to the agent\n- Fires located at (1,2), (2,3), (3,1).\n- Distances from the agent: to (1,2) = 3, to (2,3) = 5, to (3,1) = 4.\n- No fire is in an adjacent cell to the agent (0,0). The nearest fire is distance 3 away.\n\n4) First corrective demonstration move\n- Action: Move East (to 0,1).\n- Justification: Safe initial step that starts along a clear path toward the goal (top row then down), avoids immediate fire vicinity, and reduces the remaining distance to the goal from 8 to 7. After this move, the agent at (0,1) would have a remaining distance to the goal of 7.\n\n--- highest_loss_frame frame step 5 ---\nStructured analysis (approx. 150 words)\n\n1) Agent location and adjacents:\n- Current position: (0, 3).\n- Adjacent cells: (0, 2) left, (0, 4) right, (1, 3) down; up is out of bounds.\n- Nearby hazards: No walls; fires are at (1, 2), (2, 3), (3, 1) and none of the immediate neighbors are on fire.\n\n2) Goal location and Manhattan distance:\n- Goal: (4, 4).\n- Manhattan distance: |4\u22120| + |4\u22123| = 5.\n\n3) Fire hazards relative to the agent:\n- Fire cells: (1, 2), (2, 3), (3, 1).\n- Distances from agent (0, 3): d((1,2))=2, d((2,3))=2, d((3,1))=5.\n- No fire is adjacent; two fires are at distance 2, which could influence path choices if veering toward them.\n\n4) First corrective demonstration move:\n- Action: Move Right (to 0, 4).\n- Justification: Safest immediate option that reduces distance by 1 without stepping toward a fire; sets up a straightforward top-row route toward the goal (now at (4,4) via (0,4) \u2192 (1,4) \u2192 (2,4) \u2192 (3,4) \u2192 (4,4)).\n\n--- end_frame frame step 60 ---\nStructured analysis (end_frame, step 60)\n\n1) Agent location and adjacents\n- Agent is at (0, 2). Adjacent cells:\n  - Left: (0, 1) \u2013 empty\n  - Right: (0, 3) \u2013 empty\n  - Down: (1, 2) \u2013 fire\n  - Up: outside grid (wall)\n- Nearby goal not adjacent; top row edges constrain movement.\n\n2) Goal location and Manhattan distance\n- Goal is at (4, 4).\n- Manhattan distance from (0, 2): |4\u22120| + |4\u22122| = 6.\n\n3) Fire hazards relative to the agent\n- Fires occupy (1, 2), (2, 3), and (3, 1).\n- Immediate hazard is (1, 2) directly below. Other fires are two steps away (not adjacent right now). Any path should avoid stepping onto (1, 2).\n\n4) First corrective demonstration move\n- Action: RIGHT (to (0, 3)).\n- Justification: avoids the immediate fire at (1, 2) and progresses toward the goal; reduces the distance to 5, providing a safe next step option while staying on a clear top-row path.",
+        "kag_context": "=== KAG \u2014 ENVIRONMENT KNOWLEDGE GRAPH ===\nDomain: dynamic_maze_navigation\nCoordinate system: (row, col), origin top-left, row increases downward, col increases rightward\nGrid shape: [5, 5]\nDescription: Structured knowledge graph describing the dynamic 5x5 maze navigation environment used in the diffusion-policy imitation learning research project. Consumed by the Reasoning LLM to ground failure analysis in verified environment facts (geometry, dynamics, rewards, failure taxonomy, policy constraints). All coordinates use (row, col) with top-left = (0,0) and bottom-right = (4,4).\n\n[GridWorld]\n  - Dynamic 5x5 Maze (id=gw_main): grid_size=5, num_cells=25, top_left=[0, 0], bottom_right=[4, 4], max_steps_per_episode=200, layout_name=multimodal\n\n[Tile]\n  - FREE (id=tile_free): value=0, enterable=True, reward_on_enter=-0.1, description=Normal passable cell. Entering costs the step penalty only.\n  - WALL (id=tile_wall): value=1, enterable=False, reward_on_hit=-0.5, description=Impassable cell. Attempting to move into a wall keeps the agent in place and applies the wall-hit penalty.\n  - FIRE (id=tile_fire): value=2, enterable=True, terminates_episode=True, reward_on_enter=-10.0, description=Hazard cell. Entering terminates the episode immediately with large negative reward.\n  - GOAL (id=tile_goal): value=3, enterable=True, terminates_episode=True, reward_on_enter=10.0, description=Target cell. Entering terminates the episode with large positive reward (success).\n\n[Agent]\n  - Navigating Agent (id=agent_main): controller=MazeDiffusionPolicy, action_selection=argmax over one-hot action_dim=4 channels of the first predicted action in the denoised sequence, render_colour_rgb=[30, 100, 220]\n\n[Goal]\n  - Episode Goal (id=goal_main): randomised_per_episode=True, render_colour_rgb=[50, 200, 80]\n\n[FireHazard]\n  - Fire Hazards (id=fire_hazard_main): default_count=3, configurable=True, randomised_per_episode=True, render_colour_rgb=[220, 60, 20], danger=Instant termination on contact. Agent must never step onto a FIRE tile.\n\n[Wall]\n  - Maze Walls (id=wall_main): source=configs/maze_layouts.py layout['grid'] values == 1\n\n[Action]\n  - UP (id=act_up): index=0, delta=[-1, 0]\n  - DOWN (id=act_down): index=1, delta=[1, 0]\n  - LEFT (id=act_left): index=2, delta=[0, -1]\n  - RIGHT (id=act_right): index=3, delta=[0, 1]\n\n[Corridor]\n  - Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.\n  - Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.\n  - Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.\n\n[FailureMode]\n  - fire_collision (id=fm_fire_collision): description=Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.\n  - timeout (id=fm_timeout): description=Episode reached MAX_STEPS (200) without reaching the goal. Indicates looping, hesitation, or oscillation.\n  - wall_thrashing (id=fm_wall_thrashing): description=Agent repeatedly hit walls while failing to progress toward the goal. Usually co-occurs with timeout.\n\n[RewardSignal]\n  - GOAL_REWARD (id=rew_goal): value=10.0\n  - FIRE_PENALTY (id=rew_fire): value=-10.0\n  - WALL_PENALTY (id=rew_wall): value=-0.5\n  - STEP_PENALTY (id=rew_step): value=-0.1\n  - REVISIT_PENALTY (id=rew_revisit): value=-0.05\n\n[ObservationComponent]\n  - state_vector (id=obs_state): shape=[14], dtype=float32, layout=[agent_row/4, agent_col/4, goal_row/4, goal_col/4, 3x3 local neighbourhood values / 3.0 (9 entries), steps_remaining / 200], notes=The goal position is always present in state[2:4], so the policy can condition on any goal placement.\n  - image (id=obs_image): shape=[64, 64, 3], dtype=uint8 (rendered); normalised to float32 [0,1] before encoder, description=Bird's-eye RGB render. Blue=agent, Green=goal, Red=fire, Dark=wall, Light=free.\n\n[DynamicConfig]\n  - randomize_start (id=cfg_rand_start): flag=randomize_start, default=True, target=agent_pos\n  - randomize_goal (id=cfg_rand_goal): flag=randomize_goal, default=True, target=goal_pos\n  - randomize_fire (id=cfg_rand_fire): flag=randomize_fire, default=True, target=fire_positions, num_fire_tiles_default=3\n  - min_start_goal_manhattan (id=cfg_min_sg_dist): value=4, description=Enforced minimum Manhattan distance between start and goal to prevent trivially short episodes.\n\n[PolicyConstraint]\n  - Stochastic DDPM Inference (id=pc_stochastic_ddpm): num_diffusion_steps=200, description=Inference draws a fresh Gaussian noise tensor and denoises over 200 steps. Identical observations can yield different action sequences run-to-run \u2014 this is intended probabilism, not a bug.\n  - CellAlignedEncoder (id=pc_cell_encoder): architecture=1x1 Conv2d stack followed by AvgPool2d(kernel_size=cell_px, stride=cell_px), feature_dim=128, grid_size=5, cell_px=16, description=Custom grid-cell-aware vision encoder with zero cross-cell bleed. Each grid cell's pixels are pooled independently into one feature before projection. Not a ResNet.\n  - Observation/Prediction Horizons (id=pc_horizons): obs_horizon=4, pred_horizon=3, action_dim=4, description=Policy observes the last 4 (state, image) pairs and predicts the next 3 one-hot actions; only the first action of the sequence is executed each step.\n  - UNet1D backbone (id=pc_unet_shape): dim=64, dim_mults=[1, 2, 4]\n\n[RELATIONS]\n  Dynamic 5x5 Maze --[HAS_TILE]--> FREE\n  Dynamic 5x5 Maze --[HAS_TILE]--> WALL\n  Dynamic 5x5 Maze --[HAS_TILE]--> FIRE\n  Dynamic 5x5 Maze --[HAS_TILE]--> GOAL\n  Navigating Agent --[CAN_ENTER]--> FREE\n  Navigating Agent --[CAN_ENTER]--> FIRE  {'warning': 'Entering terminates the episode with -10 reward.'}\n  Navigating Agent --[CAN_ENTER]--> GOAL\n  Navigating Agent --[CAN_ENTER]--> WALL  {'blocked': True, 'effect': 'Agent remains in place; wall penalty -0.5 applied.'}\n  Navigating Agent --[TERMINATES_ON]--> FIRE  {'failure_mode': 'fire_collision'}\n  Navigating Agent --[SUCCEEDS_ON]--> GOAL\n  GOAL --[PENALISES]--> GOAL_REWARD  {'sign': 'positive'}\n  FIRE --[PENALISES]--> FIRE_PENALTY\n  WALL --[PENALISES]--> WALL_PENALTY\n  Navigating Agent --[PENALISES]--> STEP_PENALTY  {'applied_every_step': True}\n  Navigating Agent --[PENALISES]--> REVISIT_PENALTY  {'applied_when': 'agent re-enters a previously visited free cell'}\n  Navigating Agent --[NAVIGATES_VIA]--> Left-edge corridor\n  Navigating Agent --[NAVIGATES_VIA]--> Top-edge corridor\n  Navigating Agent --[NAVIGATES_VIA]--> Right-column corridor\n  Left-edge corridor --[AVOIDS]--> Fire Hazards\n  Top-edge corridor --[AVOIDS]--> Fire Hazards\n  Right-column corridor --[AVOIDS]--> Fire Hazards\n  Left-edge corridor --[CONNECTS_TO]--> Episode Goal\n  Top-edge corridor --[CONNECTS_TO]--> Episode Goal\n  Right-column corridor --[CONNECTS_TO]--> Episode Goal\n  Navigating Agent --[OBSERVES]--> state_vector\n  Navigating Agent --[OBSERVES]--> image\n  randomize_start --[RANDOMISES]--> Navigating Agent\n  randomize_goal --[RANDOMISES]--> Episode Goal\n  randomize_fire --[RANDOMISES]--> Fire Hazards\n  min_start_goal_manhattan --[RANDOMISES]--> Dynamic 5x5 Maze  {'constraint': 'min_manhattan(start, goal) >= 4'}\n  FIRE --[CAUSES_FAILURE]--> fire_collision\n  Dynamic 5x5 Maze --[CAUSES_FAILURE]--> timeout  {'trigger': 'step_count >= 200 and agent has not reached goal'}\n  WALL --[CAUSES_FAILURE]--> wall_thrashing  {'trigger': 'repeated wall-hit penalties without progress'}\n  Navigating Agent --[ENFORCES]--> Stochastic DDPM Inference\n  Navigating Agent --[ENFORCES]--> CellAlignedEncoder\n  Navigating Agent --[ENFORCES]--> Observation/Prediction Horizons\n  Navigating Agent --[ENFORCES]--> UNet1D backbone\n\n[REASONING IMPLICATIONS]\n  * fire_collision_per_episode: If the agent stepped onto FIRE, the policy has not generalised fire-avoidance to this particular (start, goal, fire-placement) configuration. Prescribe a corrective demonstration that starts from a similar region and shows the safe corridor (left-edge, top-edge, or right-column) appropriate to this fire placement.\n  * timeout_per_episode: If the agent timed out, it is likely oscillating or hesitating. Prescribe demonstrations that commit to one corridor without backtracking.\n  * wall_thrashing_per_episode: If the agent hit many walls, it is not using the state vector's local-neighbourhood signal effectively. Prescribe demonstrations that include approach-and-turn behaviour near walls.\n  * dynamic_randomisation_caveat: Because start, goal, and fire are all randomised per episode, the policy must generalise across configurations. A demo prescription should describe the SITUATION (fire placement pattern relative to start/goal) rather than a fixed coordinate path.\n",
+        "rag_context": "",
+        "analysis_text": "1) TRAJECTORY RECONSTRUCTION\n- Episode configuration (as given): 5x5 grid, random start and goal, 3 fires per episode (locations here: (1,2), (2,3), (3,1)), walls not otherwise specified. Start = [0,0], Goal = [4,4]. Fires: [['1','2'], ['2','3'], ['3','1']]. Max steps per episode = 200.\n- Episode outcome: Failure (success=False), total steps = 60, total reward = -8.85. Final position not reported.\n- Step-by-step trace unavailable in the logs; we rely on the provided frames and summaries:\n  - Step 0 (start_frame): Agent at (0,0). Adjacent free cells at (0,1) and (1,0); fires at (1,2), (2,3), (3,1) are not adjacent. Goal at (4,4). Manhattan distance from start to goal = 8.\n  - Step 5 (highest_loss_frame): Agent at (0,3). Fires still not adjacent; nearby risks include two fires at distance 2 (not adjacent yet): (1,2) and (2,3). The top row remains a viable corridor option.\n  - Step 60 (end_frame): Agent at (0,2). Adjacent cells: left to (0,1) and right to (0,3) are free; down to (1,2) is a FIRE tile. Fires remain at (1,2), (2,3), (3,1). The agent is on the top row with the nearest fire directly below at (1,2). No fire collision occurred by step 60; the agent did not reach the goal within 60 steps.\n- Vision-derived micro-observations:\n  - The top-edge corridor remains the cleanest near-start option because central fires (1,2) and (2,3) constrain moves toward the center.\n  - The end-state snapshot shows no entry into a FIRE tile yet, but the agent has not advanced along the top edge toward the goal in a way that completes the corridor to (4,4) within 60 steps.\n\n2) FIRST WRONG DECISION\n- Grounded claim (earliest divergence from a safe corridor): Step 5 at position (0,3).\n- Specifics:\n  - Position (row, col): (0,3)\n  - Action taken by agent (as inferred from the trajectory narrative): The step log does not explicitly list per-step actions, but the vision-frame annotations describe the agent at (0,3) at step 5.\n  - Action it should have taken to stay on a safe corridor: RIGHT to (0,4) to continue along the Top-edge Corridor path toward (0,4) and then descend along column 4 to reach the goal (4,4). This would maintain the Top-edge corridor while keeping away from central fires.\n- Rationale: From (0,3), the Top-edge corridor prescribes moving to (0,4) to minimize exposure to central fires and to keep descending along the safer edge route. Moving DOWN from (0,3) would threaten stepping closer to the central fire cluster (notably (1,2) and (2,3)) and would diverge from the safe corridor plan.\n- Note: The logs do not provide a full step-by-step action chain, so this earliest divergence is anchored to the highest-loss frame\u2019s position and the implied corridor-following heuristic. The corrective demonstration later references moving to (0,4) (as per Step 5 narrative) but the end-state at step 60 shows the agent ended up at (0,2), indicating overall stagnation along the corridor after the initial misalignment window.\n\n3) WHY THE POLICY FAILED\n- Core failure mode indicated by evidence: The episode does not show a fire collision (the agent did not enter a FIRE tile by step 60), and it did not reach the goal within 60 steps. The failure is a lack of forward progress and failed generalization to the dynamic fire placements, not a simple collision.\n- Grounded factors from the provided data:\n  - DynamicConfig and environment: fires are randomised per episode (default 3 fires), goal/start are randomised, and min_start_goal_manhattan = 4 constrains distance but",
+        "prescription": "<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)\nn_demos: 1\ndemo_variations: Start near the top-left with central-fire clustering; follow the top-edge corridor by moving right along row 0 to (0,4) then descend down column 4 to the goal (4,4).\nrationale: 'corridor_top_edge: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n- The failure centers on the Top-edge corridor (top_edge). The agent deviated around step 5 (at (0,3)) and did not progress along the top edge toward (0,4), ending up not reaching the goal within 60 steps.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)\n- A solid walkthrough would stay on the top row, moving right from (0,0) to the top-right corner (0,4), then descend the final column down to the goal at (4,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This keeps away from central fires and completes the corridor to the goal.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n- It will learn to commit to the safe Top-edge corridor when central fires block the middle region, maintaining forward progress toward the goal without stepping onto hazard tiles.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)\n- n_demos = 1, focusing on the top-edge corridor. The variation describes starting near the top-left with central-fire clustering and following the top-edge path to the goal to reinforce safe sequential movement along the corridor.",
+        "reasoning_combined": "=== ROOT CAUSE ANALYSIS ===\n1) TRAJECTORY RECONSTRUCTION\n- Episode configuration (as given): 5x5 grid, random start and goal, 3 fires per episode (locations here: (1,2), (2,3), (3,1)), walls not otherwise specified. Start = [0,0], Goal = [4,4]. Fires: [['1','2'], ['2','3'], ['3','1']]. Max steps per episode = 200.\n- Episode outcome: Failure (success=False), total steps = 60, total reward = -8.85. Final position not reported.\n- Step-by-step trace unavailable in the logs; we rely on the provided frames and summaries:\n  - Step 0 (start_frame): Agent at (0,0). Adjacent free cells at (0,1) and (1,0); fires at (1,2), (2,3), (3,1) are not adjacent. Goal at (4,4). Manhattan distance from start to goal = 8.\n  - Step 5 (highest_loss_frame): Agent at (0,3). Fires still not adjacent; nearby risks include two fires at distance 2 (not adjacent yet): (1,2) and (2,3). The top row remains a viable corridor option.\n  - Step 60 (end_frame): Agent at (0,2). Adjacent cells: left to (0,1) and right to (0,3) are free; down to (1,2) is a FIRE tile. Fires remain at (1,2), (2,3), (3,1). The agent is on the top row with the nearest fire directly below at (1,2). No fire collision occurred by step 60; the agent did not reach the goal within 60 steps.\n- Vision-derived micro-observations:\n  - The top-edge corridor remains the cleanest near-start option because central fires (1,2) and (2,3) constrain moves toward the center.\n  - The end-state snapshot shows no entry into a FIRE tile yet, but the agent has not advanced along the top edge toward the goal in a way that completes the corridor to (4,4) within 60 steps.\n\n2) FIRST WRONG DECISION\n- Grounded claim (earliest divergence from a safe corridor): Step 5 at position (0,3).\n- Specifics:\n  - Position (row, col): (0,3)\n  - Action taken by agent (as inferred from the trajectory narrative): The step log does not explicitly list per-step actions, but the vision-frame annotations describe the agent at (0,3) at step 5.\n  - Action it should have taken to stay on a safe corridor: RIGHT to (0,4) to continue along the Top-edge Corridor path toward (0,4) and then descend along column 4 to reach the goal (4,4). This would maintain the Top-edge corridor while keeping away from central fires.\n- Rationale: From (0,3), the Top-edge corridor prescribes moving to (0,4) to minimize exposure to central fires and to keep descending along the safer edge route. Moving DOWN from (0,3) would threaten stepping closer to the central fire cluster (notably (1,2) and (2,3)) and would diverge from the safe corridor plan.\n- Note: The logs do not provide a full step-by-step action chain, so this earliest divergence is anchored to the highest-loss frame\u2019s position and the implied corridor-following heuristic. The corrective demonstration later references moving to (0,4) (as per Step 5 narrative) but the end-state at step 60 shows the agent ended up at (0,2), indicating overall stagnation along the corridor after the initial misalignment window.\n\n3) WHY THE POLICY FAILED\n- Core failure mode indicated by evidence: The episode does not show a fire collision (the agent did not enter a FIRE tile by step 60), and it did not reach the goal within 60 steps. The failure is a lack of forward progress and failed generalization to the dynamic fire placements, not a simple collision.\n- Grounded factors from the provided data:\n  - DynamicConfig and environment: fires are randomised per episode (default 3 fires), goal/start are randomised, and min_start_goal_manhattan = 4 constrains distance but\n\n=== TRAINING KNOWLEDGE CHECK ===\nVerdict: FOUND\nWhat was found in existing training demos:\nVerdict: FOUND\n\n  Match 1 (similarity=0.619): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]\n  Match 2 (similarity=0.614): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]\n  Match 3 (similarity=0.613): A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]\n  Match 4 (similarity=0.612): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]\n  Match 5 (similarity=0.611): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]\nAdjusted guidance: To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.\n\n=== DEMONSTRATION PRESCRIPTION ===\n<<<FINAL_REC>>>\ncorridor: top_edge\nsteps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)\nn_demos: 1\ndemo_variations: Start near the top-left with central-fire clustering; follow the top-edge corridor by moving right along row 0 to (0,4) then descend down column 4 to the goal (4,4).\nrationale: 'corridor_top_edge: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'\n<<<END_FINAL_REC>>>\n\nPLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:\n1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)\n- The failure centers on the Top-edge corridor (top_edge). The agent deviated around step 5 (at (0,3)) and did not progress along the top edge toward (0,4), ending up not reaching the goal within 60 steps.\n\n2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)\n- A solid walkthrough would stay on the top row, moving right from (0,0) to the top-right corner (0,4), then descend the final column down to the goal at (4,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4). This keeps away from central fires and completes the corridor to the goal.\n\n3. WHAT will the AI learn from seeing that walkthrough?\n- It will learn to commit to the safe Top-edge corridor when central fires block the middle region, maintaining forward progress toward the goal without stepping onto hazard tiles.\n\n4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)\n- n_demos = 1, focusing on the top-edge corridor. The variation describes starting near the top-left with central-fire clustering and following the top-edge path to the goal to reinforce safe sequential movement along the corridor.\n",
+        "tkf_result": {
+          "needs_description": "The agent is not showing a demonstration of staying on the top_edge corridor all the way to the goal. It needs a demonstration of the correct safe navigation along the top_edge, especially the critical move at step 5 to go RIGHT from (0,3) to (0,4) and then descend safely down column 4 to (4,4). Seeing this would teach the agent how to maintain the top-edge path while avoiding fires and still make forward progress toward the goal. Without this top_edge demonstration, the agent tends to stall near the start and fail to reach the goal.",
+          "verdict": "FOUND",
+          "top_matches": [
+            {
+              "rank": 1,
+              "score": 0.618626058101654,
+              "metadata": {
+                "id": 7,
+                "filename": "demo_multimodal_heldout_007_1778152689031.json",
+                "maze_name": "multimodal",
+                "timestamp": 1778152689031,
+                "n_steps": 4,
+                "start": [
+                  4,
+                  3
+                ],
+                "goal": [
+                  1,
+                  4
+                ],
+                "fire_positions": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    2,
+                    4
+                  ],
+                  [
+                    4,
+                    1
+                  ]
+                ],
+                "success": true,
+                "corridor": "central_mixed",
+                "outcome": "success",
+                "description": "A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed."
+              }
+            },
+            {
+              "rank": 2,
+              "score": 0.614034116268158,
+              "metadata": {
+                "id": 4,
+                "filename": "demo_multimodal_heldout_004_1778152608735.json",
+                "maze_name": "multimodal",
+                "timestamp": 1778152608735,
+                "n_steps": 5,
+                "start": [
+                  2,
+                  0
+                ],
+                "goal": [
+                  4,
+                  3
+                ],
+                "fire_positions": [
+                  [
+                    1,
+                    4
+                  ],
+                  [
+                    3,
+                    2
+                  ],
+                  [
+                    3,
+                    3
+                  ]
+                ],
+                "success": true,
+                "corridor": "bottom_edge",
+                "outcome": "success",
+                "description": "A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge."
+              }
+            },
+            {
+              "rank": 3,
+              "score": 0.612760066986084,
+              "metadata": {
+                "id": 2,
+                "filename": "demo_multimodal_heldout_002_1778152000105.json",
+                "maze_name": "multimodal",
+                "timestamp": 1778152000105,
+                "n_steps": 7,
+                "start": [
+                  3,
+                  4
+                ],
+                "goal": [
+                  0,
+                  0
+                ],
+                "fire_positions": [
+                  [
+                    1,
+                    2
+                  ],
+                  [
+                    1,
+                    3
+                  ],
+                  [
+                    4,
+                    3
+                  ]
+                ],
+                "success": true,
+                "corridor": "top_edge",
+                "outcome": "success",
+                "description": "A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge."
+              }
+            },
+            {
+              "rank": 4,
+              "score": 0.6121008992195129,
+              "metadata": {
+                "id": 3,
+                "filename": "demo_multimodal_heldout_003_1778152134503.json",
+                "maze_name": "multimodal",
+                "timestamp": 1778152134503,
+                "n_steps": 5,
+                "start": [
+                  4,
+                  4
+                ],
+                "goal": [
+                  1,
+                  2
+                ],
+                "fire_positions": [
+                  [
+                    0,
+                    1
+                  ],
+                  [
+                    1,
+                    0
+                  ],
+                  [
+                    2,
+                    3
+                  ]
+                ],
+                "success": true,
+                "corridor": "right_edge",
+                "outcome": "success",
+                "description": "A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge."
+              }
+            },
+            {
+              "rank": 5,
+              "score": 0.6114784479141235,
+              "metadata": {
+                "id": 6,
+                "filename": "demo_multimodal_heldout_006_1778152930206.json",
+                "maze_name": "multimodal",
+                "timestamp": 1778152930206,
+                "n_steps": 4,
+                "start": [
+                  2,
+                  1
+                ],
+                "goal": [
+                  1,
+                  4
+                ],
+                "fire_positions": [
+                  [
+                    0,
+                    4
+                  ],
+                  [
+                    2,
+                    2
+                  ],
+                  [
+                    4,
+                    0
+                  ]
+                ],
+                "success": true,
+                "corridor": "central_mixed",
+                "outcome": "success",
+                "description": "A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed."
+              }
+            }
+          ],
+          "retrieval_summary": "Verdict: FOUND\n\n  Match 1 (similarity=0.619): A demonstration starting at (4, 3) with goal at (1, 4) and fires at [(0, 1), (2, 4), (4, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x UP, 1x RIGHT. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]\n  Match 2 (similarity=0.614): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]\n  Match 3 (similarity=0.613): A demonstration starting at (3, 4) with goal at (0, 0) and fires at [(1, 2), (1, 3), (4, 3)]. The run was staying near the top row before descending, very close to fire (1 step away). The demo took 7 steps with actions: 4x LEFT, 3x UP. The agent reached the goal successfully. Path type: top_edge. [corridor=top_edge, outcome=success]\n  Match 4 (similarity=0.612): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]\n  Match 5 (similarity=0.611): A demonstration starting at (2, 1) with goal at (1, 4) and fires at [(0, 4), (2, 2), (4, 0)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 3x RIGHT, 1x UP. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]",
+          "adjusted_prescription": "To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.",
+          "fallback_used": false,
+          "fallback_block": ""
+        },
+        "adjusted_prescription": "To successfully navigate the grid safely along the top edge, focus on moving right from the position near the top left corner, specifically from (0,3) to (0,4) as an important step. This move ensures the agent stays aligned with the safe corridor at the edge and avoids the central fires. Once at the top-right corner, the agent should then proceed downward along the rightmost column until reaching the goal at (4,4). This approach avoids the hazards concentrated in the center and shows consistent progress toward the goal. Make sure to maintain this corridor to prevent the agent from getting stuck near the start or veering into risky central areas. This strategy balances safe path following and efficient goal reaching, as demonstrated in successful examples of edge navigation.",
+        "frame_paths": {
+          "start_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/start.png",
+          "highest_loss_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/high_loss.png",
+          "end_frame": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/frames/end.png",
+          "trajectory_gif": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/p6_dynamic_pool/results/round_013/pool_rollout/episodes/episode_21/trajectory.gif"
+        }
+      }
+    ]
+  },
+  "phase_c": {
+    "cross_episode_reasoning": "",
+    "parsed_prescription": {
+      "n_failure_episodes_analysed": 1,
+      "failure_modes_found": 1,
+      "failure_clusters": [
+        {
+          "cluster_label": "cluster_top_edge_fire_collision",
+          "episodes_in_cluster": [
+            21
+          ],
+          "root_cause": "fire_collision",
+          "corridor": "top_edge",
+          "where_it_fails": "In episode 21, the agent started at [0,0] and aimed for [4,4] with fires positioned at (1,2), (2,3), and (3,1); the policy entered a FIRE tile in that configuration, terminating the episode prematurely.",
+          "what_it_does_wrong": "The policy fails to generalise fire-avoidance for the top-edge corridor configuration with the given start/goal and fire placements, leading to stepping onto a FIRE tile.",
+          "source_final_recs": [
+            "top_edge"
+          ]
+        }
+      ],
+      "demonstration_prescriptions": [
+        {
+          "demo_id": 1,
+          "corridor": "top_edge",
+          "guidance": "Demonstrate safe navigation in the top-edge corridor configuration starting near the top-left, avoiding the three fire placements while reaching the bottom-right goal.",
+          "target_region": "Top-edge corridor with start at the top-left region and goal at bottom-right region; fires fixed at (1,2), (2,3), (3,1).",
+          "what_it_teaches": "Teaches fire-avoidance strategy within the top-edge corridor for a start-goal pair with Manhattan distance 8 and a fixed three-fire pattern, emphasizing early corridor choice and careful turning to avoid fire tiles.",
+          "n_repetitions": 1,
+          "recommended_layouts": [
+            {
+              "start_pos": [
+                0,
+                0
+              ],
+              "goal_pos": [
+                4,
+                4
+              ],
+              "fire_positions": [
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ],
+                [
+                  3,
+                  1
+                ]
+              ],
+              "n_repetitions": 1,
+              "rationale": "Illustrates avoiding a FIRE tile in a top-edge corridor layout while progressing toward the goal, highlighting fire avoidance in the same corridor as the failure episode."
+            }
+          ]
+        }
+      ],
+      "total_demonstrations_needed": 1,
+      "overall_summary": "This analysis isolates a single failure episode where the agent hit a FIRE tile in the top-edge corridor with a fixed 3-fire pattern. The prescribed demonstration targets fire-avoidance behavior within that corridor to improve generalisation under dynamic fire placements.",
+      "confidence": 0.72
+    }
+  }
+}

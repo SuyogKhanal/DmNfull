@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)
+n_demos: 3
+demo_variations: rag rank=2 top_edge variant; rag rank=1 left_edge variant rejected; rag rank=3 central_mixed variant rejected
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column' is the KAG fact that justifies choosing the top_edge corridor.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to wander toward the central area and risks stepping onto a fire when fires are placed near the middle, so the safe path around the fires is along the top edge (top_edge corridor).
+2. WHAT should a good walkthrough look like in that area? A good walkthrough would move along the top row from the start at (0,0) through (0,1), (0,2), (0,3), (0,4) and then drop down to the goal at (1,4) — all steps stay on the top edge until reaching the goal.
+3. WHAT will the AI learn from seeing that walkthrough? The policy will learn to follow the top-edge corridor as a robust safe route when fires occupy central positions, aligning with retrieved cases that identify the top_edge path as the safer corridor in similar layouts.
+4. HOW MANY walkthroughs are needed and how should they vary? 3 walkthroughs are provided (n_demos = 3) to cover the not-found gap for the top_edge corridor; variations include one top_edge demonstration for the baseline fire pattern (rank=2), plus two additional variants that illustrate rejection of left_edge and central_mixed corridors (rationale in demo_variations) to reinforce why top_edge is preferred in this scenario.

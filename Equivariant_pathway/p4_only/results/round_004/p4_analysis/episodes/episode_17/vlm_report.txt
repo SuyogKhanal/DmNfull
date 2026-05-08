@@ -1,0 +1,40 @@
+VISION REPORT
+Maze=heldout_018 Steps=60 Reward=-8.70 Success=False
+---
+--- start_frame frame step 0 ---
+1) Agent location and adjacent cells:
+- Agent is at (2,0). Adjacent cells: UP -> (1,0), DOWN -> (3,0), RIGHT -> (2,1). LEFT is outside the grid. No walls or fires in these immediate neighbors; the fires are at (2,4), (3,2), (3,3) and are not adjacent to the agent.
+
+2) Goal location and Manhattan distance:
+- Goal is at (0,3). Manhattan distance from the agent: |2-0| + |0-3| = 2 + 3 = 5.
+
+3) Fire hazards relative to the agent:
+- Fires are at (2,4), (3,2), (3,3). Distances from the agent (2,0): to (2,4) = 4, to (3,2) = 3, to (3,3) = 4. The nearest fire is at (3,2), distance 3. No immediate hazard in adjacent cells; current surroundings are safe for the next move.
+
+4) First corrective demonstration move:
+- Action: UP (to 1,0).
+- Justification: Reduces distance to the goal (from 5 to 4) and keeps a safe path away from the fire cluster in the lower-right; aligns with heading toward the goal by moving along the left/top corridor.
+
+--- highest_loss_frame frame step 7 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells:
+- Agent is at (4,3). Adjacent cells: Up -> (3,3) which is a fire; Left -> (4,2) open; Right -> (4,4) open; Down -> outside grid. No walls visible. Goal is far away at (0,3); nearby fires are at (3,2) and (2,4) as given.
+
+2) Goal location and Manhattan distance:
+- Goal at (0,3). Manhattan distance from (4,3) is |4-0| + |3-3| = 4.
+
+3) Fire hazards relative to the agent:
+- Immediate hazard: (3,3) is a fire directly above. (3,2) is a near-by fire (up-left). (2,4) is two steps away (up-right). Thus the agent has a high risk if it moves Up, and the corridor toward the goal is currently blocked by nearby fires in rows 3–4.
+
+4) First corrective demonstration move:
+- Action: LEFT (to (4,2)).
+- Justification: avoids the immediate fire at (3,3), reduces near-term risk, and starts exploring a path around the hazard cluster rather than stepping into a lethal cell. This preserves options for a safer route toward the goal.
+
+--- end_frame frame step 60 ---
+Structured analysis (end_frame, step 60)
+
+1) Agent location and adjacent cells
+- Agent at (4,4). Adjacent cells: Up -> (3,4) (open), Left -> (4,3) (open). Down and Right are outside the 5x5 grid.
+- Nearby walls: none in immediate vicinity.
+- Nearby fires: (3,3) and (2,4) are close (not adjacent, but within 2 steps); (3,2) is a

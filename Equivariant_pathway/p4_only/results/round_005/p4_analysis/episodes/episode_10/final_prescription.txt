@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)
+n_demos: 1
+demo_variations: Top-edge corridor variation: slight start-offsets along the top row (e.g., approaching from (0,4) or (1,4) before tracing row 0 to the left and down column 0)
+rationale: Selected top_edge per the KAG corridor fact 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.' to avoid bottom-fire regions while connecting the top-right start to the left-side goal.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion locus is the top-edge corridor region, where a safe route must stay on the top row before descending along the left edge to reach the goal, avoiding bottom-fire hazards.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows this route: start at (1,4), move up to (0,4), traverse left along the top row through (0,3), (0,2), (0,1), (0,0), then descend down column 0 via (1,0), (2,0), ending at the goal (3,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the top-edge corridor strategy when bottom-fire tiles are present, avoiding bottom rows and then dropping down to the goal along the left edge, which generalizes to avoiding fire hazards in similar start/goals placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Variation: keep the walk-through within the top-edge corridor but introduce a slight start-offset variation (e.g., a variant that begins by approaching via (0,4) before continuing along the top row and down the left edge) to test robustness to small approach differences.

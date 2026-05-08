@@ -1,0 +1,35 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+=== TRAINING KNOWLEDGE CHECK ===
+Verdict: FOUND
+What was found in existing training demos:
+Verdict: FOUND
+
+  Match 1 (similarity=0.734): A demonstration starting at (4, 4) with goal at (1, 2) and fires at [(0, 1), (1, 0), (2, 3)]. The run was using the right column as the main route, very close to fire (1 step away). The demo took 5 steps with actions: 3x UP, 2x LEFT. The agent reached the goal successfully. Path type: right_edge. [corridor=right_edge, outcome=success]
+  Match 2 (similarity=0.721): A demonstration starting at (2, 0) with goal at (4, 3) and fires at [(1, 4), (3, 2), (3, 3)]. The run was running along the bottom row, very close to fire (1 step away). The demo took 5 steps with actions: 3x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: bottom_edge. [corridor=bottom_edge, outcome=success]
+  Match 3 (similarity=0.701): A demonstration starting at (0, 2) with goal at (4, 2) and fires at [(1, 1), (1, 4), (3, 1)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 4 steps with actions: 4x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 4 (similarity=0.692): A demonstration starting at (2, 0) with goal at (4, 2) and fires at [(0, 1), (0, 4), (4, 4)]. The run was navigating through the central area, moderately close to fire (2 steps away). The demo took 4 steps with actions: 2x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+  Match 5 (similarity=0.691): A demonstration starting at (1, 0) with goal at (3, 4) and fires at [(1, 4), (2, 3), (4, 4)]. The run was navigating through the central area, very close to fire (1 step away). The demo took 6 steps with actions: 4x RIGHT, 2x DOWN. The agent reached the goal successfully. Path type: central_mixed. [corridor=central_mixed, outcome=success]
+Adjusted guidance: To successfully follow multi-step, context-dependent instructions, focus on maintaining awareness of previous steps while adapting to new commands. Practice navigating through different paths such as edges or central areas, as shown in the demonstrations, where the agent moves close to obstacles but still reaches the goal. Remember to keep track of your position and the location of hazards to plan your moves carefully, maintaining continuity in your actions. Use sequences of simple moves like up, down, right, or left in combination to reach the target effectively. This approach helps in managing nested instructions and switching contexts without losing important information, leading to successful completion of complex tasks.
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 3
+demo_variations: rag rank=1 top_edge variant; rag rank=2 bottom_edge variant; rag rank=3 central_mixed variant rejected due to proximity to fires
+rationale: 'Left-edge corridor: Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure context shows dangerous top-fire clustering near (0,1) and (0,3) and a bottom-fire near (4,1). In this episode the analysis picks the left_edge corridor as a safe path to the goal (4,0) by moving toward the left edge and then down, avoiding the top hazards and the bottom-fire cluster that blocks other routes.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the left_edge corridor’s spirit: start at [1,3], move left to column 0, descend to row 4, then proceed along row 4 to the goal at [4,0]. The demonstrated path is: [1,3] -> [1,2] -> [1,1] -> [1,0] -> [2,0] -> [3,0] -> [4,0].
+
+3. WHAT will the AI learn from seeing that walkthrough? The AI will learn to bias its decisions toward using the leftmost safe corridor when fires cluster near the top or bottom blocks the other routes. The RAG retrievals show several fire-avoidance demonstrations across different corridors, underscoring the need to generalize corridor-based avoidance rather than always favoring the same route.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Three demonstrations are provided:
+- Variation 1 (linked to Rag rank=1): a top-edge-oriented avoidance idea adapted to the same scenario.
+- Variation 2 (linked to Rag rank=2): a bottom-edge-oriented avoidance idea adapted to the same scenario.
+- Variation 3 (linked to Rag rank=3): central_mixed variant, which is rejected here due to proximity to fires; the left-edge corridor remains the target. The three variants cover minor route differences across corridors while emphasizing safe fire avoidance.
