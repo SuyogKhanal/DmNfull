@@ -3,11 +3,100 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from tqdm.auto import tqdm
+
+
+def _phase_b_max_workers(config: Dict, n_failures: int) -> int:
+    """Decide how many Phase B episodes to run in parallel.
+
+    `pipeline.phase_b_max_workers` in the config overrides; when unset we
+    fan out to one worker per failure (so 5 failures => 5 concurrent
+    chains). Capped only by n_failures to avoid empty workers; setting
+    the config value to 1 restores the legacy serial behaviour.
+    """
+    pf = config.get("pipeline", {}) or {}
+    requested = pf.get("phase_b_max_workers", None)
+    if requested is None:
+        return max(1, n_failures)
+    try:
+        n = int(requested)
+    except (TypeError, ValueError):
+        return max(1, n_failures)
+    if n <= 0:
+        return max(1, n_failures)
+    return max(1, min(n, n_failures))
+
+
+def _run_phase_b_parallel(
+    failures: List[Dict],
+    run_dir: Path,
+    config: Dict,
+    kag_context: str,
+    rag_bank,
+    run_id: str,
+    cache,
+    rollout_id: str,
+    log_prefix: str,
+) -> List[Dict]:
+    """Run Phase B for every failure concurrently and return per-episode
+    summaries in the SAME order as `failures`.
+
+    Cross-episode reasoning / Phase C must NOT be invoked from inside
+    this function — the caller runs it AFTER this returns, which gives
+    the desired ordering: per-episode chains fan out in parallel, then
+    cross-episode reasoning waits for all of them before consuming the
+    summaries.
+    """
+    if not failures:
+        return []
+
+    max_workers = _phase_b_max_workers(config, len(failures))
+    failure_ids = [e["episode_id"] for e in failures]
+    print(
+        f"[{log_prefix}] Phase B fan-out: {len(failures)} failures, "
+        f"max_workers={max_workers}, ids={failure_ids}"
+    )
+
+    results: Dict[int, Dict] = {}
+    phase_b_t0 = time.time()
+
+    def _one(idx: int, ed: Dict) -> Dict:
+        ep_t0 = time.time()
+        episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
+        out = _build_phaseB_for_episode(
+            ed, episode_dir, config, kag_context, rag_bank,
+            run_id, cache=cache, rollout_id=rollout_id,
+        )
+        tqdm.write(
+            f"[{log_prefix}] Phase B ep {ed['episode_id']} done in "
+            f"{time.time()-ep_t0:.1f}s"
+        )
+        return out
+
+    if max_workers == 1:
+        for idx, ed in enumerate(failures):
+            results[idx] = _one(idx, ed)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers,
+                                thread_name_prefix="phaseB") as pool:
+            future_to_idx = {
+                pool.submit(_one, idx, ed): idx
+                for idx, ed in enumerate(failures)
+            }
+            for fut in as_completed(future_to_idx):
+                idx = future_to_idx[fut]
+                results[idx] = fut.result()
+
+    print(
+        f"[{log_prefix}] Phase B total: {time.time()-phase_b_t0:.1f}s for "
+        f"{len(failures)} failures (max_workers={max_workers})"
+    )
+    return [results[i] for i in range(len(failures))]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -360,23 +449,17 @@ def run_pipeline(config: Dict, run_dir: Optional[Path] = None, tag: Optional[str
     if failures:
         print(f"[PipelineRunner] failure_ids={failure_ids}")
 
-    phase_b_t0 = time.time()
-    per_episode: List[Dict] = []
-    pbar = tqdm(failures, desc="phase B", unit="ep", dynamic_ncols=True) if failures else failures
-    for ed in pbar:
-        ep_t0 = time.time()
-        if hasattr(pbar, "set_postfix"):
-            pbar.set_postfix(ep=ed["episode_id"])
-        episode_dir = run_dir / "episodes" / f"episode_{ed['episode_id']}"
-        per_episode.append(
-            _build_phaseB_for_episode(
-                ed, episode_dir, config, kag_context, rag_bank,
-                run_id, cache=cache, rollout_id=run_id,
-            )
-        )
-        tqdm.write(f"[PipelineRunner] Phase B ep {ed['episode_id']} done in {time.time()-ep_t0:.1f}s")
-    if failures:
-        print(f"[PipelineRunner] Phase B total: {time.time()-phase_b_t0:.1f}s for {len(failures)} failures")
+    per_episode: List[Dict] = _run_phase_b_parallel(
+        failures=failures,
+        run_dir=run_dir,
+        config=config,
+        kag_context=kag_context,
+        rag_bank=rag_bank,
+        run_id=run_id,
+        cache=cache,
+        rollout_id=run_id,
+        log_prefix="PipelineRunner",
+    )
 
     cross_text = ""
     structured: Dict = {}
@@ -567,23 +650,17 @@ def rerun_pipeline_only(
     if failures:
         print(f"[Rerun] failure_ids={[f['episode_id'] for f in failures]}")
 
-    per_episode = []
-    phase_b_t0 = time.time()
-    pbar = tqdm(failures, desc="phase B (rerun)", unit="ep", dynamic_ncols=True) if failures else failures
-    for ed in pbar:
-        ep_t0 = time.time()
-        if hasattr(pbar, "set_postfix"):
-            pbar.set_postfix(ep=ed["episode_id"])
-        episode_dir = out_dir / "episodes" / f"episode_{ed['episode_id']}"
-        per_episode.append(
-            _build_phaseB_for_episode(
-                ed, episode_dir, config, kag_context, rag_bank,
-                out_dir.name, cache=cache, rollout_id=rollout_id,
-            )
-        )
-        tqdm.write(f"[Rerun] Phase B ep {ed['episode_id']} done in {time.time()-ep_t0:.1f}s")
-    if failures:
-        print(f"[Rerun] Phase B total: {time.time()-phase_b_t0:.1f}s for {len(failures)} failures")
+    per_episode = _run_phase_b_parallel(
+        failures=failures,
+        run_dir=out_dir,
+        config=config,
+        kag_context=kag_context,
+        rag_bank=rag_bank,
+        run_id=out_dir.name,
+        cache=cache,
+        rollout_id=rollout_id,
+        log_prefix="Rerun",
+    )
 
     cross_text = ""
     structured: Dict = {}
