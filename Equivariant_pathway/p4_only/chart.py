@@ -8,6 +8,7 @@ are overlaid so the sample-efficiency comparison is one glance away.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,12 +16,23 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = ROOT / "results"
+# CODE_ROOT is the source location of this module; CURVE_ROOT is where
+# pipeline.py wrote learning_curve.json. They diverge under the
+# pool-size sweep where P4_ONLY_ROOT points at sweep/runs/pool_N/p4_only/.
+CODE_ROOT = Path(__file__).resolve().parent
+_P4_ROOT_OVERRIDE = os.environ.get("P4_ONLY_ROOT")
+_BO_ROOT_OVERRIDE = os.environ.get("BASELINE_ONLY_ROOT")
+CURVE_ROOT = Path(_P4_ROOT_OVERRIDE).resolve() if _P4_ROOT_OVERRIDE else CODE_ROOT
+BO_CURVE_ROOT = (
+    Path(_BO_ROOT_OVERRIDE).resolve() if _BO_ROOT_OVERRIDE
+    else CODE_ROOT.parent / "baseline_only"
+)
+
+RESULTS_DIR = CURVE_ROOT / "results"
 CURVE_PATH = RESULTS_DIR / "learning_curve.json"
 CHART_PATH = RESULTS_DIR / "success_rate_vs_demos.png"
 
-BO_CURVE_PATH = ROOT.parent / "baseline_only" / "results" / "learning_curve.json"
+BO_CURVE_PATH = BO_CURVE_ROOT / "results" / "learning_curve.json"
 
 
 def _load(p: Path):

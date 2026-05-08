@@ -6,6 +6,7 @@ and writes success_rate_vs_demos.png alongside it.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,8 +14,13 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = ROOT / "results"
+# CODE_ROOT is the source location; CURVE_ROOT is the run root that
+# pipeline.py wrote into. They diverge under the pool-size sweep where
+# BASELINE_ONLY_ROOT points at sweep/runs/pool_N/baseline_only/.
+CODE_ROOT = Path(__file__).resolve().parent
+_BO_ROOT_OVERRIDE = os.environ.get("BASELINE_ONLY_ROOT")
+CURVE_ROOT = Path(_BO_ROOT_OVERRIDE).resolve() if _BO_ROOT_OVERRIDE else CODE_ROOT
+RESULTS_DIR = CURVE_ROOT / "results"
 CURVE_PATH = RESULTS_DIR / "learning_curve.json"
 CHART_PATH = RESULTS_DIR / "success_rate_vs_demos.png"
 

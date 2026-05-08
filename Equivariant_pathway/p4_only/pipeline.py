@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -60,12 +61,19 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 PATHWAY_ROOT = REPO_ROOT / "Equivariant_pathway"
-ROOT = PATHWAY_ROOT / "p4_only"
+
+# ROOT and BO_ROOT are overridable via P4_ONLY_ROOT and BASELINE_ONLY_ROOT
+# so the pool-size sweep can run isolated copies in parallel. Without
+# overrides, behaviour is unchanged.
+_P4_ROOT_OVERRIDE = os.environ.get("P4_ONLY_ROOT")
+_BO_ROOT_OVERRIDE = os.environ.get("BASELINE_ONLY_ROOT")
+ROOT = Path(_P4_ROOT_OVERRIDE).resolve() if _P4_ROOT_OVERRIDE else PATHWAY_ROOT / "p4_only"
+BO_ROOT = Path(_BO_ROOT_OVERRIDE).resolve() if _BO_ROOT_OVERRIDE else PATHWAY_ROOT / "baseline_only"
+
 DEMO_DIR = ROOT / "demos"
 CKPT_DIR = ROOT / "checkpoints"
 RESULTS_DIR = ROOT / "results"
 
-BO_ROOT = PATHWAY_ROOT / "baseline_only"
 BO_TRAIN_YAML = BO_ROOT / "training_layouts.yaml"
 BO_HELDOUT_YAML = BO_ROOT / "heldout_layouts.yaml"
 BO_CORRECTION_YAML = BO_ROOT / "correction_layouts.yaml"
@@ -307,6 +315,97 @@ def _flatten_recommended_layouts(analysis_dir: Path) -> Optional[Path]:
     return rec_path
 
 
+def _filter_prescribed_to_actual_failures(
+    rec_path: Path,
+    filter_dir: Path,
+    seed: int,
+    max_steps: int,
+) -> Dict:
+    """Roll out the CURRENT best policy on every prescribed layout and
+    drop layouts the policy already solves.
+
+    Why: the LLM hallucinates "useful" layouts based on the failure
+    summaries, but it has no ground-truth signal of what the policy
+    can actually do right now. Without a filter, an aggregator that
+    proposes an "easy" layout produces a wasted BFS demo and a wasted
+    retrain step. The filter is one extra rollout per prescribed
+    layout (~2-10 episodes total) and is cheap relative to the LLM
+    chain that produced the prescription.
+
+    Mutates rec_path in place: drops layouts where the policy
+    succeeded; preserves the rest. Returns a dict with counts so the
+    caller can log how many were filtered out.
+    """
+    spec = json.load(open(rec_path))
+    layouts = spec.get("layouts", []) or []
+    n_in = len(layouts)
+    if n_in == 0:
+        return {"n_in": 0, "n_kept": 0, "n_dropped": 0}
+
+    filter_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build a rollout-test-compatible YAML with one entry per prescribed
+    # layout. We re-use the same coords the LLM emitted and add
+    # img_size/grid_size/cell_px defaults matching the rest of the run.
+    import yaml as _yaml
+    pres_yaml = filter_dir / "prescribed_layouts.yaml"
+    yaml_layouts = []
+    for li, lay in enumerate(layouts):
+        yaml_layouts.append({
+            "name":           f"prescribed_{li:03d}",
+            "start_pos":      list(lay.get("start_pos", [])),
+            "goal_pos":       list(lay.get("goal_pos", [])),
+            "fire_positions": [list(p) for p in lay.get("fire_positions", []) or []],
+            "n_repetitions":  1,
+        })
+    payload = {
+        "img_size":  80,
+        "grid_size": 5,
+        "cell_px":   16,
+        "layouts":   yaml_layouts,
+    }
+    with open(pres_yaml, "w") as f:
+        _yaml.safe_dump(payload, f, sort_keys=False)
+
+    # Roll out the current best checkpoint on those layouts.
+    rollout_dir = filter_dir / "rollout"
+    rc = _run([
+        sys.executable, "-u", "-m", "Equivariant_pathway.rollout_test",
+        "--checkpoint", str(CKPT_DIR / "best_eq_policy.pth"),
+        "--layouts",    str(pres_yaml),
+        "--out_dir",    str(rollout_dir),
+        "--seed",       str(seed),
+        "--max_steps",  str(max_steps),
+    ])
+    if rc != 0:
+        _info(f"prescribed-layout filter rollout exited rc={rc}; KEEPING all "
+              f"{n_in} layouts (cannot determine which the policy already solves)")
+        return {"n_in": n_in, "n_kept": n_in, "n_dropped": 0}
+
+    full = json.load(open(rollout_dir / "full_output.json"))
+    failure_ids = set(full.get("phase_a", {}).get("failure_episode_ids", []) or [])
+    # rollout_test's episode_id is the index into the layouts list (0..n-1
+    # without round-robin since n_episodes <= n_layouts).
+    kept = [layouts[i] for i in range(n_in) if i in failure_ids]
+    n_kept = len(kept)
+    n_dropped = n_in - n_kept
+
+    spec["layouts"] = kept
+    spec["n_layouts"] = n_kept
+    spec["filter"] = {
+        "n_in":      n_in,
+        "n_kept":    n_kept,
+        "n_dropped": n_dropped,
+        "policy_already_solved_ids": sorted(set(range(n_in)) - failure_ids),
+    }
+    with open(rec_path, "w") as f:
+        json.dump(spec, f, indent=2, default=str)
+
+    _info(f"layout filter: {n_in} prescribed -> {n_kept} kept "
+          f"({n_dropped} already solved by current policy)")
+    return {"n_in": n_in, "n_kept": n_kept, "n_dropped": n_dropped}
+
+
 def _collect_prescribed(rec_path: Path, round_demo_dir: Path, seed: int) -> int:
     pre = sum(1 for _ in round_demo_dir.rglob("*.json")) if round_demo_dir.exists() else 0
     round_demo_dir.mkdir(parents=True, exist_ok=True)
@@ -337,7 +436,10 @@ def _retrain(seed: int, epochs: int, train_from_scratch: bool) -> None:
         raise RuntimeError(f"retrain failed (rc={rc})")
 
 
-CONFIG_PATH = ROOT / "config.yml"
+# config.yml ships next to this module in source — NOT under the
+# overridden run ROOT. Resolve it from the code dir so sweep runs
+# inherit the same defaults as a normal run.
+CONFIG_PATH = Path(__file__).resolve().parent / "config.yml"
 
 
 def _load_config() -> Dict:
@@ -468,16 +570,36 @@ def main():
         rec_path = _flatten_recommended_layouts(analysis_dir)
         n_new_demos = 0
         n_prescribed = 0
+        n_kept_after_filter = 0
+        n_dropped_by_filter = 0
         if rec_path is not None:
             try:
                 n_prescribed = int(json.load(open(rec_path)).get("n_layouts", 0) or 0)
             except Exception:
                 n_prescribed = 0
+
+            # Step 3a. Drop prescribed layouts that the current policy
+            # already solves. Without this gate, a hallucinated "easy"
+            # layout produces a no-op BFS demo and a wasted retrain.
+            filter_dir = round_dir / "prescribed_layout_filter"
+            filt = _filter_prescribed_to_actual_failures(
+                rec_path, filter_dir,
+                seed=args.seed + 2000 + rnd,
+                max_steps=args.max_steps,
+            )
+            n_kept_after_filter  = int(filt.get("n_kept", n_prescribed))
+            n_dropped_by_filter  = int(filt.get("n_dropped", 0))
+
             round_demo_dir = DEMO_DIR / f"round_{rnd:03d}"
             n_new_demos = _collect_prescribed(
                 rec_path, round_demo_dir, seed=args.seed + 1000 + rnd,
             )
-        _info(f"round {rnd}: prescribed_layouts={n_prescribed}  new_demos={n_new_demos}")
+        _info(
+            f"round {rnd}: prescribed_layouts={n_prescribed}  "
+            f"kept_after_filter={n_kept_after_filter}  "
+            f"dropped_already_solved={n_dropped_by_filter}  "
+            f"new_demos={n_new_demos}"
+        )
 
         # Step 4. Retrain on (initial demos UNION every prescribed demo so far).
         if n_new_demos > 0:
@@ -498,8 +620,10 @@ def main():
             "heldout_n_successes": post_metrics["n_successes"],
             "heldout_n_episodes":  post_metrics["n_episodes"],
             "correction_sr":       corr_metrics["success_rate"],
-            "n_prescribed_layouts": n_prescribed,
-            "n_new_demos":         n_new_demos,
+            "n_prescribed_layouts":     n_prescribed,
+            "n_kept_after_filter":      n_kept_after_filter,
+            "n_dropped_by_filter":      n_dropped_by_filter,
+            "n_new_demos":              n_new_demos,
         })
         _persist_curve(history)
         _info(f"round {rnd}: cum_demos={cum_demos}  "
