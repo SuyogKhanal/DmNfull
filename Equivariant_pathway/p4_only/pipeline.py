@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -60,12 +61,19 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 PATHWAY_ROOT = REPO_ROOT / "Equivariant_pathway"
-ROOT = PATHWAY_ROOT / "p4_only"
+
+# ROOT and BO_ROOT are overridable via P4_ONLY_ROOT and BASELINE_ONLY_ROOT
+# so the pool-size sweep can run isolated copies in parallel. Without
+# overrides, behaviour is unchanged.
+_P4_ROOT_OVERRIDE = os.environ.get("P4_ONLY_ROOT")
+_BO_ROOT_OVERRIDE = os.environ.get("BASELINE_ONLY_ROOT")
+ROOT = Path(_P4_ROOT_OVERRIDE).resolve() if _P4_ROOT_OVERRIDE else PATHWAY_ROOT / "p4_only"
+BO_ROOT = Path(_BO_ROOT_OVERRIDE).resolve() if _BO_ROOT_OVERRIDE else PATHWAY_ROOT / "baseline_only"
+
 DEMO_DIR = ROOT / "demos"
 CKPT_DIR = ROOT / "checkpoints"
 RESULTS_DIR = ROOT / "results"
 
-BO_ROOT = PATHWAY_ROOT / "baseline_only"
 BO_TRAIN_YAML = BO_ROOT / "training_layouts.yaml"
 BO_HELDOUT_YAML = BO_ROOT / "heldout_layouts.yaml"
 BO_CORRECTION_YAML = BO_ROOT / "correction_layouts.yaml"
@@ -337,7 +345,10 @@ def _retrain(seed: int, epochs: int, train_from_scratch: bool) -> None:
         raise RuntimeError(f"retrain failed (rc={rc})")
 
 
-CONFIG_PATH = ROOT / "config.yml"
+# config.yml ships next to this module in source — NOT under the
+# overridden run ROOT. Resolve it from the code dir so sweep runs
+# inherit the same defaults as a normal run.
+CONFIG_PATH = Path(__file__).resolve().parent / "config.yml"
 
 
 def _load_config() -> Dict:

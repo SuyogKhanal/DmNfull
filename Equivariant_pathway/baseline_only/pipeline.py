@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -51,7 +52,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 PATHWAY_ROOT = REPO_ROOT / "Equivariant_pathway"
-ROOT = PATHWAY_ROOT / "baseline_only"
+
+# ROOT is overridable via the BASELINE_ONLY_ROOT env var so the
+# pool-size sweep (Equivariant_pathway/pool_sweep/) can run multiple
+# isolated copies of this pipeline in parallel under different
+# directories without clobbering each other's demos / checkpoints /
+# layout YAMLs. Without an override, behaviour is unchanged.
+_ROOT_OVERRIDE = os.environ.get("BASELINE_ONLY_ROOT")
+ROOT = Path(_ROOT_OVERRIDE).resolve() if _ROOT_OVERRIDE else PATHWAY_ROOT / "baseline_only"
 DEMO_DIR = ROOT / "demos"
 CKPT_DIR = ROOT / "checkpoints"
 RESULTS_DIR = ROOT / "results"
@@ -224,7 +232,10 @@ def _eval_heldout(seed: int, tag: str) -> Dict:
     }
 
 
-CONFIG_PATH = ROOT / "config.yml"
+# config.yml ships next to this module in source — NOT under the
+# overridden run ROOT. Resolve it from the code dir so sweep runs
+# inherit the same defaults as a normal run.
+CONFIG_PATH = Path(__file__).resolve().parent / "config.yml"
 
 
 def _load_config() -> Dict:
