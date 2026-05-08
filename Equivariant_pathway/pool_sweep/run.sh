@@ -91,6 +91,20 @@ run_one_pool () {
         export BASELINE_ONLY_ROOT="${BO_ROOT}"
         export P4_ONLY_ROOT="${P4_ROOT}"
 
+        # OpenAI rate-limit pacing. The 4 sweep processes share one
+        # org-wide TPM ceiling (200k for gpt-5-nano), so each process
+        # paces itself to ~22% of that — collectively ~88%, leaving
+        # ~12% headroom for token-estimation slop and other org
+        # traffic. Phase B's per-failure thread pool is throttled to
+        # at most 2 concurrent in-flight calls per process so a burst
+        # of 25 failures doesn't stampede the API at the start of a
+        # round. See pipeline/_oai_retry.py for the full stack.
+        export OAI_TPM_BUDGET="${OAI_TPM_BUDGET:-200000}"
+        export OAI_TPM_SHARE="${OAI_TPM_SHARE:-0.22}"
+        export OAI_MAX_IN_FLIGHT="${OAI_MAX_IN_FLIGHT:-2}"
+        export OAI_SDK_MAX_RETRIES="${OAI_SDK_MAX_RETRIES:-8}"
+        export OAI_SDK_TIMEOUT="${OAI_SDK_TIMEOUT:-120}"
+
         # Heldout is 200 (not 50) so the sub-percent SR differences
         # we care about are above the noise floor. Resolution per
         # success drops from ~2% to ~0.5%; eval cost grows ~4x but

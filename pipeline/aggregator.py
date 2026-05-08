@@ -64,8 +64,8 @@ def _aggregate_n_demos(parsed_recs: List[Dict]) -> int:
 
 
 def _oai_client():
-    from openai import OpenAI
-    return OpenAI()
+    from pipeline._oai_retry import make_client
+    return make_client()
 
 
 def _chat_reasoning(client, model: str, messages: List[Dict], max_tokens: int, effort: str = "high") -> str:
