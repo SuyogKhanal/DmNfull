@@ -91,11 +91,16 @@ run_one_pool () {
         export BASELINE_ONLY_ROOT="${BO_ROOT}"
         export P4_ONLY_ROOT="${P4_ROOT}"
 
+        # Heldout is 200 (not 50) so the sub-percent SR differences
+        # we care about are above the noise floor. Resolution per
+        # success drops from ~2% to ~0.5%; eval cost grows ~4x but
+        # there are no extra demos, so this is a near-free win on
+        # statistical power.
         echo "[$(date)] [pool=${POOL}] === BASELINE_ONLY ==="
         python -u -m Equivariant_pathway.baseline_only.pipeline \
             --force_restart \
             --correction_n "${POOL}" \
-            --heldout_n 50
+            --heldout_n 200
 
         echo "[$(date)] [pool=${POOL}] === P4_ONLY ==="
         python -u -m Equivariant_pathway.p4_only.pipeline \
