@@ -304,9 +304,8 @@ def _verdict(results: List[Dict], found_thresh: float, partial_thresh: float) ->
 
 
 def _oai_plain(messages: List[Dict], model: str, max_tokens: int = 16384) -> str:
-    from openai import OpenAI
-    from pipeline._oai_retry import call_with_retry
-    client = OpenAI()
+    from pipeline._oai_retry import call_with_retry, make_client
+    client = make_client()
     r = call_with_retry(
         client.responses.create,
         label="tkf",

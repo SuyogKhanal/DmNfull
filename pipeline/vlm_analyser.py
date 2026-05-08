@@ -17,8 +17,8 @@ from typing import Dict, List, Optional, Tuple
 
 
 def _oai_client():
-    from openai import OpenAI
-    return OpenAI()
+    from pipeline._oai_retry import make_client
+    return make_client()
 
 
 def _encode_image(path: str) -> Optional[str]:
