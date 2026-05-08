@@ -31,7 +31,10 @@ def _oai_client():
 
 
 def _chat_reasoning(client, model: str, messages: List[Dict], max_tokens: int, effort: str = "high") -> str:
-    r = client.responses.create(
+    from pipeline._oai_retry import call_with_retry
+    r = call_with_retry(
+        client.responses.create,
+        label="reasoning",
         model=model,
         input=messages,
         max_output_tokens=max_tokens,
@@ -41,7 +44,10 @@ def _chat_reasoning(client, model: str, messages: List[Dict], max_tokens: int, e
 
 
 def _chat_plain(client, model: str, messages: List[Dict], max_tokens: int) -> str:
-    r = client.responses.create(
+    from pipeline._oai_retry import call_with_retry
+    r = call_with_retry(
+        client.responses.create,
+        label="reasoning-plain",
         model=model,
         input=messages,
         max_output_tokens=max_tokens,

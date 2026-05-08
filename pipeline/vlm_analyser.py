@@ -57,8 +57,11 @@ def _analyse_frame(
     if b64 is None:
         return f"[VLM: could not load frame {role}]"
     prompt = _frame_prompt(role, step_idx, episode)
+    from pipeline._oai_retry import call_with_retry
     try:
-        r = client.responses.create(
+        r = call_with_retry(
+            client.responses.create,
+            label="vlm",
             model=model,
             input=[
                 {
