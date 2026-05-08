@@ -29,7 +29,8 @@ OUT_SUBDIR = "p4_analysis"
 # the pipeline that uses it and a reviewer can read code + prompt in one go.
 # ---------------------------------------------------------------------------
 REASONING_ADDENDUM = (
-    "SAMPLE-EFFICIENCY DIRECTIVE — pick the smallest n_demos that closes the failure mode.\n"
+    "SAMPLE-EFFICIENCY DIRECTIVE — pick the smallest n_demos that closes the failure mode,\n"
+    "but never zero when a failure is present.\n"
     "The orchestrator pays one BFS-expert demonstration per layout that the downstream\n"
     "prescription LLM recommends. A baseline-DAgger controller can already converge by\n"
     "recording ONE corrective demo per failed episode; the entire reason this P4 pipeline\n"
@@ -38,11 +39,15 @@ REASONING_ADDENDUM = (
     "section 5, frame n_demos accordingly: prefer 1-2 unless the failure is genuinely\n"
     "multi-modal (two distinct corridors, two distinct fire-blocking patterns), and never\n"
     "suggest 6+ demos without explicit evidence of multiple non-overlapping failure modes\n"
-    "in this episode. Treat extra demos as a cost, not a safety margin."
+    "in this episode. Treat extra demos as a cost, not a safety margin.\n"
+    "HARD FLOOR: this episode IS a failure. n_demos for this episode must be >= 1. Zero\n"
+    "is not a valid answer — if you cannot decide between two patterns, pick the one\n"
+    "best supported by the trace and recommend exactly one demo for it."
 )
 
 AGGREGATOR_ADDENDUM = (
-    "HOLISTIC SAMPLE-EFFICIENCY DIRECTIVE — minimise total layouts across all failures.\n"
+    "HOLISTIC SAMPLE-EFFICIENCY DIRECTIVE — minimise total layouts across all failures,\n"
+    "but never return zero when failures are present.\n"
     "Treat the failure summaries above as a SET to be covered, not a list to be itemised.\n"
     "1. Read every failure together. Identify the smallest grouping (one or more clusters)\n"
     "   that explains them. If a single corridor / fire-blocking pattern accounts for the\n"
@@ -58,7 +63,16 @@ AGGREGATOR_ADDENDUM = (
     "   prescribes, the next round's failures will justify the additional layout. Over-\n"
     "   prescribing is a permanent cost, under-prescribing is at most one extra round.\n"
     "5. n_repetitions on each layout should mirror this discipline: 1-2 unless the layout\n"
-    "   sits at the intersection of several failure modes."
+    "   sits at the intersection of several failure modes.\n"
+    "6. HARD FLOOR — MANDATORY: if n_failure_episodes >= 1, the response MUST contain at\n"
+    "   least one cluster, at least one demonstration_prescription, at least one\n"
+    "   recommended_layout, and total_demonstrations_needed >= 1. Returning zero clusters\n"
+    "   or zero layouts when there is at least one failure is INVALID and will be\n"
+    "   rejected — the orchestrator interprets an empty prescription as a stall and\n"
+    "   terminates the run, which is strictly worse than a 1-layout under-prescription.\n"
+    "   The minimum is 1, not 0. If the failures look heterogeneous and you are unsure\n"
+    "   how to cluster them, fall back to one cluster covering the most representative\n"
+    "   failure and recommend exactly one layout for it."
 )
 
 
