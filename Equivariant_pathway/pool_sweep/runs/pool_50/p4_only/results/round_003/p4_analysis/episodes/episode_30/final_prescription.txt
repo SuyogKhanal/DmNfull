@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,1)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: Top-edge detour from a nearby start position, following the top-edge corridor to the goal, staying on row 0 to bypass central fires.
+rationale: This choice aligns with the KAG fact 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' to avoid central fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets stuck trying to push through the central path and ends up stepping onto a central fire tile; the corrective guidance uses the Top-edge corridor to avoid central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (1,1), move up to the top edge at (0,1), travel along the top row to the goal column (0,2) -> (0,3) -> (0,4), then descend down column 4 to reach the goal at (2,4): (1,4) -> (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to rely on a top-edge detour when central fires block the direct route, effectively generalizing the idea of staying on a safe edge and then dropping down to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration uses the top-edge corridor with a minor start-to-edge detour, illustrating the safe route. If more robustness were needed, you could add variations that start from slightly different upper-starts but still follow the top-edge detour.

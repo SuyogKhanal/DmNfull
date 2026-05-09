@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)>
+n_demos: 1
+demo_variations: a single corrective demonstration following the left-edge corridor path from start to goal
+rationale: A single corrective demonstration along the left-edge corridor 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.' will avoid the central fires and align with the KAG guidance
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to diverge from safe edge-based routing and briefly ventures toward the central fire cluster; specifically, the misstep occurs near the top area when starting from (0,4) and not sticking to the left-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Show the safe left-edge route: from the start at (0,4) move left along the top edge to (0,0), then descend down the left edge to (4,0), move right along the bottom edge to (4,2), and finally go up to the goal at (2,2).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer edge-based corridors that avoid central fire hazards, reinforcing a fire-avoidant policy when the start/goal align with the left-edge corridor.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the single corrective demonstration described above as the variation; if more fire placements appear in future episodes, additional variations could cover minor start/goal offsets within the same corridor.

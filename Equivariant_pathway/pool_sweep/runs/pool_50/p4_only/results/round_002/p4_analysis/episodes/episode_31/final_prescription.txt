@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)
+n_demos: 1
+demo_variations: Natural variation: same Left-edge corridor path with minor start-offsets that maintain staying in column 0 before crossing to the goal column (e.g., initial down move to (3,0) before proceeding)
+rationale: The plan adheres to the Left-edge corridor: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens in the left_edge corridor region near the top-left of the maze, where the agent initially veers off the safe left-edge path by moving right (toward (2,1)) instead of descending along column 0 as the left-edge corridor prescribes.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the left-edge corridor: start at (2,0), go down to (3,0), then to (4,0); then move right along row 4 through (4,1), (4,2), (4,3), (4,4); then go up along column 4 to reach the goal at (1,4) via (3,4), (2,4), (1,4). This path stays mostly in the left edge, avoids the central fires at (1,0) and (1,1) and avoids stepping on (3,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to rely on a robust, corridor-guided strategy that keeps the agent away from central fire clusters by staying along the left edge first, then crossing to the GOAL column, improving fire-avoidance generalization under dynamic start/goal/fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 (a single targeted demo). The variation line describes a natural variation within the same corridor strategy (e.g., slight start-offsets that still keep the agent on the left-edge corridor) to illustrate robustness without introducing entirely new failure modes.

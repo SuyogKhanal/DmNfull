@@ -1,0 +1,88 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (given): Start at [2, 0], Goal at [1, 4], Fires at [1,0], [1,1], [3,3]. The agent ends at step 60 in [2,2] with total reward -8.90 and failure (Success False). The run had 60 steps; Step log details are not fully available; only some frames are described in the Vision Analysis.
+- Known state snapshots from the analysis:
+  - Step 0 (start): Agent at (2,0). Adjacent: Up (1,0) is a fire; Right (2,1) empty; Down (3,0) empty; Left out of bounds. Goal at (1,4). Manhattan distance to goal = 5.
+  - Step 3 (highest_loss_frame): Agent at (2,1). Adjacent: Up (1,1) is a fire; Down (3,1) empty; Left (2,0) empty; Right (2,2) empty. Goal not neighboring. Nearest fire above at (1,1) is an immediate hazard if moving Up.
+  - End frame (60): Agent at (2,2). Adjacent cells: Up (1,2) empty; Down (3,2) empty; Left (2,1) empty; Right (2,3) empty. Goal at (1,4) still not adjacent. Fires remain at (1,0), (1,1), (3,3). Distances suggest the agent did not reach the goal.
+- Trajectory trace notes:
+  - The narrative provides one “First corrective demonstration move” from the vision analysis: Action RIGHT to (2,1) from the start (to avoid stepping into the adjacent fire at (1,0)).
+  - A suggested mid-trajectory corrective move at Step 3 was to move RIGHT to (2,2) to avoid the immediate fire at (1,1).
+  - The accessible per-frame data show only three concrete coordinates: Start (2,0); Step 3 (2,1); End (60) (2,2). This implies a largely unobserved, longer sequence between Step 3 and Step 60, but no success, and no explicit forward path to the goal is recorded.
+- Synthesis: The agent began at (2,0), progressed to (2,1) by step 3, and ended at (2,2) at step 60 without reaching the goal. The episode did not exhibit a successful corridor-based traversal aligned with the known route to the goal, and the final position indicates the agent neither completed the left-edge corridor nor the other alternative corridor in this instance.
+
+2) FIRST WRONG DECISION
+- Earliest divergence from a safe corridor:
+  - Step 1: Action RIGHT from (2,0) to (2,1). Should have continued DOWN along the left-edge corridor to (3,0) (i.e., stay in column 0 and descend toward row 4), per the Left-edge corridor description.
+- Rationale:
+  - The Left-edge corridor (the corridor most aligned with the start near the top-left quadrant and an avoidance of central fire clusters) prescribes staying in column 0 and descending to row 4 before proceeding along row 4 toward the goal. The KAG describes the Left-edge corridor as “path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.” Moving Right at Step 1 diverges from that corridor at the earliest opportunity.
+  - By taking RIGHT early, the agent leaves column 0 and exposes itself to a different risk profile (e.g., needing to traverse near the fire at (3,3) or around the fire cluster near the top row) and reduces the likelihood of staying within the hazard-avoiding left-edge corridor.
+- Consequence: This early deviation reduces the chance to reach the goal via the hazard-avoiding corridor and makes it more likely to encounter fires or create longer detours, contributing to eventual failure.
+
+3) WHY THE POLICY FAILED
+- Core failure mode engaged: fire_collision (the agent entered or would enter a FIRE tile). The episode’s fires are at (1,0), (1,1), and (3,3). The agent is trained with human demonstrations but, in this episode, did not demonstrate a robust avoidance pattern that generalizes to this (start, goal, fire placements).
+- Evidence grounding:
+  - The episode ends without reaching the goal and with a negative reward, indicating collision with hazards or ineffective navigation (FIRE_HIT or repetitive penalties). The KAG defines fire_collision as “Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.” This episode matches that failure mode.
+  - The Vision Analysis indicates an early corrective demonstration suggesting a corridor-aligned path, but the actual trajectory (Step 60 end at (2,2)) did not follow a hazard-avoiding corridor to the goal. The randomised per-episode configuration (start/goal/fire) requires generalisation of hazard avoidance; the current run demonstrates a failure to generalize across this configuration.
+- Dynamic-config considerations:
+  - Randomised start/goal (with min_start_goal_manhattan = 4) requires the policy to adapt to different relative positions; in this episode, the start/goal distance is 5, with fires at several positions that block or complicate straightforward routes.
+  - Fire hazards are randomised per episode; the agent must generalise avoidance tactics (e.g., corridor-following strategies) to unseen layouts. The provided corrective idea points toward corridor-following behavior, which would have reduced hazard exposure, but the policy did not consistently execute such behavior in this run.
+- Root cause framing:
+  - The policy may rely on local neighborhood signals that were insufficiently discriminative for this hazard layout, or the horizon and plan length (obs_horizon=4, pred_horizon=3) were insufficient to commit to a multi-step corridor plan under fire placements.
+  - The corrective demonstration would need to emphasize stable corridor-following behavior even when a fire appears near the first detour (e.g., when starting near (2,0) with fires at (1,0) and (1,1)).
+- Summary: The failure is due to insufficient generalization of fire-avoidance strategies under dynamic hazard layouts, leading to a fire_collision outcome (failure mode fm_fire_collision) in a randomised episode. The chosen corrective strategy should bias the policy toward a hazard-avoiding corridor path (e.g., Left-edge corridor) and reinforce consistent commitment to that corridor in the presence of nearby fires.
+
+4) RAG CROSS-EPISODE EVIDENCE
+- No retrieved cases: No cross-episode retrieval evidence is provided or available in this analysis. The instruction for this section requires writing exactly "No retrieved cases."
+
+5) CORRIDOR & PATH PROPOSAL
+Corridor choice and justification:
+- Corridor chosen: Left-edge corridor (id=corridor_left_edge)
+- Verbatim corridor fact from KAG:
+  'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+- Concrete coordinate path (start -> ... -> goal) that avoids all fires in this episode layout:
+  Start: [2,0]
+  Path:
+  - [3,0]  (DOWN)
+  - [4,0]  (DOWN)
+  - [4,1]  (RIGHT)
+  - [4,2]  (RIGHT)
+  - [4,3]  (RIGHT)
+  - [4,4]  (RIGHT)
+  - [3,4]  (UP)
+  - [2,4]  (UP)
+  - [1,4]  (UP)  -> Goal
+  This path stays in column 0 through rows 2→4, then crosses row 4 to reach column 4, and finally goes up to the goal at (1,4). It avoids all known fires at (1,0), (1,1), and (3,3).
+- One-sentence justification grounded in sections 3 and 4:
+  The proposed path adheres to the Left-edge corridor strategy to minimize exposure to central and upper-fire clusters (as highlighted by the ground-truth corridor description in section 3) and ensures a direct, hazard-avoiding ascent to the goal, which directly counters the fire_collision risk identified in section 3.
+- n_demos: 1 (per SAMPLE-EFFICIENCY DIRECTIVE, this episode requires at least one corrective demonstration; this corridor-path demonstration is intended as the singular, most informative demo for this layout).
+
+Notes for downstream prescription:
+- The corrective demonstration should show the agent following the Left-edge corridor path (as above) in a configuration with start at [2,0] and goal at [1,4], with fires at or near [1,0], [1,1], and [3,3], to reinforce hazard-avoidant, corridor-consistent navigation.
+- Emphasize commitment to the corridor (avoid detours that move off column 0 early) and show clean transitions from row 4 to the final ascent along column 4 to the goal. The demonstration should explicitly cover initial Down steps to row 4, staying on row 4, then moving Up to the goal.
+
+Final note:
+- Do not emit a FINAL_REC block here; the subsequent prescription stage will derive the structured FINAL_REC from sections 1–5. The analysis above grounds every claim in the episode data and the KAG, with a concrete corridor-based corrective path aligned to the known failure mode.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)>
+n_demos: 1
+demo_variations: start-offset: begin with immediate DOWN to (3,0) then follow the left-edge corridor; fire-side: hug the left edge longer (stay in column 0 until row 4) before crossing to (4,4)
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets confused in the Left-edge corridor region near the start, where the initial move can deviate from descending in column 0 (the early step that left the corridor path).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the Left-edge corridor: from the start at [2,0], move DOWN to [3,0], then DOWN to [4,0], then go RIGHT along row 4 to [4,4], and finally move UP to the goal at [1,4], never stepping into a fire tile.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to a hazard-avoiding corridor strategy (the Left-edge corridor), staying on the edge first and then crossing along a safe row to reach the goal, which reduces exposure to fires near the start and central region.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration should cover the corridor-path scenario; the variation line describes two natural variants (start-offset and fire-side hugging) to illustrate non-committal deviations while still teaching corridor-based navigation.

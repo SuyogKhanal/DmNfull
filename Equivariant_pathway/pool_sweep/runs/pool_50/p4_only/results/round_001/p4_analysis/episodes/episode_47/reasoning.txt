@@ -1,0 +1,26 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (from KAG): Start at (4,3); Goal at (0,3); Fires at (2,2), (2,3), (3,1). The agent never reached the goal in 60 steps; final position is not provided. The log notes: start_frame at step 0, highest_loss_frame at step 1, end_frame at step 60; 60 steps total, reward -36.
+
+- Known movement from the Vision analysis (the only concrete micro-action we have): 
+  - Step 0 (start): Agent at (4,3). 
+  - Step 1: First corrective demonstration move described as Up to (3,3). This is the only clearly documented move in the initial moment.
+  - After step 1, the exact per-step sequence is not provided in the log. The summary confirms 60 steps elapsed and the episode ended unsuccessfully, with substantial negative reward (-36). The Fire tiles are not adjacent to the starting location, but the central cluster of fires (2,2), (2,3), (3,1) creates a blocked corridor around the direct vertical route to the goal.
+
+- Plausible reconstructed/grounded trajectory given the episode facts:
+  - The direct vertical route from (4,3) upward along column 3 is blocked by fire at (2,3). So a straight ascent to the goal is not viable.
+  - A safe corridor exists along the left edge: move left along row 4 to column 0, then climb up column 0, then move right along row 0 to the goal. This path avoids all known fires.
+  - A concise, safe path (not necessarily the actual log, but consistent with the environment and a plausible corrective route) would be:
+    (4,3) -> (4,2) -> (4,1) -> (4,0) -> (3,0) -> (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3)
+  - If the agent had followed this corridor, it would avoid the central fires and reach the goal in about 10 steps (assuming no detours). The observed 60-step run with a substantial negative reward suggests the agent spent many steps in looping/detouring behavior rather than committing to a clean corridor traversal, likely due to policy stochasticity and the mixed signals from the local observation.
+
+- Bottom line for Section 1: The only explicitly documented action early on is Up to (3,3). The rest of the 60-step sequence is not recorded; the episode clearly failed to reach the goal and produced a sizable penalty, consistent with substantial detours or repeated revisits. The central-fire cluster blocked the naïve vertical path, but the log does not show a clear, tracked pivot to a safe corridor.
+
+2) FIRST WRONG DECISION
+
+- Earliest step where the agent diverged from a clearly safe corridor path (as described in Section 1) is not exactly labeled in the log. However, given the central fire cluster (2,2), (2,3) and (3,1), a principled safe path is to commit to a corridor that routes around the center (e.g., left-edge corridor).
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+

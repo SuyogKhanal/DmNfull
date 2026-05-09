@@ -1,0 +1,49 @@
+VISION REPORT
+Maze=heldout_019 Steps=60 Reward=-8.85 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis (start_frame, step 0)
+
+1) Agent location and adjacents
+- Agent at (4, 0) (bottom-left corner).
+- Adjacent cells:
+  - Up: (3, 0) — according to the map rendering this tile is a fire hazard (F). 
+  - Right: (4, 1) — empty tile (safe for now).
+  - Left/Down: out of bounds (walls).
+- Nearby goal is not adjacent; the green goal tile is at (0, 3).
+
+2) Goal location and Manhattan distance
+- Goal is at (0, 3).
+- Manhattan distance from agent: |4−0| + |0−3| = 7.
+
+3) Fire hazards relative to the agent
+- Fires (config): (0, 0), (2, 0), (1, 4).
+- Nearest fire is at (2, 0) (two steps away along the same column). Other fires are farther: (0, 0) and (1, 4).
+- The map visually shows an additional fire at (3, 0); if that is indeed a fire, it would be one step away. There is a discrepancy between the config and the map that should be resolved.
+
+4) First corrective demonstration move
+- Action: Move Right to (4, 1) (R).
+- Justification: The immediate Up cell (3, 0) is a fire in the rendered map; moving Right avoids stepping into danger and still reduces the remaining distance to the goal (distance would go from 7 to 6).
+
+--- highest_loss_frame frame step 5 ---
+Analysis for highest_loss_frame (step 5)
+
+1) Agent location and adjacent cells
+- Current: (3, 2)
+- Adjacent (passable) cells: up (2, 2), down (4, 2), left (3, 1), right (3, 3)
+- Nearby hazards: no walls or fires in the immediate adjacent cells; goal is not nearby (still several steps away).
+
+2) Goal location and Manhattan distance
+- Goal: (0, 3)
+- Manhattan distance from (3, 2): |3−0| + |2−3| = 4
+
+3) Fire hazards relative to the agent
+- Fires are at (0, 0), (1, 4), (2, 0)
+- Distances to agent (3, 2): 5, 4, 3 respectively
+- No adjacent fire threats; nearest fire is 3 steps away, so the immediate moves are not safety-limited by fire.
+
+4) First corrective demonstration move
+- Action: Up (to 2, 2)
+- Justification: It reduces the distance to the goal (4 → 3) and moves toward the goal without stepping into any known fire; maintains a straightforward path toward (0,3).
+
+--- end_frame frame step 60 ---

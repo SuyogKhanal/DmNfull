@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: Variation A: core left-edge corridor demonstration: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+rationale: This uses the left-edge corridor, following the KAG directive 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.' to reliably avoid fires and reach the goal.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI struggles in the left-edge corridor region (the bottom-left area) where it should commit to moving along the bottom row toward the goal rather than drifting into central/upper regions or zigzagging along non-corridor paths.
+2. WHAT should a good walkthrough look like in that area? A clean left-edge corridor walk would be: start at (4,0), then (4,1), (4,2), (4,3), then ascend: (3,3), (2,3), (1,3), and finally reach GOAL at (0,3).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to rely on the corridor-based strategy that keeps roughly to the bottom row first and then moves up along the goal-tunnel column, which helps avoid fires and progress toward the GOAL across varied starts/goals.
+4. HOW MANY walkthroughs are needed and how should they vary? Use n_demos = 1 with Variation A as described above; this single targeted demo encodes the essential corridor pattern. If future failures reveal additional safe-path variants, you can add a second variation that still follows the same left-edge corridor concept while altering a minor local step (e.g., a brief alternative ascent pattern) to test robustness.

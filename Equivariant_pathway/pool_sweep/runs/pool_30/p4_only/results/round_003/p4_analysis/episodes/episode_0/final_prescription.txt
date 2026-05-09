@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: One safe path demonstration hugging the right edge: start at [4,4], ascend the rightmost column to the top, then traverse the top row left to the GOAL.
+rationale: The chosen corridor is the right-edge corridor, which the KAG defines as 'Reach column 4 along the top, then descend column 4 to the goal row.', ensuring the path stays on safe tiles given the current fire layout.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to stray toward the central/bottom areas from the bottom-right start and can collide with a FIRE tile if not guided along a safe edge; in this case the danger area is avoided by hugging the right edge.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough stays along the safe boundary: move up the rightmost column from (4,4) to the top, then travel left along the top row to the leftmost column, and finally drop down one step to the GOAL at (1,0).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer edge-hugging, boundary-safe routes that avoid central fires (e.g., (1,2), (4,2), (4,0)) and still reach the GOAL efficiently.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local, single-corridor failure; variation is not required here, but if more failures were observed, use additional demos with the same right-edge strategy on similar start-goal-fire configurations to reinforce the safe corridor behavior.

@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: left-edge corridor demonstration: go from start to column 0, then descend to (4,0) avoiding all fires
+rationale: 'Left-edge corridor: path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to venture toward the central/right area and can end up stepping onto a fire tile (like at (4,1)) when trying a bottom-right liquidation. The suggested remedy centers on the left-edge corridor (left_edge) to avoid those hazards.
+
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough is: from the start (1,3), move left to (1,2), then to (1,1), then to (1,0); then descend straight down the leftmost column to the goal at (4,0): (2,0) -> (3,0) -> (4,0).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to favor a left-edge corridor strategy when hazards are placed in or near the central or bottom regions, demonstrating a safe, hazard-avoiding path to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local failure; variation would involve different but equivalent left-edge paths or small start/goal perturbations in later rounds, but for this iteration only one demonstrates the safe left-edge route.

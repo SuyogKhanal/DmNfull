@@ -1,0 +1,80 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (start to goal): Start at (row, col) = (4, 3). Goal at (3, 0). Fire hazards at (3,1), (3,2), and (4,4). There are no walls blocking immediate vicinity at start. The episode lasted 5 steps with a final position at step 5 on a fire tile, yielding a total reward of -10.50 (consistent with one fire-hit (-10.0) plus step penalties).
+
+- Step-by-step trace (from the provided logs and frames):
+  - Step 0 (start): Agent at (4,3). Adjacent cells: Up (3,3) empty, Left (4,2) empty, Right (4,4) fire, Down (5,3) out of bounds. No logged agent action for step 0; the vision analysis notes a suggested corrective action (LEFT to (4,2)) to avoid the adjacent fire on the right.
+  - Step 1 (highest_loss_frame): Agent at (3,3). Hazard nearby: Up (2,3) is not described here, but the frame notes Fire tiles at (3,1) and (3,2) are in the vicinity; immediate hazard noted is a fire at (3,2) immediately to the left of the agent. The log explicitly documents a suggested corrective action at this moment: LEFT (to 2,3) in the narrative (though the coordinates conflict in text, the directional intent is to pivot away from the central fire line). The goal remains at (3,0), distance 3.
+  - Step 2–4: Not logged in detail. The step-log section says “Step log not available. Summary: 5 steps” and does not provide concrete intermediate positions for steps 2–4.
+  - Step 5 (end_frame): Agent located at (3,1). This tile is one of the fire hazards, consistent with the episode ending in a fire collision. The caption notes: “End_frame, step 5” and the final position is shown as (3,1). The Vision report also records the first corrective action repeated as LEFT in the end frame, implying a leftward attempt toward the left-side goal area but the agent ends on a fire tile anyway.
+
+- Overall trajectory gist: The agent starts at (4,3), moves (at least) to (3,3) by step 1, and by step 5 ends on a fire tile at (3,1). The episode did not reach the GOAL at (3,0). The recorded reward (-10.50) corresponds to one FIRE_PENALTY (-10) plus five steps at STEP_PENALTY (-0.1 each) in aggregate.
+
+- Grounding observations:
+  - Immediate hazard at start: fire at (4,4) to the right and fires along row 3 (notably (3,1) and (3,2)) form a barrier that shapes safe routing.
+  - The route that would avoid central-fire barriers is plausibly along the bottom row toward column 0, then up to the goal (a LEFT-then-UP corridor). The analysis text repeatedly frames the corrective action as LEFT, steering toward (4,2) and then toward (4,0)/(3,0) via the bottom row as a safe corridor.
+
+2) FIRST WRONG DECISION
+- Earliest step with divergence from a safe path (based on the evidence provided):
+  - Step 1: Action taken by the agent: UP from (4,3) to (3,3) (to reach the goal row more quickly). Why this is wrong: Given the fire layout, stepping toward the central row (row 3) risks encountering the row-3 fire barrier (3,1) and (3,2). The corrective analysis explicitly recommends a LEFT move from the starting position to follow the bottom-row corridor that avoids the central fire barrier. The suggested corrective action is LEFT to (4,2) (i.e., staying on the bottom row before proceeding leftward to (4,0) and then up to (3,0)).
+  - Therefore, the earliest wrong decision is the first-step UP from (4,3) to (3,3); the endorsed safe alternative is LEFT to begin the bottom-row corridor.
+
+3) WHY THE POLICY FAILED
+- Core failure mode and grounding:
+  - Failure mode observed: fire_collision. The episode ended with stepping onto a FIRE tile (3,1), yielding a large negative reward (-10) and an overall episode reward of -10.50. This matches the defined failure mode fire_collision: Agent entered a FIRE tile.
+- Root-cause reasoning anchored in the dynamic config and KAG:
+  - Dynamic randomization pressure: The environment randomizes start, goal, and fire placements per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The current episode uses a particular arrangement where row 3 hosts two fires (3,1) and (3,2) forming a barrier, with a fire also to the far right (4,4). The policy must generalize fire-avoidance across such configurations; the logs indicate it did not avoid the barrier on this configuration, hence the fire_collision failure.
+  - Corridor selection and generalization: The KAG defines three corridors. The agent’s safe approach is to navigate via a fire-avoidant corridor, most naturally the bottom-row corridor (and then into the GOAL at (3,0)). The agent’s early UP decision (Step 1) moved toward the central hazard line instead of adopting the bottom-row corridor. This indicates a lack of robust generalization to routing patterns that avoid central hazards, given the current training demonstrations.
+  - Observation/prediction horizons and vision encoder: The policy uses obs_horizon=4 and pred_horizon=3 with a CellAlignedEncoder that pools per-cell features. While this encodes local neighborhoods, it may underrepresent larger-scale hazard patterns (central row barrier) necessary to infer a safe corridor from start to goal in a randomized layout. The result is a tendency to greedily approach the goal region rather than commit to a conservative corridor when fire distribution blocks direct paths.
+  - Grounding in KAG terms: The event is a direct instantiation of fm_fire_collision (fire_collision) under dynamic-fire arrangements. The dynamic_config caveat states that, due to start/goal/fire randomization, a corrective demonstration should describe the SITUATION (the fire placement pattern relative to start/goal) rather than a fixed coordinate path. The observed failure aligns with this: the agent failed to generalize a safe corridor given a randomized fire layout near the goal.
+
+- Bottom-line: The failure is a fire_collision due to insufficient generalization to this randomized fire layout, compounded by partial corridor selection guidance and a vision/prediction setup that emphasizes short-horizon local cues over long-horizon hazard pattern inference.
+
+4) RAG CROSS-EPISODE EVIDENCE
+- No retrieved cross-episode cases are provided in this prompt (per the instruction “No retrieved cases.”). Therefore, Section 4 explicitly notes: No retrieved cases.
+
+5) CORRIDOR & PATH PROPOSAL
+- Corridor choice (from KAG): Left-edge corridor
+  - Corridor key: Left-edge corridor
+  - Verbatim quote from KAG (to justify the pick):
+    - 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+- Concrete corrective path (start -> ... -> goal) that avoids all fires in this episode:
+  - Start: (4, 3)
+  - Move Left to (4, 2)
+  - Move Left to (4, 1)
+  - Move Left to (4, 0)
+  - Move Up to (3, 0) (GOAL)
+- One-sentence justification grounded in sections 3 and 4:
+  - This corridor path leverages the bottom-row safe corridor to bypass the central row fire barrier (3,1) and (3,2) and reaches the GOAL at (3,0) without stepping on any FIRE tiles, addressing the fire_collision root cause identified in Section 3 and avoiding the central-hazard region described in the episode’s fire layout.
+- Demonstration count (n_demos) and variation:
+  - n_demos: 1 (the minimum required for a failure in this episode, per the stated directive to keep demos minimal when possible)
+  - demo_variations: None mandated; a single corridor-aligned corrective demonstration is proposed to fix the fire-avoidance failure for this episode layout.
+
+Notes and grounding references
+- Corridor justification and phrasing quoted above is taken verbatim from the KAG Corridor entries to ensure alignment with the environment vocabulary.
+- The chosen path is consistent with the Left-edge corridor’s intent to travel along row 4 toward the goal column, then reach GOAL, while avoiding central-fire hazards on row 3 and the rightmost fire at (4,4).
+- The analysis sections rely on the provided step logs and vision frames (start at (4,3); step 1 at (3,3); final at (3,1); total steps 5; reward -10.50) to ground the failure mode, first wrong decision, and trajectory reconstruction.
+- This output adheres to the instruction not to emit a FINAL_REC block and to present a concrete, corridor-grounded corrective path with a single, minimal corrective demonstration.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,3)->(4,2)->(4,1)->(4,0)->(3,0)
+n_demos: 1
+demo_variations: Left-edge corridor variant: slight left-wall bias while following the same path
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   - In the left_edge corridor area (the bottom-left fire-avoidance corridor). The agent initially chooses a route that climbs toward the central fire line instead of hugging the bottom edge, which leads toward dangerous fire tiles.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+   - A safe walkthrough along the left_edge corridor would move left along the bottom row from the start, staying on row 4 to reach column 0, then move up to the goal at (3,0). Specifically: (4,3) -> (4,2) -> (4,1) -> (4,0) -> (3,0). This path stays on row 4 for most of the journey and ends by entering the GOAL at (3,0) without stepping on any fire tiles.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+   - It will learn to prefer a bottom-edge corridor (left_edge) to bypass central fire clusters, committing to a conservative routing pattern that stays along the safe corridor before approaching the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+   - n_demos = 1. The variation provided is a single-line description: a left-edge corridor path with a slight left-wall bias (to test robustness of hugging the left wall while following the same corridor).

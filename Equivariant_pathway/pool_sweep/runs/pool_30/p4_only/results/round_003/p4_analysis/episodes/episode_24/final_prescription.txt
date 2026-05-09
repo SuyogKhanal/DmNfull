@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1)
+n_demos: 1
+demo_variations: Canonical left-edge corridor demo: bottom-row routing from (4,4) to (2,1) via (4,3)->(4,2)->(4,1)->(3,1)->(2,1)
+rationale: The corrective demo teaches a fire-avoidant left-edge route along the bottom row toward the goal, aligning with KAG's corridor guidance: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure happens in the bottom-right area near the start, where the agent chooses UP into a fire hazard (entering (2,4)) instead of routing along a safe edge-path via the left-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? A safe, hazard-avoidant path along the bottom row: starting at (4,4), move left to (4,3), then (4,2), then (4,1); turn up through (3,1) and finally reach the goal at (2,1).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize fire-avoidance by using an edge-aligned corridor path that keeps movement along the bottom row before turning toward the goal, reducing exposure to central fires and avoiding stepping onto known hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local failure. The single demo uses the left-edge corridor with a bottom-row routing; a natural variation would test a nearby start offset along the same corridor (e.g., starting from (4,3) and following the same bottom-row route) to check robustness to small start changes.

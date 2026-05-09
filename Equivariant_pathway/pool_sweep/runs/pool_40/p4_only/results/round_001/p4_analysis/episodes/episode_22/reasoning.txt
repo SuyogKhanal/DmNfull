@@ -1,0 +1,58 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (given): Start at A = (4,0); Goal at G = (0,0); Fires at F = {(1,1), (3,4), (4,3)}. The agent operates in a 5x5 grid with walls as impassable, and entering FIRE ends the episode with a large negative reward. The episode lasted 60 steps and ended before reaching the goal.
+- Step 0 (start_frame): Agent at (4,0). Fire hazards exist at (1,1), (3,4), (4,3). The goal is far away at (0,0). Proposed corrective guidance: Up to (3,0) to begin hugging the left edge toward the goal.
+- Step 5 (highest_loss_frame): Agent at (3,2). Fires at (1,1), (3,4), (4,3) remain non-adjacent, but the agent has drifted toward the center (away from the left edge). The corrective guidance at this frame proposes moving Up to (2,2) to shorten distance toward the goal, but this moves off the left edge.
+- Step 60 (end_frame): Agent at (3,1). Fires still not adjacent, goal still far. The suggested corrective move is Up to (2,1), which again keeps the agent away from hugging the left edge and toward the interior.
+- Summary of trajectory trend: The initial step aligned with a left-edge approach (move up along column 0). By step 5, the agent had shifted to the interior (3,2) and continued drifting toward center/north-center, then ended at (3,1) without reaching the goal. The observed trajectory did not maintain a consistent left-edge corridor or complete a straightforward ascent along column 0 to reach (0,0).
+
+2) FIRST WRONG DECISION
+- Earliest divergence from a simple, safe corridor: Step 5.
+- Evidence: At step 5, the agent is at (3,2). The recommended corrective action at this frame is to move Up to (2,2), which continues toward the center rather than continuing the left-edge corridor that would be (3,0) or (2,0) and eventually up the left column to (0,0). This indicates an early drift from the left-edge corridor path into the interior, increasing exposure to non-optimal geometry relative to the safe corridor.
+- Concrete articulation:
+  - Start path that would have kept the agent safe and on corridor: (4,0) -> (3,0) -> (2,0) -> (1,0) -> (0,0).
+  - Step 5 observed deviation: from (3,2) the policy action described as a corrective Up to (2,2) would derail the left-edge corridor, steering toward the interior instead of continuing the left-edge ascent.
+
+3) WHY THE POLICY FAILED
+- Core failure mode (grounded in KAG terms): The episode did not trigger a fire collision, and it did not hit the 200-step timeout, so the most relevant documented failure mode would be a mis-generalization of fire avoidance under dynamic start/goal/fire placements (fm_fire_collision). While the agent did not step onto a FIRE tile in this run, the per-episode failure label in the KAG emphasizes that the policy must generalize fire-avoidance to new (start, goal, fire-placement) configurations. The observed drift from the left-edge corridor into the interior (step 5) indicates poor generalization of corridor-robust navigation under randomised configurations.
+- Grounding to dynamic config: The episode uses randomised start and goal with a fixed set of three FIRE tiles chosen per episode. The policy must generalize to different fire layouts while maintaining a safe corridor. The VLM-captured corrective guidance shows that the safe, robust corridor (left edge) was viable here, but the policy deviated from it, suggesting insufficient generalization to this particular start-goal-fire arrangement.
+- Vision-encoder and horizon constraints (KAG constraints): The policy uses a CellAlignedEncoder, 4-step observation horizon, and 3-prediction horizon with stochastic DDPM inference. This design supports varied micro-actions but can produce non-intuitive mid-horizon deviations when the local 3x3 or 4-step lookahead misleads the agent away from the simplest safe corridor (left-edge) to interior squares that are not strictly necessary. The mid-episode drift to (3,2) and later to (2,2)/(2,1) aligns with a local, myopic decision pattern that loses the safe left-edge route in this configuration.
+- Concrete tie to KAG: The Left-edge corridor explicitly promotes staying in column 0, then moving along the bottom row toward the goal column, and finally reaching the goal along the left column. The observed drift away from column 0 (step 5 onward) aligns with a violation of the intended corridor strategy.
+
+4) RAG CROSS-EPISODE EVIDENCE
+- No retrieved cases: No cross-episode retrieved cases are available in this analysis. (No prior episodes' concrete corrective demonstrations are being invoked here.)
+
+5) CORRIDOR & PATH PROPOSAL
+- Corridor chosen: Left-edge corridor
+  - Verbatim KAG fact (quoted): 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+  - Rationale for corridor choice: The start position is on the left edge (column 0) and the closest corrective moves documented in VLM analysis initiate along this edge (Up to 3,0), indicating this corridor is a natural, low-risk path given the fire placements away from the left edge.
+- Concrete coordinate path (start -> ... -> goal) avoiding all fires:
+  - 4,0 -> 3,0 -> 2,0 -> 1,0 -> 0,0
+  - This path stays on the left edge (column 0) all the way up to the goal column, then reaches the goal at (0,0). It avoids all reported fire tiles: (1,1), (3,4), (4,3). The path length is 4 steps (beyond the initial position), consistent with achieving the goal while avoiding fire hazards under the given configuration.
+- n_demos, demo_variations, rationale:
+  - n_demos: 1
+  - demo_variations: 0 (single corrective demonstration suffices for this failure mode in this episode)
+  - rationale: The failure stems from a drift off the safe left-edge corridor observed by step 5; a single corrective demo showing the left-edge ascent to the goal is minimal and directly targets the root cause (deviation from the corridor). The corridor-based path is straightforward and generalizes across similar randomized layouts where the left edge remains safe from central fires. The corrective demonstration should reinforce staying on column 0 until aligned with the goal column, then ascending to the goal, which directly mitigates the drift identified in steps 0–5 and 60.
+
+Summary for prescription systems
+- Corridor: Left-edge corridor
+- Path: 4,0 -> 3,0 -> 2,0 -> 1,0 -> 0,0
+- n_demos: 1
+- demo_variations: none
+- rationale: Aligns with the earliest correct corrective guidance (step 0) and directly mitigates the step-5 drift that led to failure by steering the agent back to the proven safe corridor path that avoids the central fire placements. This single corrective demonstration captures the essential safe route for this episode’s randomized start/goal/fire configuration.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(3,0)->(2,0)->(1,0)->(0,0)
+n_demos: 1
+demo_variations: baseline left-edge ascent path from start to goal
+rationale: Aligns with the left_edge corridor, as justified by the KAG fact: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. Where in the maze does the AI get confused? It drifts off the left_edge corridor early (around step 5) by moving toward interior squares instead of staying on column 0; this deviation from the left-edge corridor is the root cause of the failure.
+2. What should a good walkthrough look like in that area? A straightforward left-edge ascent: from start (4,0) move up to (3,0), then (2,0), (1,0), and finally reach the goal at (0,0), staying on column 0 the whole time and avoiding the fires at (1,1), (3,4), (4,3).
+3. What will the AI learn from seeing that walkthrough? It will learn to rely on and reproduce the left-edge corridor path when starting near the top-left quadrant with central fires, reinforcing safe navigation and avoiding mid-episode interior detours.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1; demo_variations = baseline left-edge path from start to goal; No additional variations for this local failure.

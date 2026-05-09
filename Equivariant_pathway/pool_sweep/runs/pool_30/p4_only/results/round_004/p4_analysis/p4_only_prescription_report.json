@@ -1,0 +1,193 @@
+{
+  "profile": "p4_vlm_reasoning_kag_cross_plain_llm.yaml",
+  "label": "p4_only",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_30/p4_only/results/round_004/correction_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_30/p4_only/results/round_004/p4_analysis",
+  "n_failures": 3,
+  "test_layout_failures": [
+    {
+      "episode_id": 13,
+      "maze_name": "heldout_014",
+      "start_pos": [
+        1,
+        1
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 2
+    },
+    {
+      "episode_id": 22,
+      "maze_name": "heldout_023",
+      "start_pos": [
+        4,
+        0
+      ],
+      "goal_pos": [
+        0,
+        0
+      ],
+      "fire_positions": [
+        [
+          1,
+          1
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          3
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 29,
+      "maze_name": "heldout_030",
+      "start_pos": [
+        1,
+        4
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          4
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 3
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 2,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              1,
+              1
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Left-edge detour around central hazards to avoid fire collision while progressing toward the goal."
+          }
+        ],
+        "rationale": ""
+      },
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              4,
+              0
+            ],
+            "goal_pos": [
+              0,
+              0
+            ],
+            "fire_positions": [
+              [
+                1,
+                1
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                3
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Straight left-edge ascent to enforce corridor commitment and reduce exploratory dithering that leads to timeouts."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_left_edge_fire_collision",
+        "episodes_in_cluster": [
+          13
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "Agent briefly moves into a central-fire region and collides with a fire tile when attempting a mixed path around hazards near the top-left quadrant.",
+        "what_it_does_wrong": "The agent does not consistently commit to the left-edge detour and can pivot toward a central fire, leading to immediate termination of the episode.",
+        "source_final_recs": [
+          "left_edge"
+        ]
+      },
+      {
+        "cluster_label": "cluster_left_edge_timeout",
+        "episodes_in_cluster": [
+          22
+        ],
+        "root_cause": "timeout",
+        "corridor": "left_edge",
+        "where_it_fails": "Agent hesitates and wanders near the start, failing to commit to a straight left-edge corridor long enough to reach the goal within the episode horizon.",
+        "what_it_does_wrong": "The agent does not commit to the corridor path, resulting in extended wandering and a timeout-like failure.",
+        "source_final_recs": [
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}

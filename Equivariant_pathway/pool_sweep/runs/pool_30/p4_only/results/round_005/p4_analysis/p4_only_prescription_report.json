@@ -1,0 +1,91 @@
+{
+  "profile": "p4_vlm_reasoning_kag_cross_plain_llm.yaml",
+  "label": "p4_only",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_30/p4_only/results/round_005/correction_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_30/p4_only/results/round_005/p4_analysis",
+  "n_failures": 1,
+  "test_layout_failures": [
+    {
+      "episode_id": 29,
+      "maze_name": "heldout_030",
+      "start_pos": [
+        1,
+        4
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          4
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 3
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 1,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              1,
+              4
+            ],
+            "goal_pos": [
+              1,
+              0
+            ],
+            "fire_positions": [
+              [
+                0,
+                4
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                3,
+                2
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "This layout mirrors the observed failure pattern by emphasizing the left-edge corridor path while central fires test robust fire-avoidance within that corridor."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_left_edge_fire_collision",
+        "episodes_in_cluster": [
+          29
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "In the left-edge corridor configuration, when central fires are present, the policy relies on the left-edge route but still ends up colliding with a FIRE tile in this randomised setup.",
+        "what_it_does_wrong": "The agent chooses or adheres to the left-edge corridor as a safety heuristic but fails to consistently avoid FIRE tiles across varied start/goal/fire placements within that corridor.",
+        "source_final_recs": [
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}

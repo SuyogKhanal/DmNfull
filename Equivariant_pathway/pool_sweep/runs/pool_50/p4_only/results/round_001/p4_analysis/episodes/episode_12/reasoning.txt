@@ -1,0 +1,53 @@
+=== ROOT CAUSE ANALYSIS ===
+Section 1 — TRAJECTORY RECONSTRUCTION
+Grounded summary (from the episode data you provided):
+- Episode geometry: 5x5 grid, start at [4,4], goal at [0,0], fires at [1,4], [3,1], [4,1]. Fires are hazard tiles that terminate on entry; goal terminates on entry with +10; walls are impassable (no effect other than penalty). Episode duration: 60 steps, final position not documented, outcome: fail.
+- Notable frames:
+  - Start frame (step 0): agent at (4,4). The algorithm’s first corrective demonstration move is Left to (3,4).
+  - Highest loss frame (step 9): agent at (1,2). Nearest fire distances: (1,4) is 2 away; (3,1) and (4,1) are farther.
+  - Final frame (step 60): agent at (2,2). No goal reached; no reported fire collision.
+- Demographic from the VLM vision report: The agent is initially in the bottom-right quadrant, the goal is top-left, and fires sit along the left column vicinity and near the top-right quadrant. The agent’s early corrective move moves along the right-side column toward the goal area, then transitions into mid-grid exploration.
+
+Step-by-step reconstruction (as grounded by the provided frames; note that the full step-by-step log is not present, so this is a constrained reconstruction anchored to the frames you shared):
+- Step 0 (start): position (4,4). Action used in the demonstrated corrective move: Left to (3,4). Rationale: move toward the goal while keeping some distance from the central hazards; this is consistent with attempting to use a corridor-like move along the right edge.
+- Steps 1–8 (inference, based on step 9 position): the agent progresses from (4,4) toward (1,2) with an apparent shift away from the outer-right edge corridor into more mid-grid exploration. Exact coordinates for each intermediate step are not provided, but by step 9 the position is (1,2).
+- Step 9: position (1,2). The agent is now near the top half of the left-to-center region, with the fire at (1,4) two steps to the east and fires at (3,1) and (4,1) on the left side. A corrective demonstration at this moment is recorded as “Move Left to (1,1)” to reduce risk and progress toward the goal in a way that avoids approaching (1,4).
+- Steps 10–59: no explicit step-by-step log is provided; the summary notes that the agent does not reach the goal and continues wandering or oscillating in the central region. The highest-loss frame was at step 9, suggesting the policy had already begun to be suboptimal, and subsequent steps did not recover to a goal state.
+- Step 60 (end): final position at (2,2). Episode ends in a failure state (goal not reached, stepcount 60, reward -8.6). No fire has been entered, so the negative reward is dominated by step penalties and perhaps revisits.
+
+Grounded observations from the trajectory:
+- The agent started by moving along the right-adjacent column (4,4) → (3,4) as part of a corridor-oriented pattern but rapidly diverged from a direct corridor-to-goal path.
+- By step 9, the agent’s location at (1,2) places it well into the mid-grid; the nearest fire (1,4) is two steps away, suggesting the agent could still have pivoted toward a fire-avoiding corridor, but did not do so cleanly.
+- The corrective demonstration at step 9 (to (1,1)) indicates human guidance recognized the need to pivot away from the central risks; however, the policy did not converge to a safe, goal-directed path within the remaining 51 steps, ending at (2,2).
+
+Section 2 — FIRST WRONG DECISION
+Earliest divergence from a safe path (with row/col and action contrasts):
+- Candidate earliest divergence: Step 9, when the agent is at (1,2) and the corrective demonstration shows moving Left to (1,1).
+  - Evidence: The highest-loss frame is step 9 at (1,2); the very next noted corrective demonstration is “Move Left to (1,1).”
+  - Why this is a candidate for the first wrong decision: At (1,2), a safe corridor-guided plan (given the fire placements) would likely prioritize maintaining a corridor that avoids the nearest hazard at (1,4) while still preserving a direct path toward the goal. The demonstration to move to (1,1) is a leftward pivot that shifts toward the left-edge region. This is a different corridor orientation than the earlier step 0 demonstration (which moved toward (3,4)) and away from a clean continuation of the right-column corridor that would prefer vertical movement along column 4 before final leftward progress.
+  - Concrete compare:
+    - At step 9, the agent could have continued a corridor-close path along column 4 (e.g., (1,2) → (0,2) or (1,3) or (2,4)) that preserves fire distance, then transition toward (0,0). Instead, the corrective move to (1,1) reduces the agent’s distance to the left edge prematurely and accelerates a leftward detour into the central/left grid, which increases the risk of detours and increases the total steps before reaching the goal.
+  - Grounding from the data: The Fire hazards sit at (1,4), (3,1), and (4,1). Moving to (1,1) places the agent in proximity to the left-side open corridor but risks entering the left-middle area where the (3,1) fire is nearby if the path continues toward the left. The step 9 position (1,2) plus the demonstrated left step to (1,1) is the earliest documented shift away from a straight corridor (right-column emphasis) toward a more central-left detour.
+
+Section 3 — WHY THE POLICY FAILED
+Root-cause synthesis grounded in the dynamic config and KAG facts:
+- Failure mode observed: fm_fire_collision is not shown here (the agent did not step on any fire tile); instead, the episode ends without reaching the goal, with a suboptimal trajectory and a prolonged wandering pattern. The relevant failure mode for this episode is more aligned with timeout-like behavior or wandering in a randomized map rather than a direct collision. The KAG defines:
+  - fm_fire_collision: agent entered a FIRE tile. Not observed in this trace.
+  - fm_timeout: Episode reached MAX_STEPS (200) without reaching the goal. Not observed here (the episode ended at 60 steps, well before the 200-step cap).
+  - fm_wall_thrashing: Repeated wall hits without progress. Not clearly documented here; the logs do not specify wall encounters as the primary offender.
+- Therefore, the most precise ground-truth interpretation is: the policy failed to generalize fire-avoidance and corridor-following in a dynamic, randomized configuration, leading to non-progressive wandering (a form of timeout-like failure within a shorter horizon). The provided reasoning in the KAG’s REASONING IMPLICATIONS section emphasizes that:
+  - fire_collision_per_episode: If the agent stepped onto a FIRE tile, the policy failed to generalize; prescription should emphasize safer corridor choices near that hazard. Our episode did not include a fire collision, so that failure mode is not the primary diagnosis.
+  - timeout_per_episode: If the agent timed out, it’s due to looping or oscillation; prescriptions should push the agent to commit to a corridor rather than oscillating between options. The trajectory shows a long stay in mid-grid with no direct progress to (0,0) and no end-state progression within 60 steps, which aligns with a looping/hesitation pattern.
+  - wall_thrashing_per_episode: If the agent repeatedly hits walls, the policy would overfit local structure; again, not clearly evident here in the logs (no obvious wall collisions are reported as the main cause).
+- Dynamic randomization caveat: This episode demonstrates that start, goal, and fire placements per episode can create configurations where a single demonstrator move (or a single demonstrated corridor) may not suffice; the model must generalize across the configuration space. The corrective demonstration provided (to move to (1,1)) shows a need to adapt to a more left-leaning corridor, but the agent’s policy still fails to commit to a safe corridor path to the goal within 60 steps.
+
+Section 4 — RAG CROSS-EPISODE EVIDENCE
+Per-rank verdicts (as described in the KAG) grounded to this episode:
+
+- fm_fire_collision (fire collision): Not observed in this episode. The fires at (1,4), (3,1), (4,1) were not stepped on; final reward is not explained by a fire entry. Verdict: Not triggered in this episode; fire-avoidance generalization remains an open issue but not the direct cause here.
+- fm_timeout (timeout): Not triggered at 200 steps in this episode (episode ended at 60 steps). Verdict: Not triggered in this episode, but the episode demonstrates a non-progressive trajectory within a shorter horizon, consistent with a “local oscillation” pattern that could become a timeout signature if extended.
+- fm_wall_thrashing (wall thrashing): Not clearly evidenced by explicit wall-entry events; no explicit record of repeated wall-collisions is provided in the summary. Verdict: Not strongly supported by available
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+[FINAL_REC UNGROUNDED: No safe path exists within the right_edge corridor from start to goal that avoids all fires (notably (1,4)) while maintaining corridor dominance, so a compliant FINAL_REC cannot be produced.]

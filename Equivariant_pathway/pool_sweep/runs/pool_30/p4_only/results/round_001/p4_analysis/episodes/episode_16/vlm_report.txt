@@ -1,0 +1,51 @@
+VISION REPORT
+Maze=heldout_017 Steps=60 Reward=-8.90 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis for start_frame (step 0)
+
+1) Agent location and adjacent cells
+- Agent at (1,3).
+- Adjacent cells: Up (0,3) = Fire (F); Down (2,3) = empty; Left (1,2) = empty; Right (1,4) = empty.
+- There are no walls indicated; only fires and the goal are shown.
+
+2) Goal location and Manhattan distance
+- Goal at (4,0).
+- Manhattan distance: |4-1| + |0-3| = 3 + 3 = 6.
+
+3) Fire hazards relative to the agent
+- Fires at (0,1), (0,3), (4,1).
+- Nearest fire is (0,3), 1 step away (north). Downstream paths must avoid stepping into fires; up would be fatal. Other fires are farther: (0,1) distance 3, (4,1) distance 5.
+
+4) First corrective demonstration move
+- Action: Move left to (1,2).
+- Justification: It reduces the goal distance by 1, keeps you away from the immediate fire above, and avoids stepping into any fire.
+
+--- highest_loss_frame frame step 3 ---
+Structured analysis of highest_loss_frame (step 3)
+
+1) Agent location and adjacent cells
+- Agent at (2,3). Adjacent: up (1,3), down (3,3), left (2,2), right (2,4).
+- Nearby hazards: fires are at (0,1), (0,3), (4,1)—none of these are adjacent to the agent.
+- Nearby goal: not adjacent; goal at (4,0).
+
+2) Goal location and Manhattan distance
+- Goal is at (4,0).
+- Current Manhattan distance: |4−2| + |0−3| = 2 + 3 = 5 (as shown in the frame).
+
+3) Fire hazards relative to the agent
+- Fires are distant from the agent: none of the adjacent cells (1,3), (3,3), (2,2), (2,4) are fires.
+- The closest fire along a plausible path would be (0,3) if moving upward, so the agent should avoid a path that heads directly toward that fire.
+
+4) First corrective demonstration move
+- Action: Up (move to 1,3).
+- Justification: Reduces distance to the goal by 1 (4,0) while keeping immediate fire threats distant; it starts a safer approach toward the goal without stepping into any known fire in the next immediate move.
+
+--- end_frame frame step 60 ---
+Structured analysis (approx. 150 words)
+
+1) Agent location and adjacent cells
+- Agent at (3,3). Adjacent moves: Up to (2,3) (safe/visited blue), Down to (4,3) (safe), Left to (3,2) (safe), Right to (3,4) (safe). Fires are not in any adjacent cell. Fires in the map are at (0,1), (0,3), and (4,1). No walls visible near the agent; the next moves are all feasible.
+
+2) Goal location and Manhattan distance
+- Goal at (4,0). Manhattan distance from the agent: |4−3| + |

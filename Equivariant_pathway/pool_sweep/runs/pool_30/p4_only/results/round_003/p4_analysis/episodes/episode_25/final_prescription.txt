@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,3)->(1,3)->(2,3)->(3,3)->(4,3)
+n_demos: 1
+demo_variations: Top-edge corridor demonstration with a slight start offset: initial move to the top row (0,2) then straight across to the goal column (3) and descend; fire-avoidance emphasis.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion is in the top-edge corridor region—the maneuver that keeps you on the top row and then descends along the target column (the path described for the top_edge corridor).
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the top-edge corridor: from the start (1,2) move Up to the top row (0,2), then go Right to the goal column (0,3), and finally descend down column 3 to the goal (4,3). In coordinates: (1,2) -> (0,2) -> (0,3) -> (1,3) -> (2,3) -> (3,3) -> (4,3).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to avoid left-side fire hazards by staying on the safe top row, then proceed down the correct column to reach the goal, reinforcing a reliable top-edge route across varying start-goal layouts with fires in left/bottom regions.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos is 1 for a local failure; variation is described in the demo_variations line as a single top-edge corridor example with a small start-offset emphasis (e.g., starting with an initial move to the top row). If you later need more coverage, you can add a few more demos with small start-offset variations along the same top-edge corridor to further generalize fire avoidance.

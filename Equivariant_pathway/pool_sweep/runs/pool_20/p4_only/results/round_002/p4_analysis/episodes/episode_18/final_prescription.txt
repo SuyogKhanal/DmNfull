@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)>
+n_demos: 1
+demo_variations: Single demonstration illustrating the left-edge corridor path from (4,0) to (0,3) via (4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+rationale: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the left-edge corridor area, specifically with an early vertical deviation after starting, which breaks the expected bottom-row progression along the left edge (the Up action observed early near (4,1)).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would show staying on the bottom row as long as needed: from (4,0) to (4,1) to (4,2) to (4,3), then moving upward along column 3: (3,3) -> (2,3) -> (1,3) -> (0,3), reaching the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to consistently follow the left-edge corridor when fires block the left column and the goal sits above-right: commit to the bottom-row path first, then ascend along the goal column to reach the target, avoiding premature vertical moves that waste steps and risk detours.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration should follow the left-edge corridor path exactly as specified. If more demonstrations were added later, they could vary slight start offsets along the bottom row or minor timing differences, but the current plan uses one focused demonstration to address this local misgeneralization.

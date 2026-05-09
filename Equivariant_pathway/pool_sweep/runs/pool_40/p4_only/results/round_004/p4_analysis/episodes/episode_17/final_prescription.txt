@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: No variations needed; single demonstration suffices.
+rationale: Top-edge corridor is chosen to 'Stay in row 0 while traversing to the goal column, then descend along that column', aligning with the KAG corridor fact to avoid central fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion happens in the top-edge corridor scenario, around the central fire cluster near (3,3); the earliest clearly hazardous decision is moving Up from (4,3) to (3,3), which would step into a Fire tile.
+
+2. WHAT should a good walkthrough look like in that area? A concise top-edge corridor demonstration would start at (2,0), go Up to (1,0), Up to (0,0), then Right to (0,1), Right to (0,2), and finally Right to (0,3) to reach the goal along the top row.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the Top-edge corridor strategy, staying on the top row to cross toward the goal while avoiding central fire hazards, which improves hazard-avoidance generalization under randomized starts/goals/fires.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Use n_demos = 1 (as specified). No variations are required for this failure in this iteration; if future episodes change the fire layout or start/goal, you can add minimal variations (e.g., slight start offset or alternate corridor) to cover those cases, but for now the single top-edge demonstration suffices.

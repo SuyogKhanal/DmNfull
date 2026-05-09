@@ -1,0 +1,15 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode context (from KAG and episode data):
+  - Start: (4, 2). Fires at (3,0), (3,2), (2,4). Goal at (1,0).
+  - Immediate hazard: (3,2) is a Fire tile just above the start.
+  - The episode executed 60 steps, reward -8.5, success=False. Final position not published in the log, but the end-frame frame shows the agent at (4,0) with (3,0) fire directly above.
+  - From the vision notes:
+    - Step 0 (start_frame): Agent at (4,2). Immediate neighbor up is a Fire at (3,2). The recommended corrective action suggested in the start-frame is: Move LEFT to (4,1) to reduce distance safely and head toward a corridor away from the central Fire.
+    - Highest_loss_frame (step 11): Agent at (4,1). Safe neighboring options: Up to (3,1) or Right to (4,2); left to (4,0) appears blocked; down is out of bounds.
+    - End_frame (step 60): Agent at (4,0). Immediate hazard above is a Fire at (3,0). The final corrective suggestion shown is: Move RIGHT to
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+[FINAL_REC UNGROUNDED: No fire-free corridor path exists from start (4,2) to goal (1,0) given the current fires at (3,0), (3,2), (2,4); moving via left_edge, top_edge, or right_col would require stepping onto a FIRE tile, so no valid grounded finalREC can be produced.]

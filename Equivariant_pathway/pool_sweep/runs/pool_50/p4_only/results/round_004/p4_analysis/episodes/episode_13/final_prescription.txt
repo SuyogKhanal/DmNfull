@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: Start near top-left quadrant with central fires; left-edge corridor demonstration
+rationale: This path follows the KAG corridor guidance: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? In the left_edge corridor region near the top-left quadrant (the area around the start (1,1)), where the safest corridor choice should be to stay along the left edge and then travel along the bottom row to the goal, but the policy previously mis-judged hazards near the center, leading to a fire collision.
+2. WHAT should a good walkthrough look like in that area? A robust walkthrough would start at (1,1), move left to (1,0), descend the leftmost column to (4,0), then traverse right along the bottom row to (4,4), and finally move up to the goal at (0,4).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer corridor-based routing that keeps the agent away from central fires when starting in the top-left area, improving hazard-avoidance generalization under dynamic fire placements.
+4. HOW MANY walkthroughs are needed and how should they vary? 1 demonstration is sufficient (n_demos = 1) with the variation described in demo_variations: start near the top-left quadrant with central fires and demonstrate the left-edge corridor path to the goal, allowing minor, natural start-offset variations in subsequent runs if needed.

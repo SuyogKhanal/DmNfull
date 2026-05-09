@@ -1,0 +1,38 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup ( grounding from KAG ):
+  - Start: (0,4). Goal is at (4,4). Fires at (0,2), (3,0), (4,3). The episode is designed with randomization: start, goal, and fire placements are re-sampled per episode, with a minimum start-goal Manhattan distance of 4.
+  - Corridor guidance exists to help avoidance of fire: Right-column corridor suggests staying along the rightmost column and then descending to the goal (see below for exact corridor quote in section 5).
+  - The run finished with success=False after 60 steps and a total reward of -8.80; final position not reported.
+
+- Early portion (frame 0–step 5; anchor frames from the analysis):
+  - Step 0 (start): Agent at (0,4). Nearest fires: (0,2) at distance 2; goal at (4,4) distance 4. The first corrective demonstration recommended is: Move Down to (1,4) to progress toward the goal while staying on the right edge and avoiding immediate hazards.
+  - Step 5 (highest_loss_frame): Agent at (2,3). Fires remaining at (0,2), (3,0), (4,3); the nearest is (4,3) at distance 2. The corrective move proposed at this frame is: Right to (2,4) to continue progress toward the goal and avoid steering toward the (4,3) fire path.
+  - Summary: By step 5 the agent has moved from the start along the right-adjacent region and is positioned to push deeper into the right-hand corridor, with the next corrective cue continuing to favor paths that keep column 4 in play.
+
+- Mid-to-late portion (anchor frames around step 60):
+  - End frame (step ~60): Agent at (3,3). Fire tiles remain at (0,2), (3,0), (4,3); the immediate hazard adjacent to the agent is (4,3) (to the south). The corrective proposal at this state is: Right to (3,4) to stay on a
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 1
+demo_variations: Demo variation 1: Start at (0,4), goal (4,4), follow the right-edge corridor straight down column 4 to the goal.
+rationale: 'path_description=Reach column 4 along the top, then descend column 4 to the goal row.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- In the right_edge corridor area (the rightmost column), where the agent often drifts away from the edge and risks encountering the right-side fire.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Exactly follow the right-edge corridor: start at (0,4) and move down the column 4 until reaching the goal at (4,4) with the path (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the right-edge corridor, reducing backtracking and avoiding hazards, enabling reliable progress to the goal along a single, safe path.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- We use 1 demonstration (n_demos = 1) with the corridor-following path. The variation describes the same corridor path from the top-right start to the bottom-right goal, ensuring the agent learns to stay on the right-edge corridor in this configuration.

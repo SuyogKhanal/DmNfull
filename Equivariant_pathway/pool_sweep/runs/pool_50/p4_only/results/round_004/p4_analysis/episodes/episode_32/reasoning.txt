@@ -1,0 +1,78 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Start state: position (4, 3) with fires at (3,1), (3,2), (4,4); goal at (3,0). This episode ran 5 steps and ended in failure (final reward -10.50). Evidence: Episode config lists Start=[4, 3], Goal=[3, 0], Fires=[['3', '1'], ['3', '2'], ['4', '4']]; Episode outcome: Success False; Total steps 5; Total reward -10.50; final pos not supplied in the log, but the Vision block later reveals the end-frame location.
+- Step 0 (start): Agent at (4,3). Adjacent cells: Up (3,3) empty, Left (4,2) empty, Right (4,4) fire, Down is off-grid. This is consistent with the start-frame description in the Vision report.
+- Step 1: Agent position at (3,3) (highest_loss_frame). The Vision report states the agent was at (3,3) on step 1. The left-adjacent cell (3,2) is a fire; the right-adjacent cell (3,4) is free; the up-adjacent cell (2,3) is free. This aligns with a step that moved Up from the start rather than taking the safer Left move.
+- Step 2: From the step-1 position (3,3), the Vision block notes the next suggested corrective action was to Move Up to (2,3) (i.e., the corrective demonstration for step 1 proposed Up to (2,3)). This implies the actual episode likely followed a different, unobserved path after step 1; nonetheless, we know the environment around (3,3) remained hazardous to the left (fire at (3,2)).
+- Step 3–4: The log provides no explicit coordinates, but the final frame (step 5) places the agent near the left-side area of the maze, with the end-frame description describing the leftward fire cluster around (3,2) and (3,1) in play.
+- Step 5 (end frame): Agent at (3,1). Per the end-frame block, the agent ends up adjacent to the goal area but on a fire tile, consistent with termination by fire or stepping onto a fire tile. Fire hazards present: (3,1) and/or (3,2) remain immediate hazards as the agent approached the goal, aligning with an episode ending on a hazard rather than a goal. Evidence: End-frame section of Vision shows agent vicinity around (3,1) with (3,2) fire to the right and the goal at (3,0) just left of the hazard cluster.
+- Summary of trajectory: The agent started at (4,3), moved (in the observed step) Up to (3,3) on step 1, with a nearby left-fire hazard, and ultimately ended on a fire tile near the goal area after five steps. The episode did not reach the goal.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a safe path: Step 1, from (4,3) the agent chose Up to (3,3) instead of the corrective Left move to (4,2) suggested by the demonstrated corrective move.
+  - Evidence: Vision start-frame notes a corrective demonstration: “First corrective demonstration move – Left (4,3) to (4,2).” This indicates the safe path from the starting state is to move left along the bottom row first, avoiding the immediate Fire at (4,4) and the central-fire cluster ahead. The left-first option would reduce distance to the goal while staying on safe ground.
+  - Concrete comparison:
+    - Actual step 1: Up from (4,3) to (3,3) (per highest_loss_frame at step 1).
+    - Safer alternative (the corrective demonstration): Left from (4,3) to (4,2).
+  - Why it matters: The Up-first move steers the agent toward the central area where fires at (3,1) and (3,2) block progress and increase exposure to hazard; the Left-first route keeps the agent on the fire-free bottom row, avoiding immediate hazards and preserving a straightforward corridor to the goal.
+
+3) WHY THE POLICY FAILED
+
+- Primary failure mode: fm_fire_collision (Agent entered a FIRE tile). The episode ended with a large negative impact, indicating the policy did not generalize fire-avoidance to this (start, goal, fire) configuration.
+  - Evidence: The episode’s fires are at (3,1), (3,2), (4,4). The agent’s end-frame position sits on or adjacent to a fire tile, and the final outcome is a non-goal termination with a substantial penalty (-10.0 FIRE_PENALTY per fire tile entry). The Vision report explicitly frames the proximity of a fire to the final position and notes the hazard as the terminator.
+- Contributing factors tied to the dynamic config and architecture:
+  - Dynamic randomization of start/goal/fire: The environment is designed so each episode randomizes start and goal positions and fire placements. This forces generalization of fire-avoidance strategies rather than memorization of fixed layouts. The KAG notes that randomization of start/goal/fire is part of the episode dynamic config, and a corrective demonstration must address a situation pattern rather than a fixed coordinate path.
+  - Horizon/encoding constraints: Policy constraints indicate obs_horizon=4 and pred_horizon=3, with a 200-step diffusion-inference loop (pc_horizons, pc_stochastic_ddpm). The per-step decision is produced by evaluating the last 4 (state, image) pairs to predict the next 3 actions, with only the first action executed. This short-horizon framing may not sufficiently anticipate the longer-range hazard in this configuration, particularly along the bottom-row corridor where the hazard cluster in the middle rows must be avoided with minimal backtracking.
+  - Vision encoder locality: The CellAlignedEncoder enforces a per-cell feature pooling with limited cross-cell bleed. While this helps avoid mixing signals across cells, it can underrepresent a distant but relevant hazard pattern (the central fire cluster) when not immediately in the 3x3 neighborhood of the agent. In this episode, hazards are offset from the agent’s immediate neighborhood until later steps, reducing early warning for a “stay on the bottom row” plan.
+  - Demonstration deficiency under randomization: The corrective demonstration provided (Left-first along bottom row) is consistent with the Left-edge corridor strategy, but the agent did not adopt this path in Step 1. The dynamic randomization means one demonstration must generalize to many configurations; a single demonstration may not be sufficient if the policy’s conditioning fails to robustly choose the safer corridor in the presence of nearby hazards.
+- Grounding to KAG blocks:
+  - The FailureMode fm_fire_collision is triggered when the agent enters a FIRE tile, which aligns with the observed end-state on a fire tile and the absence of a goal in the final frame.
+  - The Corridor option most relevant to this episode’s safe path is Left-edge corridor, supported by the initial corrective demonstration and the bottom-row safe routing, which is consistent with avoiding central fires.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- No retrieved cases. No external retrieved exemplars or cross-episode evidence are available in this run. Response: “No retrieved cases.”
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor choice from KAG: Left-edge corridor (id=corridor_left_edge)
+- Verbatim corridor fact (quoted exactly as in KAG): 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+- Concrete coordinate path (safe, fire-avoiding, goal-reaching route):
+  - Start: (4, 3)
+  - (4, 3) -> (4, 2) -> (4, 1) -> (4, 0) -> (3, 0)  [Left along bottom row to column 0, then Up to the goal]
+- One-sentence justification grounded in sections 2 and 3:
+  - This corridor/path stays on the fire-free bottom row (avoiding the central fires at (3,1) and (3,2)) and leads directly to the goal at (3,0) with a single upward move at the end, addressing the primary failure mode (fire_collision) observed in this episode.
+- n_demos: 1
+  - Rationale: The episode is a single failure mode (fire collision) in a concrete configuration; one corrective demonstration showing the safe bottom-row corridor is the minimal, most informative correction to reduce recurrence of this failure in similar randomised-fire configurations.
+- demo_variations: 1
+  - Variation 1: Use the same Left-edge corridor route but start from a mirror-like start position in the same quadrant (e.g., if the start were at (4,2), demonstrate (4,2) -> (4,1) -> (4,0) -> (3,0)).
+  - Rationale: The corridor is generalizable within the same topography (bottom row avoidance of central fires).
+- Rationale (summary grounding in sections 2–3):
+  - The earliest wrong decision was moving Up to (3,3) instead of Left along the bottom row, which exposed the agent to the central fire cluster and increased the likelihood of fire_collision. The proposed single corrective demonstration embodies the safe corridor path that minimizes exposure to central fires, using the Left-edge corridor’s bottom-row strategy as described in the KAG.
+
+Note: All corridor references and quotes are drawn from the ENVIRONMENT KNOWLEDGE GRAPH (KAG) provided, and the corridor choice is explicitly tied to the observed failure pattern (fire avoidance) in this episode.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,3)->(4,2)->(4,1)->(4,0)->(3,0)
+n_demos: 1
+demo_variations: Variation 1: Same left-edge corridor route starting from a nearby bottom-row start such as (4,2): (4,2)->(4,1)->(4,0)->(3,0)
+rationale: This corridor choice minimizes exposure to the central fire cluster, consistent with the KAG corridor fact 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the left_edge corridor area near the bottom row, where stepping Up early can lead into the central fire cluster. The corrective guidance points to staying on the bottom row and using the left-edge path to reach the goal.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Demonstrate a safe bottom-row route: from (4,3) move left to (4,2), then to (4,1), then to (4,0), and finally up to the goal at (3,0). This keeps the agent on a fire-free corridor before finishing at the GOAL.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the left-edge/bottom-row corridor to avoid central fire hazards, reducing the chance of stepping onto a fire tile and improving generalization across randomized fire layouts.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this failure; variation can be introduced by starting from a nearby bottom-row position (e.g., (4,2)) and following the same left-edge path (4,2)->(4,1)->(4,0)->(3,0) to reinforce the corridor behavior across slight start offsets.

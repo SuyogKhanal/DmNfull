@@ -1,0 +1,54 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode setup (grounded by KAG facts):
+  - Start: [4, 0] (bottom-left). Fires at [0,0], [2,0], [1,4]; Goal at [0,3].
+  - The agent is learning via a vision-conditioned diffusion policy with randomised start/goal/fire per episode, and a 5x5 grid with walls and hazards as defined in the KAG.
+- Reconstructed sequence from available evidence (approximate, since full step log is not provided; anchored to key frames in the Vision report):
+  - Step 0 (start): Position [4, 0].
+  - Step 1: Move Right to [4, 1] (consistent with the “First corrective demonstration move” noted for the start frame and the need to reduce distance to the goal while avoiding a near-term hazard on column 0).
+  - Step 2: Move Right to [4, 2].
+  - Step 3: Move Right to [4, 3].
+  - Step 4: Move Up to [3, 3].
+  - Step 5: Move Left to [3, 2] (this is the frame labeled as the “highest_loss_frame” where the agent is at [3, 2]).
+  - Step 6–60: No per-step log available in the provided transcript; the Vision analysis shows the end frame at step 60 and notes the final position is not available. The last explicit corrective demonstration described is Move Up from [4,2] to [3,2] (which corresponds to the location reported at the end frame section as the final corrective action described for that frame). The trajectory between steps 6–60 cannot be reconstructed exactly from the supplied data.
+- Observations tying to the evidence:
+  - The start-frame analysis identifies the nearest fire at (2,0) and the goal at (0,3); the initial corrective move proposed was RIGHT to move away from the near-fire in column 0.
+  - The highest_loss_frame shows the agent at (3,2) with a corrective move suggested as LEFT to (2,2) (this is a corrective demonstration to be provided by a human). The end-frame shows a corrective move described as UP from (4,2) to (3,2) in the summarised demonstration narrative.
+  - The trajectory reconstruction above is consistent with these frames: an initial rightward push along the bottom row, a later detour to (3,2) by step 5, and a later corrective move to reorient toward a safe corridor.
+
+2) FIRST WRONG DECISION
+- Earliest step where the agent diverged from a safe corridor path:
+  - Step 5: The agent is at (3,3) and executes LEFT to (3,2). The safe corridor path (Left-edge corridor) would have continued upward along column 3 to reach the goal at (0,3) (i.e., from (3,3) go Up to (2,3), then (1,3), then (0,3)).
+- Why this is the first divergence:
+  - Up to Step 4, the agent had reached (3,3) via a bottom-row sweep to the right and then a single Up; the next move (LEFT to (3,2)) deviates from the corridor that approaches the goal along the safe column (column 3). The Left move reduces progress toward the goal and does not decrease risk relative to the known fires (and in general, stepping left toward column 2 rows in the vicinity does not align with the left-edge corridor’s route to the goal).
+- Expected safe alternative:
+  - From (3,3), the safe corridor continuation would be Up to (2,3) (and then (1,3), (0,3)), avoiding stepping into cells near the central hazards and keeping progress toward the goal.
+
+3) WHY THE POLICY FAILED
+- Core failure mode (KAG terminology):
+  - fire_collision (id=fm_fire_collision): “Agent entered a FIRE tile.” The episode’s fires include (0,0), (2,0), and (1,4). The observed corrective step at Step 5 (LEFT from (3,3) to (3,2)) indicates the policy did not robustly generalize fire-avoidance and corridor-following for this start/goal/fire arrangement.
+- Contributing factors grounded in the dynamic config and architecture:
+  - Dynamic randomness and coverage gap: The environment randomises start, goal, and fire placements each episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). Although demonstrations exist, a single or limited set may not cover the full distribution of feasible fire placements relative to all possible
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: Canonical top-edge corridor path from start to goal via vertical ascent along column 3; variations would include slight start-offsets or alternate fire placements in future rounds.
+rationale: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles along the top-edge corridor area: after reaching (3,3) it chooses to move left to (3,2) instead of continuing upward along column 3 toward the goal at (0,3).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough should show continuing upward along column 3 from (4,3) to (0,3): (4,3) -> (3,3) -> (2,3) -> (1,3) -> (0,3), avoiding the fire tiles and keeping progress toward the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to follow the top-edge corridor pattern when hazards are in the central area, prioritizing moves that push toward the top row and then the goal along the same column, instead of detouring sideways into riskier regions.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the canonical path above as the demonstration. If more demos are added later, vary start offsets or fire placements to reinforce the top-edge corridor strategy under different but related configurations.

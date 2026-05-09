@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)
+n_demos: 2
+demo_variations: Variation 1: canonical top-edge path hugging the top row from start to goal; Variation 2: same top-edge path with emphasis on staying on the top edge to avoid central fires
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- In the top-edge corridor area (the top row region near the start), where fires are placed in central rows the AI previously struggles to avoid stepping into hazard and may drift toward unsafe paths.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the top-edge corridor: start at (0,0), move right along the top row to (0,4), then move down to the goal at (1,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to hug the top edge (stay on row 0) as the safe path to avoid central fires, and only descend to the goal column at the end, improving generalization across similar fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Two demonstrations are provided. Variation 1 shows the canonical top-edge path; Variation 2 reinforces the same top-edge strategy with emphasis on staying along the top row to minimize exposure to central hazards.

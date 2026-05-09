@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)
+n_demos: 1
+demo_variations: Right-first detour along the top-edge corridor from the start, then follow the same path to the goal
+rationale: This path follows the top-edge corridor rule from KAG: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The failure centers on the top region when fires block the central vertical path along column 3. The demonstrated corrective corridor is the top_edge corridor, which guides the agent away from the central fires by detouring toward the top edge.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (4,3). Move Right to (4,4). Then move Up along column 4 through (3,4), (2,4), (1,4), reaching (0,4). Finally, move Left to the goal at (0,3). This path avoids all reported fires and stays aligned with the top-edge corridor pattern.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer a safe detour that goes toward the top edge to avoid central fire clusters, then traverse along the top row to the goal column, reinforcing fire-avoidance behavior that generalizes across varied start/goal/fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos: 1. Use the single demonstration described above (Right-first detour along the top-edge corridor); variation: the same corridor path initiated with a Right move from the start, illustrating the safe detour choice before following the top-edge route.

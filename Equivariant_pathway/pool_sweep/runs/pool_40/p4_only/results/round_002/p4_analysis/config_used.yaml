@@ -1,0 +1,78 @@
+maze:
+  name: multimodal
+rollout:
+  n_episodes: 40
+  seed: 2000
+  checkpoint_path: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_40/p4_only/checkpoints/best_eq_policy.pth
+tracking:
+  output_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_40/p4_only/results/round_002
+pipeline:
+  use_vlm: true
+  use_reasoning: true
+  use_cross_episode_reasoning: true
+  use_kag: true
+  use_rag: false
+  use_tkf: false
+  use_plain_llm: true
+  use_aggregator: true
+llm:
+  prompt_addendum_reasoning: "SAMPLE-EFFICIENCY DIRECTIVE \u2014 pick the smallest\
+    \ n_demos that closes the failure mode,\nbut never zero when a failure is present.\n\
+    The orchestrator pays one BFS-expert demonstration per layout that the downstream\n\
+    prescription LLM recommends. A baseline-DAgger controller can already converge\
+    \ by\nrecording ONE corrective demo per failed episode; the entire reason this\
+    \ P4 pipeline\nexists is to identify the MINIMUM, most informative demos that\
+    \ fix the failure mode\nin fewer expert queries. When the analysis discusses corridor\
+    \ + path proposals in\nsection 5, frame n_demos accordingly: prefer 1-2 unless\
+    \ the failure is genuinely\nmulti-modal (two distinct corridors, two distinct\
+    \ fire-blocking patterns), and never\nsuggest 6+ demos without explicit evidence\
+    \ of multiple non-overlapping failure modes\nin this episode. Treat extra demos\
+    \ as a cost, not a safety margin.\nHARD FLOOR: this episode IS a failure. n_demos\
+    \ for this episode must be >= 1. Zero\nis not a valid answer \u2014 if you cannot\
+    \ decide between two patterns, pick the one\nbest supported by the trace and recommend\
+    \ exactly one demo for it."
+  prompt_addendum_aggregator: "HOLISTIC SAMPLE-EFFICIENCY DIRECTIVE \u2014 minimise\
+    \ total layouts across all failures,\nbut never return zero when failures are\
+    \ present and scale recommendations with the\ndiversity of the failure pool.\n\
+    Treat the failure summaries above as a SET to be covered, not a list to be itemised.\n\
+    1. Read every failure together. Identify the smallest grouping (one or more clusters)\n\
+    \   that explains them. If a single corridor / fire-blocking pattern accounts\
+    \ for the\n   majority of failures, prefer one cluster; do not split for cosmetic\
+    \ balance.\n2. For each cluster, recommend the SMALLEST set of concrete layouts\
+    \ that, taken\n   together, force the policy to learn the missing behaviour. If\
+    \ one well-chosen\n   layout teaches the corridor, recommend exactly one \u2014\
+    \ even if six episodes failed.\n3. You are competing against a baseline-DAgger\
+    \ controller that pays one expert query\n   per failed episode. Your value is\
+    \ sample efficiency: total recommended_layouts\n   summed across clusters should\
+    \ normally be MUCH smaller than n_failure_episodes,\n   but it should also reflect\
+    \ how many DISTINCT failure modes the pool exhibits.\n4. Do NOT pad recommended_layouts\
+    \ to match cluster count or to look thorough. The\n   orchestrator runs until\
+    \ heldout success rate >= 0.90; if a single round under-\n   prescribes, the next\
+    \ round's failures will justify the additional layout. Over-\n   prescribing is\
+    \ a permanent cost, under-prescribing is at most one extra round.\n5. n_repetitions\
+    \ on each layout should mirror this discipline: 1-2 unless the layout\n   sits\
+    \ at the intersection of several failure modes.\n6. HARD FLOOR \u2014 MANDATORY:\
+    \ if n_failure_episodes >= 1, the response MUST contain at\n   least one cluster,\
+    \ at least one demonstration_prescription, at least one\n   recommended_layout,\
+    \ and total_demonstrations_needed >= 1. Returning zero clusters\n   or zero layouts\
+    \ when there is at least one failure is INVALID and will be\n   rejected \u2014\
+    \ the orchestrator interprets an empty prescription as a stall and\n   terminates\
+    \ the run, which is strictly worse than a 1-layout under-prescription.\n   The\
+    \ minimum is 1, not 0.\n7. SCALE WITH POOL DIVERSITY \u2014 the LLM-compression\
+    \ value proposition only holds\n   when recommendations grow with the number of\
+    \ genuinely distinct failure modes.\n   Use the following bands as a SOFT GUIDELINE\
+    \ for total recommended_layouts (sum\n   across all demonstration_prescriptions).\
+    \ They are not quotas, but a\n   recommendation count below the band when failure\
+    \ modes are visibly heterogeneous\n   (different start regions, different fire-blocking\
+    \ patterns, different stuck-step\n   locations) is under-prescribing and should\
+    \ be avoided:\n      n_failure_episodes  1-3   -> aim for 1-2 layouts\n      n_failure_episodes\
+    \  4-7   -> aim for 2-4 layouts\n      n_failure_episodes  8-15  -> aim for 3-7\
+    \ layouts\n      n_failure_episodes  16+   -> aim for 5-10 layouts\n   ALWAYS\
+    \ keep total recommended_layouts STRICTLY LESS than n_failure_episodes\n   (otherwise\
+    \ the LLM is just relabelling the baseline). The compression ratio\n   should\
+    \ be visible in the output.\n8. If failures look heterogeneous and you are unsure\
+    \ how to cluster them, fall back\n   to one cluster per visibly-distinct failure\
+    \ mode and recommend exactly one\n   layout per cluster \u2014 this is still compression\
+    \ vs. the baseline."
+tkf:
+  demo_dir: /vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_40/p4_only/demos

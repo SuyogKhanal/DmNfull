@@ -1,0 +1,77 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode context
+  - Start: (4, 0). Fires: (0,0), (1,4), (2,0). Goal: (0,3). Manhattan distance start→goal = 7.
+  - Fires are in the leftmost column (0,0) and (2,0) plus another fire at (1,4), creating a left-side hazard cluster and a distant right-side hazard.
+  - Episode outcome: failure after 60 steps; total reward -8.85; no explicit final position given.
+- Anchors from the provided trace
+  - Step 0 (start_frame): Agent at (4,0). Immediate nearby hazards include a fire at (2,0) (distance 2) and another at (0,0) (distance 4). The closest fire is two steps away; the safe adjacent option is (4,1).
+    - Vision note: The analysis suggested a corrective demonstration move: Move Right to (4,1) to increase distance from the nearest fire while remaining oriented toward the goal.
+  - Step 5 (highest_loss_frame): Agent is at (3,2). Fires present at (0,0), (1,4), (2,0); nearest fire distance is 3 (to (2,0)); no fires in immediate adjacency. The suggested corrective move at this frame is UP to (2,2) to move toward the goal without stepping toward a fire.
+  - Step 60 (end_frame): Agent at (4,2). The suggested corrective move is UP to (3,2). Distances to goal remain nontrivial (goal at (0,3)); fires remain at (0,0), (1,4), (2,0) with no immediate adjacency.
+- Inferred trajectory shape
+  - The anchor points imply a rough zigzag toward the upper-right quadrant rather than a straight corridor, with early emphasis on moving right from the start, followed by trajectories around (3,2) and (2,2)/(3,2) regions, and eventual drift without reaching the goal by step 60.
+  - The concrete, fully-documented path between these anchors is not provided; however, the progression includes:
+    - Start: (4,0)
+    - By step ~5: near (3,2)
+    - End: (4,2)
+  - The human-corrective cues (Right to 4,1; Up to 2,2; Up to 3,2) demonstrate the intended bias toward avoiding the left-column fire cluster and moving toward the goal along cells that avoid known fire tiles.
+
+2) FIRST WRONG DECISION
+- Earliest divergence from a safe corridor path (as grounded by the KAG’s corridor options)
+  - The first explicit corrective cue that signals deviation occurs at step 5: the human-suggested corrective action "UP (to 2,2)" after the agent reached (3,2).
+  - Rationale: A corridor-based safe path from the given start would likely exploit the bottom row to bypass the left-column fires, then ascend toward the goal along a safe column (consistent with a left-edge corridor strategy). The suggested Up to (2,2) moves away from that bottom-row-focused corridor to a higher row in column 2, thereby increasing risk of encountering left-column hazards and reducing progress along a known safe corridor.
+  - Specific claim: At step 5, the action UP to (2,2) diverges from the safe-left-edge corridor plan (which would favor advancing along row 4 to column 3 and then climbing up column 3 to the goal), thereby introducing drift from a robust hazard-avoiding route.
+
+3) WHY THE POLICY FAILED
+- Grounding assertions
+  - The episode’s failures are rooted in the policy’s difficulty generalizing fire-avoidance under dynamic randomization (start, goal, and fire placements vary per episode). The KAG states fire tiles are hazardous (entering terminates episode, large negative reward). The episode’s fires include two in the left column (0,0) and (2,0), which create a left-side hazard cluster that can be safely bypassed by traversing the bottom row and then ascending along a safe column to the goal (e.g., via (4,0)→(4,3)→(0,3)).
+  - The agent’s observed behavior shows drift away from a simple corridor-based plan toward higher rows (step 5) and a continued failure to reach the goal by step 60. This aligns with the defined failure modes where a fire_collision is the most common cause when generalization to fire placements fails.
+- Dynamic_config and representation constraints
+  - Randomized start/goal/fire (cfg_rand_start, cfg_rand_goal, cfg_rand_fire) means the policy must generalize a robust hazard-avoidant corridor across configurations. The 14-dim state vector plus a 4-horizon observation/prediction schema provide a limited view of a dynamic hazard layout; the 1x1 Conv cell-aware encoder pools per-cell features to 128 dims, but with a 5x5 grid, some local-fire-avoidance cues (especially when fires are in the left column) may be underrepresented in the immediate horizon used for planning (obs_horizon=4, pred_horizon=3).
+  - The moment-by-moment guidance from the plan (left-edge/top-edge/right-column corr). The chosen “UP to (2,2)” at step 5 demonstrates a drift away from a simple left-edge corridor path that would reliably avoid the left-column fires, suggesting the policy did not lock onto the appropriate hazard-avoidance corridor in this configuration.
+- Synthesis
+  - Root cause: The policy failed to consistently generalize the fire-avoidance strategy to configurations where left-column fires are present, despite the presence of a straightforward, safe corridor (bottom row to col 3, then up). The earliest wrong decision (step 5) shows a deviation from the corridor-based plan, consistent with the FailureMode fm_fire_collision tendency described in the KAG. The randomized episode configuration required a robust cue integration to select the safe corridor under multiple fire placements; that robustness was not achieved in this episode.
+
+4) RAG CROSS-EPISODE EVIDENCE
+- No retrieved cases.
+  - No external per-episode retrievals are provided in this prompt. All evaluation is grounded in the single episode trace above.
+  - Note: The KAG indicates fire_collision as the canonical failure mode when a policy fails to generalize fire avoidance. This episode’s data show no explicit confirmation of stepping onto a fire tile in the provided anchors (start: (4,0); step 5: (3,2); end: (4,2)), but the reported failure and the early misstep towards (2,2) align with a fire-avoidance generalization failure rather than a simple timeout (200-step cap not reached) or wall thrashing (no repeated wall collisions indicated in the anchors).
+
+5) CORRIDOR & PATH PROPOSAL
+- Corridor to use for a corrective demonstration
+  - Corridor key: Left-edge corridor
+  - Verbatim corridor fact from the KAG:
+    - 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+- Concrete corrective path (start -> ... -> goal) that avoids all fires
+  - Proposed path (coordinates):
+    - (4,0) -> (4,1) -> (4,2) -> (4,3) -> (3,3) -> (2,3) -> (1,3) -> (0,3)
+  - This path stays on row 4 to reach column 3, then ascends along column 3 to the goal at (0,3). It avoids all known fires at (0,0), (1,4), and (2,0). It also aligns with the Left-edge corridor intuition when applied from the bottom start, leveraging the safe bottom-row-to-upward trajectory to the goal.
+- One-sentence justification (grounded in section 3)
+  - This corridor-based path minimizes exposure to the left-column fire cluster discovered at (0,0) and (2,0) by traversing the safe bottom row to column 3, then ascending to the goal, thereby addressing the primary root cause: failure to generalize fire-avoidance and adherence to a hazard-avoiding corridor in configurations with left-column fires.
+
+Notes on n_demos
+- HARD FLOOR: this episode is a failure; n_demos must be ≥ 1. Based on the analysis, a single corrective demonstration implementing the Left-edge corridor path above is the minimal, targeted fix to address the fire-avoidance generalization gap exposed by this configuration. Therefore, n_demos = 1 for this episode. If the downstream prescription finds multi-modality in failure modes across more episodes, it could recommend 1-2 demos; but for this single episode, 1 is the minimal, evidence-grounded choice.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: Left-edge corridor demonstration with minor ascent-timing variation along row 4 (e.g., climb from (3,3) earlier vs wait until (2,3)) to test robustness while staying away from left-column fires.
+rationale: Addresses the fire-avoidance generalization gap by enforcing a left-edge corridor path that travels along the bottom row to column 3 and then up to the goal, aligned with the KAG corridor fact: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to wander around the left-edge region, failing to consistently follow a hazard-avoiding left-edge corridor when fires cluster on the left and mid areas. The target corridor chosen for correction is the left_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walk should start at (4,0) and primarily move along the bottom row to the right, reaching (4,3), then climb straight up to the goal at (0,3) via (3,3) -> (2,3) -> (1,3) -> (0,3). This path stays clear of all fire tiles and uses the left-edge corridor’s bottom-row segment before ascending to the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to favor the left-edge hazard-avoidance corridor, specifically using the bottom-row sweep to bypass the left-fire cluster and then ascend to the goal, reinforcing staying away from left-column hazards and avoiding detours that bring the agent too close to fires early.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single walkthrough should be the left-edge corridor path described above. The demo_variations line indicates a minor variation in ascent timing along the bottom-row corridor (climb earlier from (3,3) vs later from (2,3)) to test robustness while still avoiding left-column fires.

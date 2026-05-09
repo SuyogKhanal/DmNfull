@@ -1,0 +1,82 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (from KAG context): Start at [1,3], Goal at [4,0], Fires at [['0','1'], ['0','3'], ['4','1']]. The agent operates in a 5x5 grid with the left-edge corridor as a possible safe route, but the actual episode path terminated early after a fire collision on step 5.
+
+- Step 0 (start): Agent located at (1,3). Fires present at (0,1), (0,3), (4,1). The nearest immediate hazard is fire at (0,3) above, which the agent must avoid. The goal is far at (4,0). The observed summary notes the start frame at step 0.
+
+- Step 1: Agent at (2,3) (after the step log indicates a DOWN move from the start). This is the earliest frame with a high loss, suggesting the agent chose DOWN from (1,3) to (2,3) rather than starting along a leftward corridor.
+
+- Step 2–4: The trajectory continues downward along the same column:
+  - Step 2: From (2,3) to (3,3) (DOWN).
+  - Step 3: From (3,3) to (4,3) (DOWN).
+  - Step 4: From (4,3) to (4,2) (LEFT).
+- Step 5 (end): Agent at (4,1) (LEFT from (4,2) to (4,1)), which is a FIRE tile per the episode config. This step terminates the episode with a large negative reward (-10.0 for FIRE) plus the per-step penalty, yielding the reported total reward of -10.50. The final position is listed as not available, consistent with termination on contact with FIRE.
+
+- Summary of key observations from the vision/trajectory notes:
+  - The agent never executes the left-edge corridor’s starting move on step 1 (LEFT from (1,3) to (1,2)); instead it descends, which increases exposure to the central hazard near (0,3) and reduces immediate progress toward the goal.
+  - The final sequence ends on a FIRE tile at (4,1), aligning with the FIRE_PENALTY and FIRE_COLLISION outcome described in the KAG.
+
+2) FIRST WRONG DECISION
+
+- Earliest misstep (step 1): From (1,3) the agent chose DOWN to (2,3) instead of LEFT to (1,2) to begin the Left-edge corridor path.
+  - What happened: Action taken = DOWN (to 2,3) vs what should have happened to start the corridor = LEFT (to 1,2).
+  - Why this counts as the first wrong decision: The Left-edge corridor directly provides a long, hazard-avoiding route to the goal in this layout, and stepping LEFT at the start would have placed the agent on a path that avoids the central fire cluster (0,3) and (0,1) and ultimately leads to (4,0) with a clear bottom-row path. The observed DOWN move abandons the corridor-start and increases risk by approaching the central/top fires and by delaying progress to the left edge.
+
+3) WHY THE POLICY FAILED
+
+- Primary failure mode present: fm_fire_collision (fire collision). The agent entered a FIRE tile on step 5, terminating the episode with a large negative reward. This indicates the policy did not generalize fire-avoidance to this (start, goal, fire-placement) configuration.
+
+- Grounded root-cause analysis:
+  - Dynamic config and penalty structure: The environment randomizes start, goal, and 3 fires per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The agent must generalize fire avoidance across configurations, not just memorize a single safe path. The presence of fires at (0,1), (0,3), and (4,1) creates a central hazard field that a naïve or locally guided policy can fail to avoid when the corridor option is not attempted early.
+  - Suboptimal initial action in a corridor-enabled variant: The earliest decision to go DOWN (step 1) rather than LEFT indicates a misalignment between the state encoding and the long-horizon corridor strategy. The Agent’s observations include goal position and a local 3x3 neighborhood, but the Corridor guidance requires committing to a longer-horizon plan (start along the left edge). The Step 1 choice demonstrates insufficient leveraging of the corridor-level plan in the presence of nearby hazards.
+  - Training signal vs. test distribution: The corrective demonstrations described in the Vision Analysis suggest one should start with a corridor (LEFT to (1,2)) to begin Left-edge corridor; however the actual policy history shows the agent did not execute that initial corridor step. The randomised fires and the presence of a fire at (4,1) near the goal likely contribute to a bias toward staying in safer, inner-area moves rather than committing to a long, hazard-avoiding corridor when the global map cues (explicit walls, goal, and risk tiles) are not strongly reinforced by the agent’s local perception.
+  - KAG alignment: The Left-edge corridor is described as “ideal_for Start positions near the top-left quadrant when fire occupies the central rows.” Our episode starts near the top-middle-right (1,3), not the top-left, meaning the policy must still learn to select the corridor when the start is not in the ideal zone. This misalignment between the corridor’s ideal usage and the episode’s starting position can contribute to suboptimal corridor selection and fire encounters.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- No retrieved cases. No external cross-episode evidence is provided in this analysis dataset to cite concrete prior corrections or success/failure patterns beyond the present episode. Therefore: No retrieved cases.
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor to use: Left-edge corridor (id=corridor_left_edge)
+  - Quoted corridor fact (verbatim from KAG):
+    - 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+- Concrete coordinate path (start -> ... -> goal) that avoids all fires in this episode:
+  - Start: (1,3)
+  - (1,2)
+  - (1,1)
+  - (1,0)
+  - (2,0)
+  - (3,0)
+  - (4,0)  (the GOAL)
+- One-sentence justification:
+  - This path follows the Left-edge corridor, which is designed to avoid central fire hazards and connect to the goal via the left column and bottom row, matching the corridor’s intended safe routing description and leveraging the known fire tiles (0,1), (0,3), and (4,1) to stay clear of high-risk cells.
+
+- n_demos: 1
+  - Rationale: The episode demonstrates a single coherent failure mode (fire_collision) in a single corridor context. A single corrective demonstration illustrating the Left-edge corridor start (LEFT to (1,2) then proceed down the column to (4,0)) is the minimal, most informative intervention to teach the policy to avoid the fires and reach the goal via a robust corridor in this configuration.
+
+In short, the agent first diverged from a safe corridor start (Step 1: DOWN instead of LEFT), led to a fire collision on Step 5, and the corrective path should emphasize starting the Left-edge corridor to bypass central fires and reach the goal, with one corrective demonstration sufficient for this episode.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)>
+n_demos: 1
+demo_variations: Left-edge corridor demo with LEFT-first start; variation: same corridor path with a minor start-position jitter along row 1 to test robustness (e.g., starting at (1,4))
+rationale: It aligns with the KAG corridor left_edge description 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It initially chooses DOWN from the start (1,3) instead of starting along the Left-edge corridor (LEFT to begin moving toward column 0).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts by moving LEFT from (1,3) to (1,2), then LEFT to (1,1), then LEFT to (1,0), and finally descends down the left edge to (4,0), which is the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- The AI will learn to prioritize taking the Left-edge corridor early in the episode to avoid central fire hazards and reach the goal more reliably.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 1 walkthrough is used (n_demos = 1). Variations can include a minor start-position jitter along row 1 (as described in the demo_variations) to test robustness of left-edge corridor usage under small start perturbations.

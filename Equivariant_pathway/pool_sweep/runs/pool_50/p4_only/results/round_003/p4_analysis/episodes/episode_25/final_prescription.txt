@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,3)->(1,3)->(2,3)->(3,3)->(4,3)
+n_demos: 1
+demo_variations: Variation: same top-edge corridor path with a slight start offset within the top rows to test robustness
+rationale: Following the Top-edge corridor as described by the KAG fact 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows' to minimize exposure to fires in the middle/bottom.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion centers on the top-edge corridor region (top_edge): the agent needs to stay on the top row to avoid middle/bottom fires and then descend, but it tends to stray off this corridor in configurations with dynamic fires.
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough runs along the top edge first, then descends along the appropriate column: start at (1,2), go Up to (0,2), Right to (0,3), then Down along column 3 to the goal (4,3).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the top-edge corridor path when fires block the middle rows, reducing exposure and reaching the goal more reliably in similar configurations.
+4. HOW MANY walkthroughs are needed and how should they vary? One demonstration is sufficient here (n_demos = 1) to address this single-mode failure; the provided variation describes a minor start-offset within the top region to test robustness, and you would add more variations only if additional distinct fire-start configurations revealed other gaps.

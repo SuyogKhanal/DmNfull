@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,1)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: Start at (1,1) and follow the Top-edge corridor by moving Up to (0,1), then traverse row 0 to (0,4) before descending to the goal at (2,4)
+rationale: The Top-edge corridor path 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' best addresses the misalignment at Step 0 and central-fire hazards
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It gets misaligned right at the start in the top-left area, choosing a Right move from (1,1) instead of entering the Top-edge corridor by moving Up to (0,1), which drifts toward central fires.
+
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough stays on the top row as long as possible: Up from (1,1) to (0,1), then Right to (0,2), (0,3), (0,4), and finally Down to (1,4) and (2,4) (the goal). This is the Top-edge corridor path that avoids central hazards.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit early to the hazard-avoiding Top-edge corridor when central fires are present, maintaining a monotone top-row progression before descending to the goal, thereby reducing exposure to central fire tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? 1 demonstration is used here (n_demos = 1). The variation should be the single Top-edge corridor pattern demonstrated above; if additional scenarios were tested, they could show the same corridor with small start/goal shifts within the top rows to ensure generalization.

@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1)
+n_demos: 1
+demo_variations: Same left_edge corridor with a minor start-offset and a slightly different final ascent along the bottom row toward the goal
+rationale: The left_edge corridor is chosen to route along the bottom edge to avoid central fires, aligned with the KAG fact 'Left-edge corridor: Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure happened when the agent attempted to move through the central area and ended up stepping onto a fire at (2,4) previously in the local example; this is a fire-avoidance generalization problem in the left-edge corridor scenario.
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough would hug the bottom region and then climb to the goal, e.g., start at (4,4), travel left along row 4 to (4,1), then move up to (3,1) and finish at the goal (2,1). This demonstrates using the bottom-edge route to avoid central fires.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer corridor-guided routes that skirt central hazards, specifically using a bottom-edge path (left_edge corridor) to reach the goal from the given start without stepping on fires.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local failure; the single variation demonstrates a slight start offset while remaining in the same left_edge corridor to test robustness of the bottom-row strategy.

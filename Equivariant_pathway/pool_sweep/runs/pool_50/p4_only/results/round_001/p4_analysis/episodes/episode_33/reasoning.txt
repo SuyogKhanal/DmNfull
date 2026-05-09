@@ -1,0 +1,114 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (from KAG and episode transcript):
+  - Start: (row, col) = (2, 0)
+  - Goal: (0, 4)
+  - Fires: (1,2), (2,3), (3,1)
+  - Fires are hazards that terminate the episode on entry (-10.0 reward)
+  - Episode outcome: not successful; total steps = 3; total reward = -10.30; final position not available due to termination
+  - Corridor options available to the agent (per KAG): Left-edge corridor, Top-edge corridor, Right-column corridor
+- Step-by-step trajectory (inferred from the provided trace and frames)
+  - Step 0 (start): Agent at (2,0). Adjacent cells free: (1,0), (2,1), (3,0). Closest fire distance from start is 2 (to (3,1)). First corrective demonstration move shown in the Vision log: RIGHT from (2,0) to (2,1).
+  - Step 1: Agent at (2,1). Adjacent cells open except (3,1) which is a fire tile (immediate hazard down the south). The Vision log shows a corrective demonstration move: LEFT from (2,1) to (1,1) (demonstration, not necessarily the executed policy action). The reasoning frame emphasizes continuing toward the goal while avoiding the adjacent fire at (3,1).
+  - Step 2: Agent progresses toward the goal along the row; likely move RIGHT from (2,1) to (2,2) (consistent with final end-frame at (2,3)).
+  - Step 3: Agent moves RIGHT from (2,2) to (2,3). (2,3) is a FIRE tile; entering it terminates the episode with FIRE_PENALTY (-10.0) and plus the step penalty. The end-frame notes set final position to (2,3) before termination; Episode Outcome shows total steps 3 and total reward -10.30.
+- Summary of trajectory:
+  - Path executed: (2,0) -> (2,1) -> (2,2) -> (2,3)
+  - Hazard encounter: Entered FIRE tile at (2,3) on the final step, causing termination
+  - Demonstrations provided (for corrective purposes) show an attempt to re-route around hazards (e.g., (2,1) -> (1,1) in the demonstration frame), but the agent’s actual execution ran along the row to (2,3) and collided with a fire tile
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a safe path:
+  - Step 3: From (2,2) the agent took RIGHT to (2,3), which is a known FIRE tile. The safe alternative would have avoided stepping into the hazard; for example:
+    - Option A: DOWN to (3,2) (safe)
+    - Option B: LEFT back toward the already-visited safe area (2,1)
+  - Chosen action: RIGHT (2,2) -> (2,3)
+  - Correct action (what it should have taken to avoid the fire): DOWN to (3,2) (act_down)
+- Rationale:
+  - The earliest unsafe decision is the move into (2,3), which is a FIRE tile per the KAG: entering a FIRE tile terminates the episode with a large negative reward; thus any movement into (2,3) constitutes a fire_collision. The agent had safe neighbors at (3,2) and (2,1) that would avoid the hazard in this configuration.
+  - This aligns with the FailureMode defined in the KAG: fm_fire_collision (description: Agent entered a FIRE tile; Most common failure. Indicates the policy failed to generalise fire-avoidance to this configuration).
+
+3) WHY THE POLICY FAILED
+
+- Failure mode (named in KAG): fire_collision
+  - Description from KAG: Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.
+- Evidence from this episode:
+  - The agent progressed along a row toward the goal and entered (2,3), which is a FIRE tile in this episode’s fires set. This confirms the fire_collision failure mode.
+- Contributing factors grounded in the dynamic config and KAG blocks:
+  - DynamicConfig randomization
+    - randomize_start: start is randomized per episode
+    - randomize_goal: goal is randomized per episode
+    - randomize_fire: fires are randomized per episode (default 3; in this episode fires positioned at (1,2), (2,3), (3,1))
+    - min_start_goal_manhattan = 4 ensures non-trivial paths, increasing reliance on robust fire-avoidance generalization
+  - Consequence: A policy trained via human demonstrations must generalize fire avoidance across start/goal/fire placements, but this episode shows a failure to avoid a hazard placed in a configuration that would require deliberate deviation from the most direct line toward the goal.
+  - Vision and planning constraints (KAG policy constraints)
+    - Observation/Prediction Horizons: obs_horizon=4, pred_horizon=3
+    - 3x3 local neighborhood feedforward (CellAlignedEncoder)
+    - Unet1D backbone
+    - The combination should enable hazard awareness, but generalization across randomised hazards remains the core challenge demonstrated here.
+- Bottom-line root cause:
+  - The policy failed to generalize proper fire-avoidance for this specific randomised configuration, resulting in a fire_collision on (2,3). This confirms the fm_fire_collision failure mode and highlights a need for corrective demonstrations that explicitly show safe corridor navigation around fire placements for similar start-goal configurations.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- No retrieved cross-episode evidence is available in this analysis (No retrieved cases).
+- Rationale:
+  - The environment is defined with per-episode randomization of start, goal, and fire positions. The provided episode trace does not indicate a previously seen configuration in any referenced past episodes within the current data slice, and the KAG explicitly states “No retrieved cases” for this section.
+- Verdict per rank:
+  - Since there are no retrieved cross-episode cases to compare against, we cannot rank past episodes against this one. We rely on the explicit fm_fire_collision diagnosis and the single corrective demonstration recommendation below.
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor selection (from KAG):
+  - Pick corridor_left_edge (Left-edge corridor)
+  - Verbatim corridor fact from KAG (quoted verbatim in single quotes):
+    - 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+- Concrete corrective path (avoid all fires in this episode):
+  - Coordinate path (start -> ... -> goal):
+    - Start: (2, 0)
+    - (3, 0)
+    - (4, 0)
+    - (4, 1)
+    - (4, 2)
+    - (4, 3)
+    - (4, 4)
+    - (3, 4)
+    - (2, 4)
+    - (1, 4)
+    - Goal: (0, 4)
+  - This path follows the left-edge corridor, travels along the bottom row to the far-right column, then ascends to the goal column, thereby avoiding the central hazards at (1,2), (2,3), and (3,1).
+  - Rationale for the path:
+    - It adheres to the left-edge corridor’s guidance to stay in column 0 down to row 4, then traverse along row 4 toward the goal column, and finally reach the goal via column 4. This route avoids stepping onto any known fire tiles in this episode and leverages the corridor designed for scenarios where fire occupies central rows (as per the KAG corridor description).
+- One-sentence justification (grounded in sections 3 and 4):
+  - Because the failure in this episode was a fire_collision (entering (2,3)) under a randomized fire placement, routing via the left-edge corridor offers a fire-avoidant, low-risk path that aligns with the KAG’s corridor justification and is not dependent on fixed coordinates; a corrective demonstration of this corridor would directly address the observed failure mode and show safe navigation across similar randomized configurations.
+
+Suggested corrective demonstration count (per SAMPLE-EFFICIENCY DIRECTIVE):
+- n_demos: 1 (the minimum to address a single, clearly identifiable failure mode in this episode). The single corrective demo should illustrate the agent traversing the left-edge corridor from the start to the goal while avoiding all fire tiles, consistent with the chosen corridor and path above.
+
+Notes for downstream prescription LLM (FINAL_REC derivation prompts):
+- Use the above-grounded sections 1-5 to assemble FINAL_REC with corridor_left_edge as the chosen corridor, path as listed, n_demos = 1, demo_variations focusing on robustly staying in column 0 then bottom row, and rationale anchored to fire_collision and randomised-fire config.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: Left-edge corridor demonstration from (2,0) to (0,4) along (2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+rationale: The left-edge corridor path avoids central fires, per KAG: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to head straight toward the goal along central corridors and ends up stepping onto a fire tile near (2,3); the issue is observed within the left_edge corridor area where fire hazards are placed centrally.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe path that uses the left-edge corridor: start at (2,0), go down the left edge to (4,0), traverse along the bottom row to (4,4), then climb up the goal column to the top at (0,4). Specifically: (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid central fire placements by detouring along the left-edge corridor, using the bottom row to progress toward the goal, and then moving up the goal column to reach (0,4). This demonstrates robust fire-avoidance in a randomized-start/goal/fire setting.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 (a single focused correction addressing the specific fire-avoidance failure). The single variation demonstrates the left-edge corridor path described above (no additional start/goal variation in this round).

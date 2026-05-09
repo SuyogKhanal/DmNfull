@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(0,4)->(1,4)->(2,4)->(3,4)->(4,4)>
+n_demos: 1
+demo_variations: Stay in the right-edge corridor: (0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+rationale: 'Right-column corridor: path_description=Reach column 4 along the top, then descend column 4 to the goal row.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion happens in the top-right region where the agent should stay in the right-edge corridor (column 4). The failure occurred when the agent left that safe corridor (moving from (3,4) to (3,3) and then stepping onto the FIRE at (4,3)).
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough keeps the agent entirely in the right-edge corridor: (0,4) down to (1,4), then (2,4), then (3,4), and finally (4,4) (the GOAL). No deviations into adjacent left cells.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to follow the safe right-edge corridor to the GOAL in this configuration, reinforcing fire-avoidance within this corridor and reducing the likelihood of drifting into hazardous tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough is provided (n_demos = 1) because the failure is local to one corridor. The variation shown reinforces staying in the right-edge corridor path; additional variations would only be needed if there were more multimodal failure modes.

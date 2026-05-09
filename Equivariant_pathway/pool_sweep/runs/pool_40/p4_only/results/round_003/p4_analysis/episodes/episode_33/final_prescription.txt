@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: single demonstration: left-edge corridor traversal from start to goal via bottom row, avoiding all fires
+rationale: It adheres to the left-edge corridor strategy to avoid central fires, as stated in 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets confused in the left-edge corridor area near the start; the observed misstep happened when the agent did not stay on the left-edge corridor early on, veering off toward the center.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would start at (2,0) and stay along the left edge downward to (4,0), then traverse the bottom row to (4,4), and finally climb up the last column to reach the goal at (0,4). Concretely: (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4). This path avoids all known fire tiles.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- The AI will learn to prefer the left-edge corridor strategy when central-fire patterns threaten the path, reinforcing a robust, edge-first traversal that minimizes exposure to fires and reliably reaches the goal under dynamic start/goal/fire conditions.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, with a single demonstration corresponding to the left-edge corridor traversal described above. The variation is a single, explicit edge-first path that avoids all fires; no additional variations are provided for this round.

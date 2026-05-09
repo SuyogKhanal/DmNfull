@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,0)->(3,0)->(2,0)->(1,0)->(0,0)->(0,1)->(0,2)
+n_demos: 1
+demo_variations: Single top-edge corridor demonstration from (4,0) to (0,2) via (3,0)-(2,0)-(1,0)-(0,0)-(0,1)-(0,2); no additional variations.
+rationale: This corridor choice follows the KAG corridor fact 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' to avoid central fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI tends to misstep near the bottom-left area, taking a risky move toward (4,2) which is a fire; theTop-edge corridor framing targets avoiding that central-fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? A robust walkthrough is to climb to the top edge first: (4,0) -> (3,0) -> (2,0) -> (1,0) -> (0,0), then move across the top row to the goal: (0,0) -> (0,1) -> (0,2).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer edge-first routing to avoid central fire tiles, specifically using the top-edge corridor when fires block the middle region, and then proceed along the top edge to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? Use 1 targeted demonstration (n_demos = 1) along the top-edge corridor path above; variation is not required for this single-failure fix, but if more fire placements arise, you could add a second demo with a similar top-edge strategy starting from a nearby start position.

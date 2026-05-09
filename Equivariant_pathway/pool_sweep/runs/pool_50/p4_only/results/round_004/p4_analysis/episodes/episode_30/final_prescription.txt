@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,1)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: Baseline top-edge corridor path; alternative variant starts with a Right move to (1,2) before ascending to the top edge, then continues along the top edge to the goal.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion occurs in the top-edge corridor region. The earliest unsafe move was stepping Down from the start (1,1) toward (2,1) rather than staying on or quickly moving to the top edge; this set up a higher risk path that could intersect the central fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough along the top-edge corridor would be: start at (1,1), move Up to (0,1), then Right to (0,2), (0,3), (0,4), and then descend along column 4 to the goal at (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prioritize the top-edge corridor when central fires are present, avoiding stepping onto central hazards and ensuring progress toward the goal without hitting a fire tile.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single corrective demonstration uses the top-edge corridor path described above. The demo_variations line suggests a minor fire-side bias variation where the path slightly biases a rightward step before ascending, to test robustness of the top-edge strategy in nearby configurations.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: Primary variation shows starting with a left move into the left-edge corridor, descending along column 0 to row 4, then moving along row 4 to the goal (fire-avoidant, same corridor)
+rationale: This builds the left-edge corridor-safe route to avoid the central fire cluster, 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens right at the start in the top-left region when the agent chooses to move Right from (1,1) instead of following the Left-edge corridor path that stays on the left edge and descends along column 0.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A strong demonstration would start at (1,1), then go Left to (1,0), descend down column 0 to (4,0), traverse along row 4 to (4,4), and finally go up the goal column to reach (0,4), avoiding the central fires at (0,2), (1,3), and (2,1).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer and follow the safe left-edge corridor when central fire hazards are present, committing early to a fire-avoidant route and completing the goal without stepping on a fire.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this failure; variation described by the single demo_variations line would be a left-edge corridor demonstration with the same start, showing the column-0 descent and row-4 traverse toward the goal. If future fires require addressing multiple safe corridors, add more demos targeting those corridors (e.g., top_edge or right_edge) with corresponding safe paths.

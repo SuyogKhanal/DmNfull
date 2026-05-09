@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: Left-edge corridor corrective demo with initial DOWN to (3,0) instead of RIGHT, then follow the corridor to the goal.
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It gets stuck in the left/top-left area and makes a misstep at the very start by moving RIGHT from (2,0) to (2,1) instead of staying in the left-edge corridor (column 0).
+
+2. WHAT should a good walkthrough look like in that area? A correct corridor-following path is: (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4). This stays in column 0 down to row 4, then travels along row 4 toward the GOAL at (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the left-edge corridor strategy to avoid the central fire cluster, ensuring it reaches the GOAL without stepping onto any FIRE tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this failure. If broader generalization is needed later, add variations that test different initial moves within the same corridor (e.g., DOWN-first) or small start-offsets along the left-edge corridor to confirm robustness.

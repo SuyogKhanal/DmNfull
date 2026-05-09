@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,4)->(2,4)->(3,4)->(4,4)->(4,3)->(4,2)->(4,1)->(4,0)->(3,0)->(2,0)->(1,0)
+n_demos: 1
+demo_variations: Baseline single-path correction; no start/offset variations
+rationale: By following the left-edge corridor, this path descends to row 4 and travels along row 4 toward the goal, avoiding the top-fire at (0,4) and central-fire at (1,1), in alignment with the corridor fact 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It misleads into a leftward move from the start area near the top, steering toward the central fire around (1,1) instead of detouring via the left-edge/bottom corridor.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough would begin by dropping down toward the bottom row and then traveling left along the bottom row to reach the leftmost column, before climbing back toward the goal at (1,0). The demonstrated path does exactly that: it goes down the right-side descent to row 4, crosses the bottom row leftward, and ends at the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to a hazard-avoidant, longer-horizon detour that uses the bottom-edge corridor to bypass the central and top fires, improving fire-avoidance generalization.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1; demo_variations indicates no additional variations are used in this round. If more data were desired, variations could include small start-offset differences (e.g., starting at (2,4) or (1,3)) to reinforce the detour behavior under slightly different local observations.

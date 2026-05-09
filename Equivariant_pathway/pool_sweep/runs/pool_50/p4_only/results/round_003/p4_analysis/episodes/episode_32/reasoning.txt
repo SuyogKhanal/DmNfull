@@ -1,0 +1,18 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,3)->(4,2)->(4,1)->(4,0)->(3,0)
+n_demos: 1
+demo_variations: Single demonstration along the left-edge corridor: (4,3)->(4,2)->(4,1)->(4,0)->(3,0), staying on row 4 to avoid central fires
+rationale: 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI tends to drift toward the central-fire region near (3,1) and (3,2) when the goal is at (3,0), risking stepping on a fire tile instead of using a safer left-edge route.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough from the given start (4,3) should hug the bottom row to move left along row 4 (through (4,2), (4,1), (4,0)) and then move up to the goal at (3,0), avoiding the central fires.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to favor the left-edge corridor strategy to avoid central fire hazards, keeping movement along the bottom row before entering the goal column, thereby generalizing fire-avoidance in this configuration.
+4. HOW MANY walkthroughs are needed and how should they vary? Use 1 demonstration here because the failure is local; this single demo already shows the safe left-edge path. If more coverage were desired later, you could add variations that test slight start-offsets along the bottom row or alternative minor-fire placements within the same corridor, but the current block uses one targeted path to teach the corridor behavior.

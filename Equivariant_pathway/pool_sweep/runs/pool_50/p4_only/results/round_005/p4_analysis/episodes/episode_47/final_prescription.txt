@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)>
+n_demos: 1
+demo_variations: Single corridor-based demonstration along the Right-column corridor from (4,3) to (0,3) with the same path; no additional variations
+rationale: Right-edge corridor (right_edge) selected to bypass the central fire cluster, because the KAG corridor fact 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.' justifies this.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI gets confused in the area when the central fire cluster blocks a direct northward route from the start near the right side; the chosen corridor to learn from is the Right-edge corridor.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough should start at (4,3), move to (4,4) to enter the right-edge corridor, then climb up the rightmost column along (3,4)->(2,4)->(1,4)->(0,4), and finally step left to the goal at (0,3): (4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to pivot to a safe corridor when a fire cluster blocks the direct route, specifically staying in the right-edge corridor to ascend toward the goal while avoiding fire tiles.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for a focused correction; no variations are provided here. If more failures surface, add a few more demonstrations with slight variations (e.g., different safe corridors or start orientations) to improve generalization across dynamic fire placements.

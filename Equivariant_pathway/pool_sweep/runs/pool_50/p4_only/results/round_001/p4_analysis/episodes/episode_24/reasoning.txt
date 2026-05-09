@@ -1,0 +1,50 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (ground truth for this run):
+  - Start: (4, 4) (bottom-right)
+  - Goal: (2, 1)
+  - Fires: (2, 0), (2, 4), (3, 2)
+  - Episode outcome: Failure; total steps = 2; final pos not available; total reward = -10.20
+  - Fires are hazardous: entering a FIRE tile terminates the episode with -10.0 reward.
+
+- Step-by-step trace based on the provided traces:
+  - Step 0 (start): Agent at (4, 4). Distances to fires: closest fire at (2, 4) distance 2; distance to (3, 2) is higher; distance to (2, 0) is 6. The nearest hazard is (2, 4), with a direct vertical path risking stepping into it if moving up.
+  - Step 1 (highest_loss_frame, step 1 in the log): Current agent position is (3, 4). This implies the agent executed UP from (4, 4) to (3, 4). The Vision Analysis notes the immediate hazard above is (2, 4); a nearby safer option is to move left to reduce exposure while keeping progress toward the goal.
+    - The Vision Analysis also shows a suggested corrective move for this frame: LEFT to (3, 3).
+  - Step 2 (end_frame, step 2 in the log): Current agent position is (2, 4). The log indicates the agent then moved UP again to (2, 4), which is one of the fire tiles in the episode (2, 4). This step enters FIRE, terminating the episode with a large negative reward (fm_fire_collision).
+    - The Vision Analysis for this frame shows another corrective move suggestion: LEFT to (2, 3) as a safer alternative.
+
+- Summary of the actual trajectory vs. recommended corrections:
+  - Actual trajectory (from the trace as inferred): (4, 4) -> (3, 4) -> (2, 4) (UP twice, stepping onto a fire on the second move).
+  - Corrective demonstrations that could have steered toward safety (as shown by the Vision Analysis’s first-corrective moves):
+    - Step 0 corrective: LEFT from (4, 4) to (4, 3)
+    - Step 1 corrective: LEFT from (3, 4) to (3, 3)
+    - Step 2 corrective: LEFT from (2, 4) to (2, 3)
+
+- Immediate outcome: Fire tile (2, 4) was entered on step 2, which matches the failure mode fire_collision in the KAG.
+
+2) FIRST WRONG DECISION
+
+- Earliest deviation from a safer path:
+  - Step 1 (the first decision after start): The agent chose UP from (4, 4) to (3, 4).
+  - Why this is the first wrong decision (given the corrective cue):
+    - The corrective demonstrations shown for the initial frame recommend staying left along the bottom area to avoid the nearby fire threat along column 4 (the nearest fire is (2, 4), just two steps straight up). The suggested corrective action for the frame just before this step is LEFT to (4, 3). Moving UP to (3, 4) diverges from that safer cue and increases exposure to the closest fire in (2, 4).
+  - What should have happened instead (per the corrective guidance):
+    - Action should have been LEFT to (4, 3) (as indicated by the first corrective move for step 0 in the Vision Analysis).
+- Therefore, the earliest wrong decision is Step 1: from (4, 4) choosing UP to (3, 4) instead of LEFT to (4, 3).
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode exposed by this episode:
+  - fire_collision: The agent entered a FIRE tile. This indicates the policy failed to generalize fire-avoidance to this particular (start, goal, fire-placement) configuration.
+- Contributing factors grounded in the dynamic configuration and KAG design:
+  - Dynamic randomization: Start, goal, and fire placements are random per episode (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The episode demonstrates a configuration where central and edge-fire placements require planned detours that are not captured by the current policy’s training demonstrates. The KAG notes emphasize that “Episode Goal” and “Fire Hazards” are randomised per episode, and that the agent must generalize fire-avoidance across such configurations.
+  - Observation and horizon constraints: The PolicyConstraint includes obs_horizon=4 and pred_horizon=3, with a 1-step execute strategy. This limits long-horizon planning across multiple hazard placements and may prevent the agent from deriving a reliable detour around fires that are not immediately adjacent.
+  - Local vs. global planning mismatch: The 3x3 local neighborhood (via the state_vector’s 9-local-neighborhood data) plus the overall grid embedding may provide insufficient cues to plan a detour around a fire that sits two steps away in a way that doesn’t involve stepping into it on the next move. The Vision Analysis shows the agent had to consider a path that stays on the bottom row to avoid the central hazard, which the current policy did not infer.
+  - Demonstration coverage: The corrective demonstrations suggest simple leftward detours, but the episode’s actual hazard placement requires a longer detour along the bottom row (row 4) and then up at a safer column (e.g., col 1). A single or too-short corrective demonstration may be insufficient to teach the optimal detour under random fire layouts; this matches the guideline that a corrective demonstration should reflect the situation rather than a fixed path.
+- In short: The failure is primarily due to fire-avoidance generalization gaps under dynamic
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+

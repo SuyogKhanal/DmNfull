@@ -1,0 +1,48 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Start: position (2, 0) in the 5x5 grid. Fires present at (2,4), (3,2), (3,3); Goal at (0,3).
+- Step 0 (from start): Action taken was RIGHT to (2, 1). The log labels this as the first corrective demonstration move: “Right (from (2,0) to (2,1)).” This is a safe move (no wall or fire present at (2,1)).
+- Step 1: Agent location reported as (2, 1). The log describes a proposed corrective move: Up to (1, 1). The fire hazards remain at (2,4), (3,2), (3,3) with the nearest hazard at distance 2 from (2,1) (to (3,2)).
+- Step 2: Not explicitly logged with a concrete position in the provided excerpt; the step log notes only that the episode advanced to Step 3 and the “end_frame” shows a final position.
+- Step 3 (end of episode): Final agent position reported as (3, 2). This tile is listed as a FIRE in the episode config (the environment’s fires list includes (3,2)); thus moving onto this tile terminates the episode with a large negative reward. The vision notes reveal a discrepancy: the log’s narrative treats (3,2) as the agent’s occupied tile, while the environment’s Fire tile is hazardous. The adjacent East tile (3,3) is also a FIRE tile, presenting an immediate hazard to any rightward move from (3,2).
+- Episode outcome: Failure. Total steps = 3. Total reward = -10.30. The path ended on a FIRE tile, indicating a fire_collision event.
+
+2) FIRST WRONG DECISION
+
+- Earliest diverging decision: Step 0, at (2,0). Action taken: RIGHT to (2,1).
+- What should have been done instead (the safer corridor choice): UP to start the Top-edge corridor, i.e., toward (1,0).
+- Rationale: The Top-edge corridor path remains in row 0, then to the goal column, which, given fires concentrated in the middle rows (as in this episode: (3,2) and (3,3) and (2,4)), is the corridor designed for Start positions near the top rows when fire occupies the middle rows. The safe corridor logic is consistent with the KAG’s Top-edge corridor definition and the fact that moving along the top edge avoids stepping near the central fire cluster.
+- Summary: The earliest wrong decision was the initial RIGHT move from (2,0) to (2,1) instead of the safer UP move toward the Top-edge corridor (to (1,0)).
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode observed: fire_collision. The episode ended by entering a FIRE tile (3,2). The KAG defines fire_collision as “Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this (start, goal, fire-placement) configuration.”
+- Grounding in observed data:
+  - Fires were placed at (2,4), (3,2), (3,3). The agent started at (2,0) and aimed for (0,3). The central fire cluster (especially (3,2) and (3,3)) blocks straightforward paths in the lower-middle region.
+  - The Top-edge corridor provides a fire-free route: (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3). This corridor avoids the central hazard cluster entirely, and would finish on the GOAL at (0,3) without stepping on a FIRE tile.
+  - The initial policy deviation (Step 0: RIGHT to (2,1)) took the agent into a route that is not part of the demonstrated safe corridor and makes later avoidance of the central fires more error-prone. The subsequent plan (up to (1,1)) suggests some intent to approach a safe path, but the actual end-state terminated on a FIRE tile, indicating failure to robustly generalize fire-avoidance across randomised fire placements.
+- Dynamic config context:
+  - DynamicConfig randomizes start, goal, and fire placements per episode, with min_start_goal_manhattan = 4. This requires the policy to generalize across configurations. The failure indicates insufficient exposure to fire-avoidance demonstrations across similarly arranged fire configurations, especially those where a top-edge corridor would be safest.
+  - The architecture constraints (CellAlignedEncoder, UNet1D, DDPM inference horizons) rely on demonstrations to encode safe routes around hazards. The absence of a corrective demonstration emphasizing the Top-edge corridor (which would have prevented stepping into (3,2)) is consistent with the fire_collision outcome.
+- Synthesis: The root cause is inadequate generalization of fire-avoidance under dynamic fire placements, compounded by an initial non-corridor-aligned exploration (step 0) that permitted hazard proximity to central fires. The chosen corridor (Top-edge) would have avoided all listed fires; not choosing it constitutes a policy failure under the dynamic, randomized-fire setting.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- Primary verdict (Rank 1): fire_collision
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: Same Top-edge corridor demonstrated with a slight start-offset (e.g., starting at (1,0)) to show robustness to small start-position changes.
+rationale: 'Top-edge corridor: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It fails along the Top-edge corridor scenario. The problematic decision happening at the start is not moving Up toward the top edge; instead it veers into the middle region, risking fire hazards.
+2. WHAT should a good walkthrough look like in that area? A correct walkthrough uses the Top-edge corridor: from (2,0) go Up to (1,0), Up to (0,0), then move Right along the top row to (0,3), reaching the goal without stepping on a fire tile.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer top-edge traversal when fires cluster in the middle rows, avoiding central hazards by staying on the top row and only then moving toward the goal.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for a local failure; the variation described is a single additional note showing a slight start-offset (e.g., starting at (1,0)) to indicate robustness to small start-position changes within the same Top-edge corridor strategy.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)>
+n_demos: 1
+demo_variations: Path along the right-edge corridor: stay on the top row to column 4, then descend to the goal along the right edge.
+rationale: The selected corridor matches the KAG corridor fact 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.', which prescribes the right-edge corridor path to avoid central fires for this start/goal configuration.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the top-right-to-central area, specifically around the central fire at (2,3). It would otherwise benefit from following the right-edge corridor (right_edge) that guides it along the top edge and down the right edge rather than veering into the central hazard.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough is to stick to the top edge: move right along the top row from (0,0) to (0,4), then drop down along the rightmost column to reach the goal at (2,4). In coordinates: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid central hazards by following the right-edge corridor strategy, i.e., use the top-edge path to the far-right and then descend along the right edge to the goal, which minimizes exposure to fires in configurations like this.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use a single, targeted demonstration that follows the right-edge corridor as described: “Path along the right-edge corridor: stay on the top row to column 4, then descend to the goal along the right edge.”

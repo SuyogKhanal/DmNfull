@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)
+n_demos: 1
+demo_variations: Same fire layout; demonstrates reaching the top-edge corridor early (via (0,3)) and then traversing left along row 0 to the goal.
+rationale: 'Top-edge corridor: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to drift toward non-top-edge routes when fires block straightforward progress, so the critical area is the transition region toward the top edge where a top-edge corridor would be safer.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough keeps the agent aiming for the top edge once it reaches the row 0 vicinity, then travels left along row 0 to the goal. In the provided path, that means moving up to row 0 at (0,3) and then continuing left to (0,0) using the top-edge corridor.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer a fire-avoidance corridor strategy (top_edge) when fires block simpler progress, committing to reaching the top edge and then sweeping left toward the goal rather than wandering into risky center zones.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this largely local failure; variation could be added in future rounds by testing small start-offsets or slight re-sequencing of the initial moves, but this round focuses on the core top-edge corridor demonstration described above.

@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: Minor start-offset variations within the top-right region (e.g., start at (3,4) or (4,3)) with the same top-edge corridor path to demonstrate robust fire avoidance
+rationale: Top-edge corridor is selected because 'Stay in row 0 while traversing to the goal column, then descend along that column' directly prescribes the safe path given the fire placements in this episode
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI would typically misbehave by trying paths tied to the left-edge or right-column routes, which risk stepping on fires (e.g., the fire at (4,0) would block a left-edge plan, and the fire at (1,2) can block a right-column plan). The chosen corridor in this demo is the top_edge, which keeps the agent on the top edge to avoid central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (4,4), move Up along column 4: (3,4) -> (2,4) -> (1,4) -> (0,4). Then traverse left along the top row: (0,3) -> (0,2) -> (0,1) -> (0,0). Finally descend one step to the goal: (1,0). This path stays on the top edge for the bulk of the route and only drops down at the very end to reach the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn a robust corridor-choosing heuristic: when central fires block other routes, prefer the top-edge corridor that moves along the top row first, then descends to the goal. This demonstrates avoiding hazards by exploiting the safe edge and then completing the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration uses the top-edge corridor path. Variations (described in demo_variations) are minor start-offsets within the top-right region, such as starting at (3,4) or (4,3) but following the same top-edge path to show robustness to small changes in start position.

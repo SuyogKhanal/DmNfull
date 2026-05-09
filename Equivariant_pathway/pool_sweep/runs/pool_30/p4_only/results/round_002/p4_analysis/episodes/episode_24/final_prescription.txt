@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1)
+n_demos: 1
+demo_variations: Baseline demonstration following the left-edge corridor detour along the bottom row to the goal
+rationale: This corrective demonstration adheres to the left_edge corridor strategy to avoid central fires and addresses the earliest misstep by detouring along the bottom row before ascending, as described in the KAG fact: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column; ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets stuck in the left-edge corridor area logic, specifically failing to stay safely away from central fires when starting near the bottom-right and aiming for (2,1); the chosen corridor in FINAL_REC is left_edge, and the early misstep occurred by moving upward into a hazardous column.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe, bottom-row-first detour along the left-edge corridor: start at (4,4), move left along the bottom row to (4,1), then go up to (3,1) and finally reach the goal at (2,1). This path stays largely along row 4 and avoids stepping on central fires like (2,4) and (3,2).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- The AI will learn to prefer detours that keep progress on safe corridors (here, the bottom row via the left-edge corridor) to avoid central fire hazards, improving its fire-avoidance generalization under dynamic fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, with one baseline demonstration described in demo_variations. If more coverage were needed later, you could add a second variant that slightly alters the safe detour depth or starting orientation, but for this failure type a single targeted left-edge corridor demonstration suffices.

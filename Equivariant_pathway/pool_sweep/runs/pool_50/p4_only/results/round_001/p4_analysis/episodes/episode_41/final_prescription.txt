@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,1)->(4,0)->(3,0)->(2,0)->(1,0)->(0,0)->(0,1)->(0,2)
+n_demos: 1
+demo_variations: Left-edge corridor demonstration with a left-first join to column 0, then vertical climb to the top and across to the goal.
+rationale: 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.' explains the left_edge choice, which avoids central fires at [2,1], [2,2] and the top fire at [0,3] in this episode.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens when the agent contends with central fires, particularly around the central region (fires at [2,1] and [2,2], and also near the top fire at [0,3]); the safe corridor to avoid this cluster is the left_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at [4,1], take a left to [4,0], then head upward along the first column: [3,0], [2,0], [1,0], [0,0], then move right along the top row: [0,1], [0,2] (the goal). This path mostly stays in column 0 (the corridor) and avoids stepping on any fire.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to favor the left-edge corridor when central fires are present, by hugging the leftmost column first, then moving across the top row to reach the goal, thereby avoiding known fire tiles in the central region.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, since this failure is local to a single corridor configuration. The variation described in demo_variations specifies the left-edge, left-first approach to join column 0 and then proceed to the goal; if more robustness is needed later, you could add similar demonstrations with small changes in start orientation or minor path detours that still avoid central fires.

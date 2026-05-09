@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: single left-edge corridor demonstration; potential variations would include slight start-offsets or alternate fire-side preferences along the same corridor
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to head toward the central fire cluster from the starting area [1,1], moving toward [1,2] and then into [1,3], which risks stepping on a fire tile. The safe region this failure should gravitate toward is the left_edge corridor (column 0 path) that stays away from the central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust walkthrough would hug the left edge: start at [1,1], move left to [1,0], then descend down column 0 through [2,0], [3,0], and reach [4,0]. From there, move right along the bottom row to [4,4], then climb up the final column to the goal at [0,4], avoiding all fire tiles on [0,2], [1,3], and [2,1].
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to follow a fire-avoidant corridor strategy (the left-edge corridor) that keeps it out of central hazards and still progresses toward the goal, generalizing hazard avoidance across different per-episode fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, with a single left-edge corridor demonstration. If more demonstrations were added, variations would include slight start offsets within the top-left region and alternate fire-side preferences along the same corridor to cover nearby configurations.

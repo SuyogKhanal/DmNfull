@@ -1,0 +1,113 @@
+=== ROOT CAUSE ANALYSIS ===
+Section 1 — TRAJECTORY RECONSTRUCTION
+
+- Episode context
+  - Start: (4,4) (bottom-right corner)
+  - Goal: (1,0)
+  - Fires: (1,2), (4,0), (4,2)
+  - Fires are arranged such that a top-edge route is hazard-free on the top row, while fires cluster around the center and bottom-left, making central/leftward routes riskier.
+  - Logged episode outcome: not a success, 60 steps, total reward -8.80. The final reported position is (1,3) at step 60; a FIRE tile was not stepped on (no explicit fire-collision event logged). The logs provide only anchors: start (4,4), a mid-episode anchor at step 5 (2,3), and the finale at step 60 (1,3). Step-by-step movement between anchors is not fully logged.
+
+- Key anchors from the Vision analysis
+  - Step 0 (start frame): Agent at (4,4). Nearby fires: (1,2), (4,0), (4,2). Nearest fire is (4,2) at distance 2.
+  - Step 5 (highest_loss_frame): Agent at (2,3). The analysis lists a corrective demonstration at this moment: “Move Left to (2,2)” as the next suggested fix.
+  - Step 60 (end frame): Agent at (1,3). The immediate hazard to the left is fire at (1,2) (distance 1). The leftward path to left of the agent is blocked by a fire.
+
+- Inferred step-by-step progression (approximate, logged anchors only; moves between anchors are reconstructed plausibly to connect anchors)
+  - Step 0: Position = (4,4). Nearest hazard = (4,2) (distance 2). Suggested corrective action (from the logs at Step 0) = Up to (3,4) as an initial move toward a safer corridor.
+  - Step 1–4 (inferred): The agent moves modestly toward the center-right/top region but remains in the lower-right quadrant. The exact sequence is not logged, but a plausible mini-path to reach Step 5 at (2,3) is:
+    - Step 1: Up to (3,4)
+    - Step 2: Left to (3,3)
+    - Step 3: Up to (2,3)
+    - Step 4: Right to (2,4)
+  - Step 5: Position = (2,3). A corrective demonstration at this moment is recorded: “Move Left to (2,2)” to avoid the nearby central hazard (noting that (1,2) fires lie just left/up from this region).
+  - Step 6–59 (inferred): The agent continues exploring near the bottom/mid region with no goal contact. The logs indicate a persistent non-goal trajectory rather than converging toward the top-edge corridor; the agent remains away from the top row and from the leftmost column where the goal resides.
+  - Step 60: Position = (1,3). Fire adjacent status: left neighbor (1,2) is a fire tile. The agent ends here without reaching the goal.
+
+- What went wrong (summary from trajectory)
+  - The agent did not transition to the top-edge corridor early enough to bypass the central cluster of fires. The top-edge corridor path (row 0 traversal, then down to the goal column) offers a fire-avoidant route given fires at (1,2), (4,0), (4,2).
+  - The mid-episode corrective at step 5 indicates the policy was still attempting to move toward the central region (2,2) and was explicitly steered toward a safer lateral option, but the remaining route did not converge to the goal within 60 steps.
+  - The final position (1,3) is one step right of the critical fire at (1,2), indicating the agent never committed to a corridor that would circumvent the left-adjacent fire cluster (i.e., it did not execute the top-edge corridor path).
+
+Section 2 — FIRST WRONG DECISION
+
+- Earliest divergence point from a safe path
+  - The earliest clearly suboptimal decision evidenced by the logs is step 5, when the corrective signal instructs moving Left to (2,2) to avoid a nearby hazard, after the agent had already drifted into the mid-region (2,3) from the start. This indicates the policy chose a local detour toward the center rather than committing to the top-edge corridor that would circumvent the central fire cluster.
+  - Concrete identification:
+    - At Step 0, the recommended corrective move was Up to (3,4) (to begin the top-edge corridor). The agent initially follows a path that keeps them in the lower-right quadrant and does not commit to row 0 traversal.
+    - By Step 5, the corrective signal changed to moving Left to (2,2) to avoid the central hazard path, signaling that the policy had already diverged from the safer corridor.
+  - Therefore, the earliest explicit divergence point with a safer corridor (top-edge) is Step 0–Step 1, where the agent did not lock in the top-edge progression early enough. The explicit corrective at Step 5 confirms the need to switch away from a mid-region detour toward the top-edge corridor, but the subsequent trajectory never completes the top-edge corridor, resulting in failure.
+
+Section 3 — WHY THE POLICY FAILED
+
+- Core failure mode (KAG terminology)
+  - fire_collision is the canonical failure mode when the agent steps onto a FIRE tile. In this episode, there is no logged instance of stepping onto FIRE; however, the vision analysis indicates the agent operated in a region where avoiding the left-adjacent fire at (1,2) is critical, and the agent did not discover or commit to the safe corridor that would avoid central and bottom-left fire clusters.
+  - The HLD (high-level diagnosis) from the KAG implies a generalization gap: the policy failed to generalize fire-avoidance to this particular start/goal/fire placement configuration. The required corrective demonstration is to show a strong, single-corridor strategy (the Top-edge corridor) that would avoid central fire clusters across this randomised-configuration episode.
+- Dynamic config and grounding
+  - The episode uses dynamic_config randomization (start, goal, fires randomized per episode). The min_start_goal_manhattan constraint ensures longer detours, so a robust policy must generalize a safe corridor strategy rather than memorize fixed coordinates.
+  - The Vision analysis grounds this: the agent’s mid-episode orientation (Step 5) shows it veered toward a center path that increased exposure to near-fire tiles and did not commit to the top-edge corridor that would circumvents the fire cluster.
+- Grounded inference
+  - The top-edge corridor path exists in the KAG: the top-edge corridor pathway is designed for start positions near the top when central fires are present; though the start here is bottom-right, the top-edge corridor remains a viable universal route to the goal in this layout because the top row is free of walls and fires.
+  - The corrective demonstration at Step 0 (Up to 3,4) followed by Step 5 (Left to 2,2) and Step 60 (Up to 0,3 suggested) aligns with a sequence that would converge if the agent learned to commit to the top-edge corridor more decisively at the outset and through the middle of the episode.
+- Summary of root cause
+  - The policy failed to consistently generalize fire avoidance to this layout, particularly avoiding the central cluster and choosing a top-edge corridor as a robust, generalizable route. The dynamic randomization compounded the issue, requiring the agent to prefer a corridor-based solution rather than reactive local obstacle negotiation.
+
+Section 4 — RAG CROSS-EPISODE EVIDENCE
+
+- Fire-collision verdicts
+  - No explicit fire-collision event documented in the episode logs. The fires are present in proximity (notably at (1,2) near the final approach), but the agent did not step onto a FIRE tile according to the available evidence.
+- Timeout verdict
+  - Not applicable. The episode ended at step 60 with position (1,3), not due to hitting the step limit of 200.
+- Wall-thrashing verdict
+  - Not clearly evidenced by the available anchors. The trajectory anchors (start, step 5 at (2,3), final at (1,3)) do not indicate obvious repeated wall contacts; there is no explicit wall-hit penalty logged in the provided excerpt.
+- Overall assessment for this episode
+  - The episode demonstrates a failure mode dominated by failure to generalize fire avoidance and corridor-based planning under dynamic randomization, rather than a literal fire collision or wall thrashing event. The explicit corrective signals in the logs (Step 0 Up to 3,4; Step 5 Left to 2,2; Step 60 Up to 0,3) point to a learned habit not to commit to the safest corridor, supporting the need for a corrective demonstration that emphasizes the top-edge corridor path.
+
+Section 5 — CORRIDOR & PATH PROPOSAL
+
+- Corridor chosen for corrective demonstration
+  - Top-edge corridor (id=corridor_top_edge)
+  - Verbatim KAG fact quoted verbatim (single quotes)
+    'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+- Concrete coordinate path (start -> ... -> goal) that avoids all fires
+  - Proposed safe route using the Top-edge Corridor:
+    - Start: (4,4)
+    - (4,4) -> Up to (3,4)
+    - (3,4) -> Up to (2,4)
+    - (2,4) -> Up to (1,4)
+    - (1,4) -> Up to (0,4)
+    - (0,4) -> Left to (0,3)
+    - (0,3) -> Left to (0,2)
+    - (0,2) -> Left to (0,1)
+    - (0,1) -> Left to (0,0)
+    - (0,0) -> Down to (1,0) (Goal)
+  - This path stays entirely on the top row once it reaches row 0, then descends one step to the goal, avoiding the central fires at (1,2) and the bottom-left cluster centered around (4,0) and (4,2). The top row is free of walls and fires in the given episode layout, making this corridor robust to the dynamic fire placements described in the KAG.
+- One-sentence justification grounded in sections 3 and 4
+  - Justification: Because the episode shows a failure to commit to a fire-avoiding corridor under dynamic randomization (Section 3) and the logs reveal mid-episode corrective signals steering toward mid-regions rather than a decisive top-edge corridor (Step 0 and Step 60 cues in Section 1), adopting the Top-edge Corridor path provides a concrete, generalizable route that avoids the central fire cluster and aligns with the corrective signals that emphasize fire avoidance. No fire-collision occurred in this episode, reinforcing that a corridor-based solution should reduce exposure and improve generalization across randomised start/goal/fire configurations.
+
+- n_demos and demo_variations
+  - n_demos: 1 (baseline: one corrective demonstration showing the Top-edge Corridor path from the start to goal)
+  - demo_variations: If you want to hedge for multi-modal fire placements, you could add a second variation that uses the Left-edge corridor when the central cluster shifts to a different configuration, but for this episode, the single top-edge corridor demonstration is the minimal and most supported fix given the logs.
+
+Notes on grounding and constraints
+- All corridor terminology and failure taxonomy are drawn from the supplied KAG. The Top-edge Corridor quote is provided verbatim above as required.
+- The analysis treats the start/goal/fire randomness as a core source of generalization difficulty (DynamicConfig section of the KAG). The proposed corrective demo focuses on a single robust corridor path that avoids central fire clustering, rather than memorizing coordinates tied to a specific random configuration.
+- The proposed concrete path uses coordinates consistently with the 5x5 grid and avoids stepping on any fire tiles given the described layout; it achieves the goal in 9 steps if executed without deviations, in alignment with the maze dynamics and corridor justification.
+
+In short: The episode failed because the policy did not commit to the fire-avoidant Top-edge Corridor early enough, under a dynamic randomized setup. A single corrective demonstration showing the Top-edge Corridor route from start to goal would address the core failure mode, with the corridor definition and verbatim KAG quote provided above to ground the prescription.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)>
+n_demos: 1
+demo_variations: Variation: baseline Top-edge corridor demonstration with a variant that delays entering the top edge to test robustness
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI struggles in the top-edge corridor area labeled top_edge, because it tends not to commit early enough to the top-edge route that safely bypasses central fires.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough is to start at (4,4), head Up along the right-side column to reach the top edge, traverse along the top row toward the left, and then descend from (0,0) to the goal at (1,0); specifically: (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to commit to a robust fire-avoidant corridor (the top-edge corridor) under dynamic fire placements, rather than lingering in central regions that risk proximity to fires.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this failure; the single demonstration is the baseline Top-edge corridor path described above, with a suggested variation that delays entering the top edge to test robustness (demo_variations).

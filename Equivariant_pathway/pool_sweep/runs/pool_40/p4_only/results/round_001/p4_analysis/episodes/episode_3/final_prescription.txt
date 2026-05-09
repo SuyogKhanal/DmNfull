@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(3,3)
+n_demos: 1
+demo_variations: Left-edge corridor demo with fixed start (0,2) and goal (3,3); no variation
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column' justifies selecting the left-edge corridor to avoid fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure happens when the agent considers a central descent that would eventually step onto a FIRE tile at (3,2). The left-edge corridor is the safe alternative suggested by the KAG, avoiding central hazards.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the left-edge corridor: start at (0,2), move left to (0,1) then to (0,0), descend down column 0 to (4,0), travel right along row 4 to (4,3), and finally move up to the goal at (3,3). This path avoids the known fires at (0,3), (2,4), and (3,2) and reaches the GOAL tile.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn a hazard-avoidance strategy that generalizes to randomized fire placements by preferring a safe corridor (left_edge) rather than a central vertical descent, improving robustness to dynamic hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1, using a single left-edge corridor demonstration with fixed start/goal. No variation is used here because the failure is a localized hazard placement, and this demonstration directly teaches the necessary hazard-avoidance behavior.

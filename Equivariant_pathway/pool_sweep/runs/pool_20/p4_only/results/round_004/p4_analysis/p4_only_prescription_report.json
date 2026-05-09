@@ -1,0 +1,165 @@
+{
+  "profile": "p4_vlm_reasoning_kag_cross_plain_llm.yaml",
+  "label": "p4_only",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_20/p4_only/results/round_004/correction_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_20/p4_only/results/round_004/p4_analysis",
+  "n_failures": 2,
+  "test_layout_failures": [
+    {
+      "episode_id": 0,
+      "maze_name": "heldout_001",
+      "start_pos": [
+        4,
+        4
+      ],
+      "goal_pos": [
+        1,
+        0
+      ],
+      "fire_positions": [
+        [
+          1,
+          2
+        ],
+        [
+          4,
+          0
+        ],
+        [
+          4,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 16,
+      "maze_name": "heldout_017",
+      "start_pos": [
+        1,
+        3
+      ],
+      "goal_pos": [
+        4,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 3,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              4,
+              4
+            ],
+            "goal_pos": [
+              1,
+              0
+            ],
+            "fire_positions": [
+              [
+                1,
+                2
+              ],
+              [
+                4,
+                0
+              ],
+              [
+                4,
+                2
+              ]
+            ],
+            "n_repetitions": 2,
+            "rationale": "path_description=Stay in row 0 while traversing to the goal column, then descend along that column."
+          }
+        ],
+        "rationale": ""
+      },
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              1,
+              3
+            ],
+            "goal_pos": [
+              4,
+              0
+            ],
+            "fire_positions": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                4,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "top_edge_fire_collision",
+        "episodes_in_cluster": [
+          0
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "top_edge",
+        "where_it_fails": "Top-edge corridor region during fire placements that block shortcuts; agent fails to commit to top-edge path and encounters fire hazards.",
+        "what_it_does_wrong": "Inability to consistently stay on the top-edge corridor when central/top fires are present, leading to fire collisions.",
+        "source_final_recs": [
+          "top_edge"
+        ]
+      },
+      {
+        "cluster_label": "left_edge_fire_collision",
+        "episodes_in_cluster": [
+          16
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "Left-edge corridor region when fires are placed near the top area; agent strays from left-edge into risky top-area routes and hits fire hazards.",
+        "what_it_does_wrong": "Fails to maintain traversal along the left-edge column, resulting in fire collisions when attempting to descend to the goal.",
+        "source_final_recs": [
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}

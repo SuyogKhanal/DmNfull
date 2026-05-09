@@ -1,0 +1,44 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode context: 5x5 dynamic maze. Start: (1,3). Goal: (4,0). Fires at (0,1), (0,3), (4,1). Reward signal: hitting a FIRE tile yields -10.0; each step -0.1; goal would yield +10 if reached. The episode ended after 5 steps with total reward -10.50 (suggesting one FIRE hit occurred on the final step).
+- Observed step-by-step path (inferred from the provided trajectory summary and the final end state):
+  - Step 0 (start): Position (1,3).
+  - Step 1: Move DOWN to (2,3).
+    - Reasoning in the analysis notes: immediate north cell is a FIRE at (0,3); moving down avoids the hazard.
+  - Step 2: Move DOWN to (3,3).
+  - Step 3: Move DOWN to (4,3).
+  - Step 4: Move LEFT to (4,2).
+  - Step 5: Move LEFT to (4,1) which is a FIRE hazard; episode terminates with FIRE_PENALTY and end-state at a FIRE tile.
+- Observed consequences: After 5 steps, the agent had not reached the GOAL; incurred a FIRE penalty (-10) plus step penalties, totaling -10.50. Final position reported as not available, consistent with termination on a fire tile.
+- Grounding notes from the Vision Analysis:
+  - Immediate hazard near the start is the FIRE at (0,3) directly north of the start.
+  - Nearest fires: (0,3) at distance 1, (0,1) at distance 3, (4,1) at distance 2 from the later positions; the strategy converges toward the bottom-right area, ultimately passing near (4,1) where a fire is located.
+  - The earliest corrective demonstration moves suggested were: (a) DOWN to (2,3) from the start, and (b) further DOWN to (3,3) to avoid the nearby top-fire and progress toward the goal.
+
+2) FIRST WRONG DECISION
+- Earliest misstep in the observed trajectory: Step 5, action Left from (4,2) to (4,1).
+- Why this is the first wrong decision:
+  - Up to Step 4, the agent was in (4,2). The adjacent safe options were:
+    - Up to (3,2) (safe)
+    - Right back to (4,3) (often retracing)
+    - Left to (4,1) (a FIRE tile)
+  - The action chosen at Step 5 was Left into (4,1), a FIRE tile, rather than taking a safe alternative such as Up to (3
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: left-edge corridor demonstration: go from start to column 0, then descend to (4,0) avoiding all fires
+rationale: 'Left-edge corridor: path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tends to venture toward the central/right area and can end up stepping onto a fire tile (like at (4,1)) when trying a bottom-right liquidation. The suggested remedy centers on the left-edge corridor (left_edge) to avoid those hazards.
+
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough is: from the start (1,3), move left to (1,2), then to (1,1), then to (1,0); then descend straight down the leftmost column to the goal at (4,0): (2,0) -> (3,0) -> (4,0).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to favor a left-edge corridor strategy when hazards are placed in or near the central or bottom regions, demonstrating a safe, hazard-avoiding path to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this local failure; variation would involve different but equivalent left-edge paths or small start/goal perturbations in later rounds, but for this iteration only one demonstrates the safe left-edge route.

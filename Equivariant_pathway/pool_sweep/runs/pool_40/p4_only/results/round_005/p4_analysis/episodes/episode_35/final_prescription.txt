@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)>
+n_demos: 1
+demo_variations: None (single corrective demonstration suffices)
+rationale: This corridor choice directly implements the left-edge path to avoid central fires, as described by the KAG corridor fact: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It tries to follow a top-row approach and then drops into a central fire when near the (0,2)/(1,2) area, instead of staying on the left-edge corridor (leftmost column) as advised by the left_edge strategy.
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough keeps to the left edge: from (0,4) move left along the top row to (0,0), descend the left edge to (4,0), then move right along the bottom row to (4,2), and finally go up to the goal at (2,2). The exact demonstration path is (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (3,2) -> (2,2).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize and stick with the left-edge corridor strategy to avoid central fire hazards, improving fire-avoidance generalization across randomized start/goal/fire configurations.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1; Variation = None — a single targeted demonstration suffices for this specific failure mode.

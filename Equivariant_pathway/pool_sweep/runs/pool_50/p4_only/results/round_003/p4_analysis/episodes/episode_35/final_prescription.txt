@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)>
+n_demos: 1
+demo_variations: Variation: same left-edge corridor but with an alternate final approach via (3,0)->(3,1)->(2,1)->(2,2) to reach the goal.
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI trips up while trying to follow a top-edge/partial left-edge route and ends up stepping onto a fire tile at (1,2), instead of sticking to the left-edge corridor path that would keep it away from central fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe left-edge corridor walkthrough would start at (0,4), move along the top edge to (0,0), descend straight down column 0 to (4,0), then travel along row 4 to (4,2), and finally step up through (3,2) to reach the goal at (2,2). An acceptable variant could route to the goal via a slightly different final turn within the left-edge vicinity, e.g., (3,0)->(3,1)->(2,1)->(2,2).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer a fire-avoidant corridor strategy, especially staying near the left edge when central fires are present, and to maintain long-horizon planning that keeps away from known hazard clusters.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the single left-edge corridor walkthrough as the core demonstration, with the one-line variation describing a slightly alternative but still safe final approach to highlight robustness within the same corridor.

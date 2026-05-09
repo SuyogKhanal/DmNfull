@@ -1,0 +1,84 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode anchors (from provided logs):
+  - Start position: (row, col) = (1, 3)
+  - Fires: (0,1), (0,3), (4,1)
+  - Goal: (4,0)
+  - Episode progression: total steps = 60, final position not provided
+  - Key frames inferred from the vision report:
+    - start_frame (step 0) = at (1,3)
+    - highest_loss_frame (step 3) = at (2,3)
+    - end_frame (step 60) = at (3,3)
+
+- What these anchors imply about the agent’s route:
+  - From the start (1,3), the fire directly above at (0,3) is a dead hazard; the immediate safe neighborhood is Right (1,4), Left (1,2), or Down (2,3). Upward would terminate the episode if attempted.
+  - The vision guidance explicitly notes a first corrective demonstration: move left to (1,2) (to reduce distance to goal and avoid the nearby fire above).
+  - By step 3 the agent is at (2,3) (indicating at least a minor detour or a brief forward movement away from the start region). By step 60 the agent’s position is (3,3), which is still far from the goal at (4,0).
+  - There is no step-by-step log for every move, so the exact sequence between anchors is uncertain. The available anchors strongly suggest multiple exploratory moves in the central area without ever committing to the low-fire corridor all the way to the goal.
+
+- Plausible reconstruction that aligns with anchors (one coherent, conservative path consistent with the anchors):
+  - Step 0: at (1,3)
+  - Step 1: corrective demo path would be Left to (1,2) (as given)
+  - Step 2: down to (2,2) (to shift toward the lower-left quadrant while avoiding the top-row fires)
+  - Step 3: right to (2,3) (matching the highest_loss_frame position)
+  - Steps 4–59: exploratory movements around the central area, staying away from (0,3) and (4,1) fires; no decision makes it safely to (4,0)
+  - Step 60: final observed at (3,3)
+
+- Summary verdict of trajectory: The agent starts near the top-middle-right quadrant, avoids the immediate fire above by initial leftward motion in the human-corrected demo, but does not commit to a safe corridor that reaches the bottom-left goal within 60 steps. The path never reaches (4,0) and remains in the central region.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a safe path (with coordinates and action):
+  - Step 1 (starting from (1,3)): Action UP to (0,3) would move into a Fire tile. That is the earliest guaranteed unsafe move given the environment layout.
+  - Correct action in that moment (as suggested by the corrective demo) would be LEFT to (1,2).
+- Rationale:
+  - The immediate danger is the Fire at (0,3) directly above the start. The KAG’s tile semantics say FIRE is a hazard that terminates on entry, so any UP action at step 1 is the wrong decision.
+  - The corrective demonstration explicitly shows LEFT to (1,2) as the safe, distance-reducing option, corroborating that UP would be a wrong choice at the first decision point.
+
+3) WHY THE POLICY FAILED
+
+Grounding from the provided KAG and episode details:
+- Failure mode identified: fire_collision (fm_fire_collision)
+  - Evidence: The start position has a Fire tile directly adjacent. The first decision point (Step 1) has a viable Left option that is not a hazard, but the agent’s initial move risked stepping into a Fire tile (0,3). The vision report flags a corrective demonstration intended to avoid proximity to Fire and steer toward a safe corridor, which implies the policy’s policy-conditioned planning did not previously generalize fire avoidance for this (start, goal, and fire placements).
+- Dynamic randomization and generalization challenge:
+  - The ENVIRONMENT KNOWLEDGE GRAPH describes dynamic randomization: Start, Goal, and Fire placements are randomized per episode (config flags: cfg_rand_start, cfg_rand_goal, cfg_rand_fire). The agent must generalize fire avoidance across these configurations.
+  - The policy has a Stochastic DDPM Inference backbone, a CellAlignedEncoder, a horizons-based observation/prediction scheme, and a UNet1D backbone. These design choices permit stochastic action sampling and local-to-global reasoning, but they still rely on demonstrations to capture safe corridors across random configurations.
+  - The lesson from the collected data in this episode: starting near the top-right quadrant with a Fire at (0,3) and (4,1) demands a competent, consistent use of a corridor strategy to avoid repeatedly encountering Fire and to route toward the goal without stepping onto hazards. The agent appears to fail to discover and follow a safe corridor (e.g., Right-column corridor in this configuration) without an explicit corrective demonstration.
+- Synthesis:
+  - The failure is primarily a fire-avoidance generalization failure under dynamic randomization (fm_fire_collision). The policy did not deduce a robust corridor-based plan that reliably bypasses Fire tiles given the start/goal arrangement in this episode, despite corrective demonstration hints.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- Verdicts:
+  - No retrieved cases available. (No cross-episode retrieval evidence is provided in the prompt.)
+- Grounding:
+  - The episode’s flags indicate a Fire collision without a goal attainment within 60 steps, not a timeout (which would require reaching 200 steps). The absence of a demonstrably successful corridor path in this randomized setup indicates a need for corrective demonstrations targeting fire-avoidance behavior in corridor contexts, as per the KAG’s failure taxonomy.
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor to target: Right-column corridor
+  - Rationale: The agent starts near the top-right area (start at (1,3)); the Right-column corridor is designed for top-right starts when central and bottom-left regions are blocked by fire. Given fires at (0,1), (0,3), and (4,1), a path that uses column 
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(1,3)->(1,4)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)->(3,4)->(3,3)->(3,2)->(3,1)->(3,0)->(4,0)>
+n_demos: 1
+demo_variations: Start from a near-top-right offset (e.g., (1,4)) with the same fire layout to test corridor-based routing.
+rationale: Choose the Right-column corridor because the KAG corridor fact states 'Reach column 4 along the top, then descend column 4 to the goal row.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles to commit to a safe routing plan in the top-right region, i.e., the Right-edge corridor, especially when fires appear near the top (0,3) and bottom-left (4,1). The corrective cue shows that a corridor-based route should be used, but the agent initially risked moving into hazard (step 1 UP into (0,3) in other attempts). The finalized corridor in this block is the Right-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (1,3). Move Right to (1,4), then Up to (0,4), then Down to (1,4), then Down to (2,4), then Down to (3,4). From there, move Down to (4,4), then move Up to (3,4), and finally travel Left along row 3: (3,3) -> (3,2) -> (3,1) -> (3,0), and finish by stepping Down to the Goal at (4,0). This path keeps most steps in the rightmost column (the corridor) while avoiding all known Fire tiles and ending at the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prioritize the right-edge corridor as the safe route when fires block central and top-left regions, and to complete the route by transitioning from the corridor to a safe path that reaches the goal without stepping on hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration uses the Right-edge corridor with a near-top-right starting context. The variation line describes starting from a nearby top-right offset (e.g., (1,4)) under the same fire layout to test corridor-based routing without changing the fundamental hazard arrangement.

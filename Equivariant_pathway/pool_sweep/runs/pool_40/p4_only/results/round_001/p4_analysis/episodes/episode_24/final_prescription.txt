@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1)
+n_demos: 1
+demo_variations: Variant path using the left-edge corridor with a slight detour: (4,4)->(4,3)->(3,3)->(2,3)->(2,2)->(2,1)
+rationale: Chosen to exploit the left-edge corridor as described by 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.' to avoid the central hazards and guide the agent along the bottom row toward the goal.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It runs into trouble when confronted with a fire tile directly above a key position, specifically trying to move from (3,4) to (2,4); the relevant corridor being used is the left_edge corridor.
+2. WHAT should a good walkthrough look like in that area? A safe path that stays along the bottom row to avoid the immediate fire, then moves up the left side toward the goal: (4,4) -> (4,3) -> (4,2) -> (4,1) -> (3,1) -> (2,1).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to avoid stepping into a fire tile by favoring a bottom-row corridor approach and then ascending along a safe column to reach the goal, improving fire-avoidance generalization in similar start/goal/fire placements.
+4. HOW MANY walkthroughs are needed and how should they vary? 1 demonstration is provided (n_demos = 1); a variation is included as a second path (demo_variations) that slightly detours within the same corridor (4,4)->(4,3)->(3,3)->(2,3)->(2,2)->(2,1) to expose the policy to a different safe detour while still avoiding fires.

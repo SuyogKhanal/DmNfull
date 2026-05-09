@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (1,4)->(2,4)->(3,4)->(4,4)->(4,3)->(4,2)->(4,1)->(4,0)->(3,0)->(2,0)->(1,0)
+n_demos: 1
+demo_variations: from (1,4) take the right-edge detour down to (4,4), then left along the bottom row to (4,0), and finally up to (1,0) to avoid the central fire at (1,1)
+rationale: 'Right-column corridor: path_description=Reach column 4 along the top, then descend column 4 to the goal row,' enabling a right-edge detour to bypass the central hazard cluster (1,1) as described in the analysis.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI stumbles when trying a leftward detour near the top-right area, eventually colliding with the fire at (1,1) while attempting to progress along the right-side region; the relevant corridor context is the right_edge (right-column corridor).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walk-through is: from the start (1,4), go down the right edge along column 4 to (4,4), then move left across the bottom row to (4,0), and finally go up the left edge to reach the goal at (1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer edge-centered detours when a hazards cluster blocks the straightforward leftward route, recognizing that hugging the outer boundary (right edge, bottom row, then up) can avoid fire tiles like (1,1) and still reach the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single walkthrough demonstrates the safe right-edge detour. If more failures are observed in future rounds, add variations that start at different neighboring cells or adjust the fire cluster to test the same edge-detour principle (e.g., starting from a nearby start position or reshaping the hazard layout while keeping the same edge-detour strategy).

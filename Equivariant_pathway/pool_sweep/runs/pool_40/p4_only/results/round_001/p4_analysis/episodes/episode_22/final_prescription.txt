@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(3,0)->(2,0)->(1,0)->(0,0)
+n_demos: 1
+demo_variations: baseline left-edge ascent path from start to goal
+rationale: Aligns with the left_edge corridor, as justified by the KAG fact: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. Where in the maze does the AI get confused? It drifts off the left_edge corridor early (around step 5) by moving toward interior squares instead of staying on column 0; this deviation from the left-edge corridor is the root cause of the failure.
+2. What should a good walkthrough look like in that area? A straightforward left-edge ascent: from start (4,0) move up to (3,0), then (2,0), (1,0), and finally reach the goal at (0,0), staying on column 0 the whole time and avoiding the fires at (1,1), (3,4), (4,3).
+3. What will the AI learn from seeing that walkthrough? It will learn to rely on and reproduce the left-edge corridor path when starting near the top-left quadrant with central fires, reinforcing safe navigation and avoiding mid-episode interior detours.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1; demo_variations = baseline left-edge path from start to goal; No additional variations for this local failure.

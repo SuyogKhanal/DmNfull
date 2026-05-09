@@ -1,0 +1,42 @@
+VISION REPORT
+Maze=heldout_010 Steps=60 Reward=-8.75 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis for start_frame (step 0)
+
+1) Agent location and adjacent cells
+- Agent at (0,0) (row 0, column 0).
+- Adjacent cells: (0,1) open; (1,0) fire; up/left are out of bounds.
+- No walls nearby; goal not adjacent; there is a fire directly to the south.
+
+2) Goal location and Manhattan distance
+- Goal is at (2,4).
+- Manhattan distance from the start: |2-0| + |4-0| = 6.
+
+3) Fire hazards relative to the agent
+- Fires present at (1,0), (2,3), and (3,0).
+- Immediate hazard: (1,0) directly south of the agent.
+- Other fires are farther away (two steps south at (3,0) and a separate fire at (2,3)); they are not adjacent to the agent in this frame.
+
+4) First corrective demonstration move
+- Action: Move East (to (0,1)).
+- Justification: Avoids the immediate fire at (1,0), reduces the distance to the goal (6 → 5), and starts progressing along a safe path toward (2,4).
+
+--- highest_loss_frame frame step 7 ---
+1) Agent location and adjacent cells
+- Current position: (3,2) (blue agent marker).
+- Adjacent (cardinal) cells: up (2,2), down (4,2), left (3,1), right (3,3). No walls are shown. Fires are at (1,0), (2,3), and (3,0); none of the immediate neighbors are on fire. The closest fire is at (2,3) (distance 2, up-right diagonal), with another at (3,0) also distance 2.
+
+2) Goal location and Manhattan distance
+- Goal is at (2,4).
+- Manhattan distance from the agent: |3−2| + |2−4| = 1 + 2 = 3.
+
+3) Fire hazards relative to the agent
+- Immediate neighbors are safe (none are fires).
+- Fires exist at (2,3) (two steps away) and (3,0) (two steps away); (1,0) is farther (four steps away). Caution is needed not to move toward (2,3) or (3,0) if that would require stepping into a fire.
+
+4) First corrective demonstration move
+- Action: Move Right (from (3,2) to (3,3)).
+- Justification: It advances toward the goal while avoiding the known fires; going up to (2,2) would risk encountering (2,3) on the next step, which is a fire.
+
+--- end_frame frame step 60 ---

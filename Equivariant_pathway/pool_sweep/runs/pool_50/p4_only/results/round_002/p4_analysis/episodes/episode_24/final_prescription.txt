@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1)
+n_demos: 1
+demo_variations: Alternative safe detour variant along the left-edge corridor: (4,4)->(4,3)->(3,3)->(2,3)->(2,2)->(2,1) to bypass central fire and still reach the goal
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the left-edge corridor area, specifically with avoiding the near-term fire hazards while heading toward the goal, as illustrated by the misstep into a fire tile in the original reasoning (the hazard near (2,4) and the nearby central fire).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would keep to the safer bottom corridor first, moving from (4,4) to (4,3) to (4,2) to (4,1), then climb up via (3,1) to reach the GOAL at (2,1). This path stays away from the fire tiles and uses the bottom corridor to approach the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid stepping into hazards that are just a couple steps ahead by preferring a detour along the safe corridor (bottom-left area) before advancing toward the goal, improving fire-avoidance generalization within the left-edge corridor.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this local failure. The single demonstration uses the base path along the bottom corridor. A variation is provided in demo_variations to show an alternate safe detour within the same corridor area (slightly different route: (4,4)->(4,3)->(3,3)->(2,3)->(2,2)->(2,1)) to enrich robustness without expanding the loop unnecessarily.

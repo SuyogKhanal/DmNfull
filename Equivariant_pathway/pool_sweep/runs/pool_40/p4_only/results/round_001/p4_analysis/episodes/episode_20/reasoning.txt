@@ -1,0 +1,45 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode setup (from KAG and the given episode block)
+  - Start: (0, 4)
+  - Goal: (4, 4)
+  - Fires: (0,2), (3,0), (4,3)
+  - Total steps observed: 5
+  - Outcome: Failure (not reaching the goal); total reward -10.50
+
+- Step-by-step reconstruction (based on the step summaries and vision prompts)
+  - Step 0 (start): Agent at (0,4). Fires exist at (0,2), (3,0), (4,3). The safe corridor along the rightmost column (col 4) is fire-free in the immediate path to the goal; Manhattan distance to goal is 4.
+  - Step 1: Action taken = DOWN. New position: (1,4).
+    - Reasoning in the analysis: “First corrective demonstration move” to progress along the safety corridor down the 4th column.
+  - Step 2: Action taken = DOWN. New position: (2,4).
+    - Reasoning in the analysis: The second corrective step continues along the same safe corridor toward the goal.
+  - Step 3: Action taken (in the trace-pooled reconstruction): DOWN to (3,4) (consistent with continuing down the right-column corridor).
+  - Step 4: Action taken = LEFT to (3,3).
+    - This is the first divergence from the safe corridor path (the corridor would have you continue DOWN along column 4 to (4,4)).
+  - Step 5: Action taken = DOWN to (4,3) (which is a FIRE tile).
+    - Outcome: Entered a FIRE tile; episode terminates with FIRE_PENALTY. Final position (4,3) is a fire tile, not the goal, hence failure.
+  - Summary of the trajectory: (0,4) -> (1,4) -> (2,4) -> (3,4) -> (3,3) -> (4,3). The only non-fire step sequence from start to the point of failure followed the right-column corridor (steps down along column 4) up to Step 3, after which the agent deviated left to (3,3) and then stepped into a fire at (4,3).
+
+- Key observations from the vision report supporting this trajectory
+  - Step 0: Adjacent checks show no immediate fire; safe corridor along column 4 is fire-free in the direct path to the goal.
+  - Step 1: The agent is at (1,4); the nearest hazard remains non-adjacent
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(0,4)->(1,4)->(2,4)->(3,4)->(4,4)>
+n_demos: 1
+demo_variations: Stay in the right-edge corridor: (0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+rationale: 'Right-column corridor: path_description=Reach column 4 along the top, then descend column 4 to the goal row.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion happens in the top-right region where the agent should stay in the right-edge corridor (column 4). The failure occurred when the agent left that safe corridor (moving from (3,4) to (3,3) and then stepping onto the FIRE at (4,3)).
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough keeps the agent entirely in the right-edge corridor: (0,4) down to (1,4), then (2,4), then (3,4), and finally (4,4) (the GOAL). No deviations into adjacent left cells.
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to follow the safe right-edge corridor to the GOAL in this configuration, reinforcing fire-avoidance within this corridor and reducing the likelihood of drifting into hazardous tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough is provided (n_demos = 1) because the failure is local to one corridor. The variation shown reinforces staying in the right-edge corridor path; additional variations would only be needed if there were more multimodal failure modes.

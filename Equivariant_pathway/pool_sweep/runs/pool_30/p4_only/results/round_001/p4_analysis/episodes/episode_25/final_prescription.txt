@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,3)->(1,3)->(2,3)->(3,3)->(4,3)
+n_demos: 1
+demo_variations: Canonical Top-edge Corridor path: (1,2) -> Up to (0,2) -> Right to (0,3) -> Down through (1,3),(2,3),(3,3) to (4,3)
+rationale: Directly implements the Top-edge Corridor strategy to avoid the middle-fire cluster, citing KAG corridor fact: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI drifts into the central/mid-grid area instead of sticking to the top-edge corridor when fires occupy the middle rows; the intended corridor is the top_edge path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts at (1,2), moves Up to the top edge at (0,2), then Right along the top row to (0,3), and then Descend along column 3 through (1,3), (2,3), (3,3), ending at the goal (4,3). This keeps exposure to fire hazards low by hugging the top edge before descending.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the Top-edge Corridor when middle rows contain hazards, improving fire-avoidance generalization across similar randomised layouts and reducing unnecessary wandering.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the canonical Top-edge Corridor variation described in demo_variations; if later episodes show different safe corridors being blocked, still keep a few additional targeted variants (e.g., Right-column Corridor) to cover other fire configurations, but for this episode one focused Top-edge demonstration suffices.

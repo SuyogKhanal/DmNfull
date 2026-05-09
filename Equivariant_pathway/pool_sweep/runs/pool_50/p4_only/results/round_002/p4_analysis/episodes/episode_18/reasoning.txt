@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: Left-edge corridor demonstration: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+rationale: 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion tends to occur when navigating through the corridor area that would align with the left-edge path (left_edge). In this scenario, the unsafe routes are those that try to hug the left column or the far right/top edges where fire tiles exist; the demonstrated safe route uses the left-edge corridor to avoid stepping on fire.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the left-edge corridor: start at (4,0), move right along the bottom row to (4,3), then go up along column 3 to reach the goal at (0,3). The explicit sequence is (4,0) -> (4,1) -> (4,2) -> (4,3) -> (3,3) -> (2,3) -> (1,3) -> (0,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to a left-edge corridor strategy when starting near the bottom-left region and to complete the route by traversing along the bottom row first and then climbing the final column to the GOAL, thereby avoiding known fire hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- One demonstration is provided (n_demos = 1). It uses the left-edge corridor path; variations are not included here, but if needed later, you could introduce small start perturbations within the same corridor (e.g., a slight offset along the bottom row or alternate but still within the left-edge corridor) to test robustness.

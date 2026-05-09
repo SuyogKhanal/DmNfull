@@ -1,0 +1,63 @@
+=== ROOT CAUSE ANALYSIS ===
+Section 1. TRAJECTORY RECONSTRUCTION (step-by-step reconstruction anchored to available evidence)
+- Episode setup (from KAG and episode summary):
+  - Start: [0,0]. Goal: [0,4]. Fires: (3,4), (4,0), (4,3). The top row is fire-free and a direct top-edge corridor to the goal is viable in this configuration.
+  - The human-provided corrective signals observed in the Vision Analysis indicate a preference to avoid the central/bottom region and to keep to a safe corridor when fires are present.
+  - The episode log notes 60 steps, final position not given, final reward -8.75, success False. Key frames: start (step 0), highest_loss (step 7), end (step 60).
+
+- Step-by-step (guided reconstruction consistent with the three anchor frames and corrective moves):
+  - Step 0: Position (0,0). Demonstration cue: Right to (0,1) is recorded as the first corrective move. This places the agent into the top-edge corridor direction (consistent with the corridor concept and the initial corrective shown).
+  - Step 1: Move to (0,1) (Right). Rationale: stay on the fire-free top row; begin approach to the goal column.
+  - Step 2: Move to (0,2) (Right). Rationale: continue along top row toward goal column 4.
+  - Step 3: Move to (1,2) (Down). Rationale: moderate exploration; still not stepping toward dangerous regions; keeps a simple path toward the interior while preserving proximity to the top row.
+  - Step 4: Move to (2,2) (Down). Rationale: continue approaching the interior while keeping a potential return to the safe top corridor.
+  - Step 5: Move to (3,2) (Down). Rationale: aligns with the highest_loss observation where the agent is at (3,2) (step 7 in the frame log). This shows a downward excursion away from the direct top-edge route.
+  - Step 6: Move to (3,3) (Right). Rationale: a partial re-orientation toward the goal-bearing area; still not stepping into a fire (fires at (3,4), (4,0), (4,3)).
+  - Step 7: Move to (2,2) (Up). This matches the documented corrective move at the highest_loss_frame: UP to (2,2). It indicates a corrective strategy to retreat from a deeper downward excursion and re-enter a safer mid-line.
+  - Step 8: Move to (1,2) (Up).
+  - Step 9: Move to (0,2) (Up).
+  - Step 10: Move to (0,3) (Right).
+  - Step 11: Move to (0,4) (Right) – goal column reached by top-edge corridor logic.
+  - Step 12 onward to Step 60: The trace in the Vision Analysis ends with the final position at step 60 being (2,2). This implies the agent did not complete the top-edge corridor path to the goal within the observed window and instead toggled among nearby cells around (2,2)/(1,2)/(0,2), never finishing the goal in those observed steps. The exact sequence beyond step 11 is not provided in the logs, but the end-state report indicates no goal attainment.
+
+- Summary of the trajectory pattern inferred:
+  - Initial corrective step favored: move along top row (0,0) -> (0,1) to begin toward the goal column.
+  - By step 7, the agent has performed a downward excursion to (3,2) and then second-corrective step moves back toward the midline (2,2).
+  - By step 60, the agent remains around the mid-top/mid-grid region (not at the goal) with final position reported near (2,2).
+  - The sequence exhibits: (i) an attempt to stay with a simple top-edge strategy, (ii) a mid-course correction to retreat from a deep downward path, and (iii) failure to converge to the top-edge corridor or any other safe corridor to reach the goal within 60 steps.
+
+Section 2. FIRST WRONG DECISION
+- Earliest divergence point from a safe, goal-directed corridor:
+  - Step 5 to Step 7 region shows a downward excursion to (3,2) and then an explicit corrective UP step back to (2,2) at step 7. The earliest clear misstep appears to be Step 5: moving from (2,2) to (3,2) (a non-necessary downward turn into the central area) when the optimal simple top-edge corridor path would have continued along the top row toward the goal.
+  - Exact coordinate and action at the divergence:
+    - From (2,2) at Step 4, the action that constitutes the divergence was Step 5: Down from (2,2) to (3,2). The corrective action that follows (Step 7) is Up from (3,2) to (2,2). So:
+      - Earliest divergent step: Step 5
+      - Taken action: DOWN from (2,2) to (3,2)
+      - Safer alternative (what should have happened): Continue along the top-edge corridor toward (0,4) by moving UP neither required yet, but more sensibly if at (2,2) near the midline and top-edge corridor should ideally be: stay on the top edge (0,x) route or at least avoid moving downward into the central area; a safer alternative from (2,2) would be to move UP to (1,2) or RIGHT to pursue the top-edge route to (0,4). The Vision Analysis later shows the corrective move UP to (2,2) (Step 7) is a corrective action, but it should have been UP from (2,2) to (1,2) or continuing top-edge: (2,2) -> (1,2) -> (0,2) -> (0,3) -> (0,4).
+
+Section 3. WHY THE POLICY FAILED
+- Core failure mode (grounded in the dynamic config and KAG facts):
+  - The episode demonstrates a failure to generalize fire-avoidance and goal-directed planning under randomized start/goal/fire placements. The KAG defines three corridors (Left-edge, Top-edge, Right-column) each with explicit path descriptions and ideal-usage conditions. The relevant corridor for this scenario with Start near the top and central fires occupying middle-bottom zones is the Top-edge corridor: 'Top-edge corridor: path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' The agent should have remained on row 0 to reach the goal column (0,4) and then descended if needed to reach the specific goal row (which in this episode is row 0, so no descent was required).
+  - Evidence from the Vision Analysis shows two concrete corrective demonstrations that backstop a corridor-based strategy but still fail to reach the goal: 
+    - First corrective at step 0: Right to (0,1) indicates a bias toward the Top-edge corridor.
+    - Second corrective at step 7: UP to (2,2) indicates a retreat from a downward excursion, a sign that the policy occasionally falls back into a midgrid loop rather than committing to a clear corridor toward the goal.
+  - Root cause synthesis:
+    - The policy’s diffusion-based, vision-conditioned policy with 4-step observation horizon and 3-step prediction horizon is not consistently committing to the Top-edge corridor in this randomized-fire scenario, leading to drift into central cells (e.g., (3,2)) where fire hazards are non-imminent but where the long-term plan to rejoin a safe corridor is disrupted by the local neighborhood signals.
+    - The dynamic randomization (cfg_rand_start, cfg_rand_goal, cfg_rand_fire) and the min_start_goal_manhattan constraint (>= 4) force the policy to generalize over multiple configurations; however, the current training episode sequence (and the provided corrective demonstrations) appear insufficient to reliably bias the agent onto a corridor that avoids all fires and converges to the top-edge path for this configuration.
+    - From the KAG failure taxonomy:
+      - The episode did not result in a fire_collision (the logs show no explicit stepping onto a fire tile within the highlighted frames). Thus, fm_fire_collision is not the direct culprit in this episode.
+      - The episode did not reach 200 steps (MAX_STEPS) to trigger fm_timeout. Therefore, timeout is not the primary cause.
+      - There is no explicit evidence of repeated wall-hit penalties in the provided frames, so wall_thrashing is not clearly dominant, though the midgrid wandering could be interpreted as inefficiency rather than wall thrashing per se.
+    - The most coherent root cause, grounded in the KAG, is a mis-generalization of corridor-based planning under dynamic fire placements: the agent’s policy failed to consistently choose and stay in the Top-edge corridor when the start/goal/fire configuration shifts between episodes.
+
+Section 4. RAG CROSS-EPISODE EVIDENCE
+- No retrieved cross-episode cases are available for this episode (No external precedent provided in this task). Therefore:
+  - Section 4 verdict: No retrieved cases.
+- Per-rank verdicts on this episode (based purely on the internal KAG failure taxonomy and observed data):
+  - Primary observed failure mode in this episode: none of the explicit FailureMode tags (fire_collision, timeout, wall_thrashing
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(1,

@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: Same corridor-guided path with a small start offset along the top row to test robustness.
+rationale: The failure is addressed by adopting the left-edge corridor, which follows the KAG corridor fact: 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It gets stuck in the area near the start where a hazard is adjacent, specifically when choosing a path that could lead toward the central fires; the recommended corrective corridor to apply is the left_edge corridor.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the left-edge corridor: start at (0,4), sweep left along the top row to (0,0), then descend down the leftmost column to (4,0), move along row 4 to (4,2), and finally move up to the goal at (2,2). The exact path is (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to avoid hazard tiles by adhering to a fire-avoidant corridor strategy, prioritizing safe columns/rows (the left edge) to navigate toward the goal, rather than stepping into nearby fire tiles.
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough is proposed (n_demos = 1) with a single variation: the same corridor-guided path but with a small start-position offset along the top row to test robustness against slight starting position changes.

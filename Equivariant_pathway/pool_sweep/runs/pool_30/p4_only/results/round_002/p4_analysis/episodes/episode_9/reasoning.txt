@@ -1,0 +1,36 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Anchor facts from the episode
+  - Start: (0,0). Immediate south neighbor is a FIRE tile at (1,0); east neighbor (0,1) is FREE; north/west are walls due to grid boundary.
+  - Fires for this episode: (1,0), (2,3), (3,0).
+  - Goal: (2,4).
+  - Episode outcome: failure (60 steps, total reward -8.75); no final position reported in the log here, but the Vision report states the end-frame position (2,2) and notes that the nearest fire is at (2,3) to the east.
+  - The human corrective demonstration (provided by the analysis prompt) recommended: first step = Right (0,0 -> 0,1); later, from (2,2) a corrective move Up (2,2 -> 1,2) to access the open corridor toward the goal while avoiding the fire at (2,3).
+
+- Plausible step-by-step trajectory (inferred, not logged, but anchored to the available facts)
+  - Step 0: Position (0,0). Observation confirms: (0,1) is free, (1,0) is fire. Recommended safe exploration is to move along the top row to avoid the adjacent fire at (1,0).
+  - Step 1: Action likely followed the corrective cue
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: Start at (0,0) and move along the top edge to (0,4) then descend to (2,4); a minor variant could delay the first move but still follow the same top-edge corridor.
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI tends to stumble around the central area near the fire at (2,3) and can end up near (2,2) rather than using a safe route; the top-edge corridor is chosen to avoid that central hazard.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough uses the top edge: start at (0,0), move right along the top row to (0,4), then descend down the far-right column to the goal at (2,4). This keeps away from the fires at (1,0) and (2,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer staying on the top edge first to reach the goal while avoiding central fires, then drop down along the edge to reach (2,4).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1; the variation describes the same top-edge corridor with a minor possible delay before the first move, reinforcing the same safe route without introducing a second distinct path.

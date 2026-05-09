@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: Variant with a near-top-right start offset (0,3) that still uses the right-column corridor detour: (0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)->(2,2)
+rationale: Right-column corridor detour to bypass central fires, per KAG: 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the top-right region when central fires block the direct path, leading it to stray off the safe right-edge corridor (the right_edge corridor).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe detour that hugs the right edge: start at (0,4), move down along the rightmost column to (3,4), then step left to (3,3), left to (3,2), and finally up to the goal at (2,2). The actual sequence is: (0,4) -> (1,4) -> (2,4) -> (3,4) -> (3,3) -> (3,2) -> (2,2).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to rely on the Right-column corridor to bypass central fire clusters, and to complete the route by crossing left only after sufficiently hugging the safe edge, avoiding the fires (and reducing the chance of fire_collisions).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos: 1. The variation line suggests a near-top-right start offset to show generalization (e.g., starting at (0,3) and then following the same right-edge detour). This single targeted demonstration teaches the core safe detour while indicating how small start-position changes can be handled within the same corridor strategy.

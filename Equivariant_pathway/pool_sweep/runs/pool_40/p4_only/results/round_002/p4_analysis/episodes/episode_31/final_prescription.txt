@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)
+n_demos: 1
+demo_variations: single demonstration along the left-edge corridor with no variations
+rationale: The episode should be solved via the left_edge corridor to stay along the left edge and then across row 4 toward the goal, consistent with 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the left_edge corridor area near the start (around (2,0)) where nearby fires threaten immediate moves, leading it away from a safe long-run path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough follows the left_edge corridor: start at (2,0), go down the left column to (4,0), traverse along the bottom row to (4,4), then go up to the goal at (1,4) with the exact sequence: (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4). This avoids firing tiles at (1,0), (1,1), and (3,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the left_edge corridor when starting near the top-left with central fires, to stay along the edge early and then cross the bottom row toward the goal, thereby avoiding nearby fires and reaching the goal area.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- 1 demonstration is used here (n_demos = 1) with no variations, focused on teaching the core safe corridor behavior for this exact fire layout. If future episodes show distinct gap patterns, add a separate demonstration for those variations (e.g., different start/goal offsets or different fire placements) but not here.

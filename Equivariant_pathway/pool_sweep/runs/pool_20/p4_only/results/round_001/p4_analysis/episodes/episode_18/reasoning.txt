@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: Single demonstration showing left-edge corridor: initial three steps along row 4 to col 3, then straight-up to the goal (0,3)
+rationale: Left-edge corridor is chosen to avoid known fire hazards as described by the KAG corridor fact: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The issue shown is in the left_edge corridor region: the policy previously risks stepping into a Fire tile if it veers off the safe bottom-row path; the safe route to avoid hazards is the left_edge corridor path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (4,0). Move right along the bottom row to (4,3), then move up the column 3 from (4,3) to (0,3), ending at the goal (0,3). The sequence is: (4,0) -> (4,1) -> (4,2) -> (4,3) -> (3,3) -> (2,3) -> (1,3) -> (0,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid fire by sticking to the safe bottom-row corridor first and then ascending along a safe column to reach the goal, reducing the chance of stepping onto Fire tiles like (0,0), (2,0), or (1,4) in this configuration.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration is the left-edge corridor path described above. If more demonstrations were added later, they would vary small start offsets or alternate safe corridor choices, but this round uses one, targeted walkthrough to address the fire-avoidance failure in this episode.

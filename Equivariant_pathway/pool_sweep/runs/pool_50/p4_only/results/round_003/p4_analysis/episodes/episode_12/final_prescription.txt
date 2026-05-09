@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,4)->(4,3)->(4,2)->(3,2)->(2,2)->(2,1)->(2,0)->(1,0)->(0,0)
+n_demos: 1
+demo_variations: Same left-edge corridor; hazard-avoidance emphasis: prefer Up at the critical juncture to avoid the fire at (3,1).
+rationale: The corridor choice is justified by 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   - In the left_edge corridor area, specifically around step 9 when the agent is at (3,2) and a fire sits at (3,1). The policy momentarily selects LEFT into the fire instead of UP to (2,2).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+   - A safe walkthrough along the left_edge corridor would be: (4,4) -> (4,3) -> (4,2) -> (3,2) -> (2,2) -> (2,1) -> (2,0) -> (1,0) -> (0,0). This path avoids all fires (not stepping on (3,1), (4,1), or (1,4)) and ends at the goal (0,0, the GOAL).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+   - It will learn to generalize fire-avoidance across different fire placements by preferring hazard-avoidant moves (e.g., Up when a fire sits to the left) and to follow a left-edge-oriented progression that reduces risk while pushing toward the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+   - n_demos = 1. The single demonstration emphasizes hazard avoidance within the left_edge corridor. A future iteration could add more variations (e.g., different fire placements relative to the start/goals) to further strengthen generalization, such as slight start offsets or alternate fire layouts while still illustrating the left-edge strategy.

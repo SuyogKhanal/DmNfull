@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,3)->(4,2)->(4,1)->(4,0)->(3,0)
+n_demos: 1
+demo_variations: Variation 1: Same left-edge corridor route starting from a nearby bottom-row start such as (4,2): (4,2)->(4,1)->(4,0)->(3,0)
+rationale: This corridor choice minimizes exposure to the central fire cluster, consistent with the KAG corridor fact 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the left_edge corridor area near the bottom row, where stepping Up early can lead into the central fire cluster. The corrective guidance points to staying on the bottom row and using the left-edge path to reach the goal.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Demonstrate a safe bottom-row route: from (4,3) move left to (4,2), then to (4,1), then to (4,0), and finally up to the goal at (3,0). This keeps the agent on a fire-free corridor before finishing at the GOAL.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the left-edge/bottom-row corridor to avoid central fire hazards, reducing the chance of stepping onto a fire tile and improving generalization across randomized fire layouts.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this failure; variation can be introduced by starting from a nearby bottom-row position (e.g., (4,2)) and following the same left-edge path (4,2)->(4,1)->(4,0)->(3,0) to reinforce the corridor behavior across slight start offsets.

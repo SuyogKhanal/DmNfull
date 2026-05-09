@@ -1,0 +1,255 @@
+{
+  "profile": "p4_vlm_reasoning_kag_cross_plain_llm.yaml",
+  "label": "p4_only",
+  "pathway": "equivariant",
+  "rollout_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_20/p4_only/results/round_003/correction_rollout",
+  "run_dir": "/vast/s226137394/DmN/DmNfull/Equivariant_pathway/pool_sweep/runs/pool_20/p4_only/results/round_003/p4_analysis",
+  "n_failures": 5,
+  "test_layout_failures": [
+    {
+      "episode_id": 6,
+      "maze_name": "heldout_007",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        1,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          2
+        ]
+      ],
+      "success": false,
+      "total_steps": 2
+    },
+    {
+      "episode_id": 9,
+      "maze_name": "heldout_010",
+      "start_pos": [
+        0,
+        0
+      ],
+      "goal_pos": [
+        2,
+        4
+      ],
+      "fire_positions": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "success": false,
+      "total_steps": 60
+    },
+    {
+      "episode_id": 13,
+      "maze_name": "heldout_014",
+      "start_pos": [
+        1,
+        1
+      ],
+      "goal_pos": [
+        0,
+        4
+      ],
+      "fire_positions": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 2
+    },
+    {
+      "episode_id": 16,
+      "maze_name": "heldout_017",
+      "start_pos": [
+        1,
+        3
+      ],
+      "goal_pos": [
+        4,
+        0
+      ],
+      "fire_positions": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          4,
+          1
+        ]
+      ],
+      "success": false,
+      "total_steps": 5
+    },
+    {
+      "episode_id": 17,
+      "maze_name": "heldout_018",
+      "start_pos": [
+        2,
+        0
+      ],
+      "goal_pos": [
+        0,
+        3
+      ],
+      "fire_positions": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          3,
+          3
+        ]
+      ],
+      "success": false,
+      "total_steps": 8
+    }
+  ],
+  "prescription": {
+    "total_demonstrations_needed": 2,
+    "demonstration_prescriptions": [
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              0,
+              0
+            ],
+            "goal_pos": [
+              1,
+              4
+            ],
+            "fire_positions": [
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                3,
+                2
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Targets the top-edge corridor with a representative FIRE pattern that previously caused fire_collision, forcing the agent to navigate along the top and then descend without stepping on FIRE."
+          }
+        ],
+        "rationale": ""
+      },
+      {
+        "cluster": null,
+        "n_demos_needed": 1,
+        "recommended_layouts": [
+          {
+            "start_pos": [
+              1,
+              1
+            ],
+            "goal_pos": [
+              0,
+              4
+            ],
+            "fire_positions": [
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                3
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "n_repetitions": 1,
+            "rationale": "Targets the left-edge corridor with a FIRE placement that previously triggered fire_collision, prompting a maneuver along the left wall toward the goal while avoiding FIRE."
+          }
+        ],
+        "rationale": ""
+      }
+    ],
+    "failure_clusters": [
+      {
+        "cluster_label": "cluster_top_edge_fire",
+        "episodes_in_cluster": [
+          6,
+          9,
+          17
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "top_edge",
+        "where_it_fails": "In top-edge corridor episodes, the agent fails to avoid encountering a FIRE tile despite staying along the top row and then descending; the fire placements in these runs cause an immediate termination before reaching the goal.",
+        "what_it_does_wrong": "Policy selects actions that lead into a FIRE tile, indicating insufficient generalization of fire-avoidance within the top-edge corridor under the given randomised fire placements.",
+        "source_final_recs": [
+          "top_edge",
+          "top_edge",
+          "top_edge"
+        ]
+      },
+      {
+        "cluster_label": "cluster_left_edge_fire",
+        "episodes_in_cluster": [
+          13,
+          16
+        ],
+        "root_cause": "fire_collision",
+        "corridor": "left_edge",
+        "where_it_fails": "In left-edge corridor episodes, the agent encounters FIRE tiles that block progress along the left-side path toward the goal, causing premature termination.",
+        "what_it_does_wrong": "Policy fails to anticipate fire placements when routing via the left-edge corridor, leading to unsafe transitions into FIRE cells.",
+        "source_final_recs": [
+          "left_edge",
+          "left_edge"
+        ]
+      }
+    ]
+  }
+}

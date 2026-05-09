@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: none (single corridor fix suffices)
+rationale: The path follows the left_edge corridor to stay in column 0 and descend then traverse row 4 to the goal, avoiding central fires, as justified by 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It struggles in the left-edge corridor area after reaching (0,0), when the policy would otherwise choose a hazardous step; specifically Step 3 would move into (1,2), a fire tile, instead of following a safe hazard-avoidant route along the left edge.
+2. WHAT should a good walkthrough look like in that area? A hazard-free traversal that starts from the top-right region, moves left along the top row to align with the left edge (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0), then descends column 0 down to (4,0), traverses row 4 to (4,2), and finally moves up to the goal at (2,2): (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer hazard-avoidant corridors (specifically left_edge) when fire hazards cluster in central rows, reducing the chance of stepping onto a fire tile and reinforcing a robust, hazard-aware route.
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough is provided (n_demos = 1) with no additional variations required for this specific failure; if future episodes reveal other distinct fire placements, add a second demo targeting a different safe corridor (e.g., top_edge or right-column) to cover more cases.

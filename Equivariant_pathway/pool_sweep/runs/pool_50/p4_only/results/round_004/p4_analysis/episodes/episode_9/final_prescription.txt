@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)>
+n_demos: 1
+demo_variations: Baseline Top-edge corridor demonstration; no additional variations.
+rationale: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It missteps while trying to reach the goal along the Top-edge corridor (top_edge). Specifically, after reaching (0,3), it deviates downward to (1,3) instead of continuing along the top row to (0,4) and then dropping down along column 4.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A correct walkthrough following the Top-edge corridor is: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4). This keeps the agent on the top row to avoid central fires and then descends along the last column to reach the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prioritize the Top-edge corridor in this configuration, avoiding the central fire at (2,3) by staying on the top row first and then moving down the safe column to the goal. This teaches fire-avoidance behavior tied to corridor structure under dynamic start/goal/fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos is 1 for this targeted failure (a local misstep). The provided variation describes a baseline Top-edge corridor demonstration with no additional variations. If more coverage were needed later, you could add variations that start near the top edge with small shifts in the goal or fire placements, but the current plan uses a single, focused demonstration.

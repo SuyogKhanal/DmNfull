@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: <(1,4)->(2,4)->(3,4)->(4,4)->(4,3)->(4,2)->(4,1)->(4,0)->(3,0)->(2,0)->(1,0)>
+n_demos: 1
+demo_variations: Right-column corridor walkthrough starting at (1,4): DOWN along column 4 to (4,4), then LEFT along row 4 to (4,0), then UP to (1,0).
+rationale: Selecting the Right-column corridor is justified by the KAG corridor fact: 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion occurs in the top-right region where the agent should follow the Right-column corridor (right_edge). The failure happened when the agent started at (1,4) and chose a leftward move early instead of staying in the safe right-column corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts at (1,4), stays in column 4 as long as possible (DOWN to (4,4)), then sweeps left along the bottom row (to (4,0)), and finally moves UP to reach the goal at (1,0). Path: (1,4) -> (2,4) -> (3,4) -> (4,4) -> (4,3) -> (4,2) -> (4,1) -> (4,0) -> (3,0) -> (2,0) -> (1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to adhere to the Right-column corridor when starting in the top-right area, prioritizing moving down column 4 to avoid central fires, then crossing left along the bottom row to reach the goal, thereby avoiding stepping onto fire tiles like (1,1) and (0,4).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration uses the Right-column corridor path described in demo_variations. If more coverage were needed, variations could include starting from nearby top-right equivalents or slight start offsets within the same corridor, but the current prescription uses one targeted demonstration to address the identified fire-avoidance failure.

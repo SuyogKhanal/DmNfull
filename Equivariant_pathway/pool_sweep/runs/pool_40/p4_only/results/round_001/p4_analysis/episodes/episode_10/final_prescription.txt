@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)
+n_demos: 1
+demo_variations: One demonstration teaching Top-edge corridor: start at (1,4), move Up to (0,4), traverse row 0 to (0,0), then descend to (3,0) (goal), avoiding bottom fires.
+rationale: The Top-edge corridor is chosen to avoid bottom-fire cells; 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles with corridor selection at the very start: it chooses a left move from the start (1,4) instead of moving upward to begin the Top-edge corridor (top_edge). This misalignment leads it away from the safe top-edge path that avoids the bottom fires.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would start at (1,4), go Up to the top row (0,4), then travel left along the top row to the leftmost column (0,0), and finally descend down column 0 to the goal at (3,0). In coordinates: (1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0). This stays on the top edge for most of the path, then descends to reach the goal, avoiding the fires on the bottom row.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the Top-edge corridor when fires occupy the middle or bottom rows, committing early to moving toward the top row, traversing along row 0, and then descending toward the goal, rather than drifting left from the starting position.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, as this is a local failure (one corridor, one direction). The variation described by demo_variations emphasizes a single Top-edge corridor demonstration from the given start to the same goal, illustrating the necessary Up-first/top-edge behavior without adding additional environment variants.

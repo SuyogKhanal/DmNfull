@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (1,4)->(2,4)->(3,4)->(4,4)->(4,3)->(4,2)->(4,1)->(4,0)->(3,0)->(2,0)->(1,0)
+n_demos: 3
+demo_variations: Three right-edge starts (1,4), (2,4), (3,4) each following the same safe path to (1,0)
+rationale: 'Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion tends to arise near the top-right area when starting at or near (1,4), especially with Fire tiles around (0,4) and elsewhere (e.g., (1,1) and (3,2)) that tempt unsafe crossings along the top or middle rows. The chosen corridor for this fix is the right_edge corridor, which sits on the right edge of the maze.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough starts at (1,4), moves down the right edge to (4,4), travels left along the bottom row to (4,0), and then goes up to reach the goal at (1,0). The route avoids stepping on the fire tiles and keeps most of the movement along the corridor edges.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- The AI learns to prefer edge-hugging strategies that skirt central hazards: it will learn to descend the right edge, sweep along the bottom row, and only then move upward toward the goal, avoiding known fire placements like (0,4), (1,1), and (3,2).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Three demonstrations are provided (n_demos = 3) with variations in the starting point along the right edge: starts at (1,4), (2,4), and (3,4). Each variation follows the same safe right-edge corridor path to the goal to encourage robust, edge-focused navigation under different initial positions.

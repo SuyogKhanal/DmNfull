@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: Top-edge corridor path: ascend along column 4 to the top row, then traverse row 0 left to the goal column, then descend to the goal.
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.' demonstrates the top_edge corridor.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure arises when the agent tries to reach the goal by traversing leftward on the lower or middle rows (near the right-edge approach) and would have to cross a fire tile (e.g., (1,2)). The demonstrated fix uses the top-edge corridor to avoid that central fire.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the top-edge corridor: from the start (4,4) move up along column 4 to reach the top row at (0,4), then move left along the top row to (0,0), and finally descend down to the goal at (1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the top-edge corridor strategy when central fires block other routes: go up to the top, sweep left along the top row, then descend to the goal, avoiding stepping on fire tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos is 1 for this localized failure, using the top-edge corridor path described in the demo_variations. If more failures are observed, you could add variations that test slight offsets along the same corridor (e.g., different start-step timings along column 4 or alternative but still-fire-avoiding top-row sweeps) to further reinforce the top-edge strategy.

@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: <(1,4)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)>
+n_demos: 1
+demo_variations: Top-edge corridor demonstration from start (1,4) to goal (1,0) avoiding the (0,4) fire tile, with a path hugging the top edge.
+rationale: The top-edge corridor is chosen because the route can avoid the (0,4) fire by hugging the top row, as described by 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to favor routes that risk stepping on the top-right fire tile (0,4) when trying to reach the left-side goal from the top-right start, which pushes it toward the top-edge/top-row corridors but can still stumble into hazards if not guided properly.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (1,4), move left to (1,3), pop up to the top row via (0,3), traverse left along the top row: (0,2) -> (0,1) -> (0,0), then drop down to the goal at (1,0). This path stays mostly on the top edge to avoid the fire at (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to favor the top-edge corridor strategy when the start is near the top-right and the top-right tile is dangerous, effectively avoiding the fire at (0,4) by hugging the top row before descending to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The variation describes a single top-edge corridor demonstration from the given start to the given goal, avoiding the top-right fire. If more robustness were needed, we could add additional demos showing slight start-position tweaks along the top edge, but for this failure, one targeted top-edge path suffices.

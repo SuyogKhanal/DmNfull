@@ -1,0 +1,99 @@
+=== ROOT CAUSE ANALYSIS ===
+Section 1. TRAJECTORY RECONSTRUCTION
+- Episode setup (grounded facts from the provided data)
+  - Start pos: (0,0). Fires at (1,1), (2,2), (4,0). Goal at (4,4). Manhattan distance to goal from start is 8.
+  - Fires are hazard tiles (entering ends episode with -10). Goal is a positive-terminal tile (+10). Walls are impassable.
+  - Corridors available to the agent (per KAG): left-edge, top-edge, right-column. The top-edge corridor stays on row 0 then descends column 4 to the goal.
+- Known trajectory anchors (from the supplied frames)
+  - Step 0 (start_frame): Agent at (0,0). The first corrective demonstration move recorded is Action: RIGHT to (0,1) (the path starts by moving along the top row).
+  - Step 9 (highest_loss_frame): Agent at (3,4). Manhattan distance to goal is 1 (goal at (4,4)).
+    - The descriptive note documents a corrective demonstration: Action to reach the goal in one safe step, described as: Move East/Right to (4,4). (Note: coordinate-wise, (3,4) -> (4,4) is DOWN; the narrative labels a Right move, but the target is the goal at (4,4).)
+  - Step 60 (end_frame): Agent at (3,3). Manhattan distance to goal is 2 (goal at (4,4)).
+    - The descriptive note documents a corrective demonstration from there: Move East/Right to (4,3). (Coordinate-wise, (3,3) -> (4,3) is DOWN; the narrative labels a Right move.)
+- Fires and safety context along the trajectory
+  - Fires present at (1,1), (2,2), (4,0) remain non-adjacent to the positions shown (start, step 9, end frame). The agent’s key live positions do not indicate stepping onto a fire tile in the frames provided.
+- Summary of the observed trajectory landmarks
+  - The agent begins by progressing along the top row from (0,0) to (0,1) (step 0). By step 9 it sits at (3,4) near the goal; by step 60 it’s at (3,3), still one or two steps away from the goal.
+  - The episode ends with failure to reach the goal within 60 steps (total steps 60, total reward -8.65; GOAL not reached). This is a failure episode rather than a goal-termination episode.
+
+Section 2. FIRST WRONG DECISION
+- Earliest divergence from a safe path (with concrete coordinates)
+  - Start vicinity (0,0): The agent receives a corrective demo to move to (0,1) along the top edge, which is a safe, hazard-avoiding start given fires at (1,1), (2,2), (4,0). This is consistent with preferring a corridor that avoids central fires.
+  - The first explicit ground-truth moment highlighting a potential divergence occurs at step 9: the agent is at (3,4) with the goal at (4,4) one step away. The safest and most direct next action to progress toward the goal is DOWN to (4,4). The provided VLM note describes a corrective move to reach the goal in one step, interpreted at the frame as DOWN to (4,4). The recorded “first corrective demonstration move” at this frame is intended to be the safe action toward goal, i.e., act_down to (4,4). In the trajectory description, however, the action is inconsistently labeled as “Move East/Right to (4,4)” (which would be invalid for (3,4) -> (4,4)).
+  - Therefore, the earliest clearly defined divergence from a safe, direct progress path is Step 9, where the expected safe action to reduce distance to the goal is DOWN to (4,4), but the narrative labels a Right move, implying a potential mismatch between the intended corrective action and the reported labeling. Given the coordinates, the correct action to reach the goal in one step from (3,4) is act_down to (4,4).
+- So, first wrong decision (as per coordinate-correct action):
+  - Step 9: Location (3,4). Action taken (reported as, effectively, Right in text, which would move to (3,5) and is illegal). Action it should have taken: DOWN (act_down) to (4,4).
+- Grounding note: This is the earliest explicit frame where the agent is effectively 1 step from the goal and the correct action to progress would be a straightforward descent; the text’s mislabeling flags confusion in action-coding but the safe next step is clearly DOWN to the goal.
+
+Section 3. WHY THE POLICY FAILED
+- Core failure mode observed
+  - The episode ends without reaching the goal and with a substantial negative reward, indicating failure to complete the mission under randomized start/goal/fire placements.
+  - The primary failure mode in the KAG is fire_collision (fm_fire_collision): “Agent entered a FIRE tile. Most common failure. Indicates the policy failed to generalise fire-avoidance to this particular (start, goal, fire-placement) configuration.”
+  - In this episode, the fires are placed at (1,1), (2,2), (4,0). The policy’s demonstrated path along the top edge (0,0) → (0,1) and its subsequent near-goal posture at step 9 indicate a tendency to plan around the central fires but still fail to reach the goal within 200 steps, suggesting insufficient generalization to this configuration.
+- Dynamic config complicating generalization
+  - The environment supports per-episode randomization of start, goal, and fire positions (cfg_rand_start, cfg_rand_goal, cfg_rand_fire). This means the policy must generalize across a wide distribution of hazard patterns and endpoints. The KAG notes min_start_goal_manhattan = 4 to enforce a non-trivial start-goal separation, increasing the difficulty and diversity of safe routes.
+  - The provided corridor options are designed to cope with hazard layouts (Left-edge, Top-edge, Right-column). The chosen corridor (Top-edge) would avoid central hazards in this episode, but the agent did not consistently leverage it across the whole episode, as evidenced by the 60-step trajectory and failure to reach the goal.
+- Root-cause synthesis (grounded to sections 1–2)
+  - Early-stage behavior shows a reasonable starting corrective demo to stay in the top rows, which aligns with Top-edge corridor safety (avoid central hazards). However, the policy did not sustain correct corridor usage or complete the safe top-edge-down route to the goal across the entire episode.
+  - The discrepancy between the text-labeled actions and coordinate-consistent actions (Step 9: (3,4) to (4,4) being DOWN vs Right in the note) signals potential confusions in action decoding or representation, which can propagate incorrect behavior in inference (e.g., the diffusion policy’s first action in the denoised sequence). This mismatch aligns with the documented failure tendency to mis-handle hazard-avoidant decisions when observations/labels are noisy or ambiguous.
+  - In short: the failure is primarily a fire-avoidance generalization issue under dynamic randomization, aggravated by possible mis-annotation or decoding ambiguity in the corrective demonstrations and suboptimal continuation beyond the near-goal frame.
+- If a corrective demonstration is designed (Section 5), it should explicitly reinforce safe corridors (top-edge) and the deterministic goal-approach from the top-right path, as the KAG-cited corridor indicates that top-row traversal is safer when central fires are present.
+
+Section 4. RAG CROSS-EPISODE EVIDENCE
+- No retrieved cross-episode cases are available
+  - Note: The instruction requires us to report the absence of cross-episode RAG evidence here. Therefore: No retrieved cases.
+
+Section 5. CORRIDOR & PATH PROPOSAL
+- Corridor choice
+  - Corridor: Top-edge corridor (id=corridor_top_edge)
+  - Verbatim corridor fact (quoted from KAG)
+    - 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+- Concrete coordinate path (start -> ... -> goal) that avoids all fires for this episode
+  - Start: (0,0)
+  - (0,1)
+  - (0,2)
+  - (0,3)
+  - (0,4)
+  - (1,4)
+  - (2,4)
+  - (3,4)
+  - (4,4) – Goal
+  - Rationale: This path stays on the top edge (row 0) from the start to the far-right column, then descends down column 4 to the goal. It avoids all known fire tiles at (1,1), (2,2), and (4,0), because none of the steps pass through those coordinates. This aligns with the failure analysis that fire avoidance under dynamic randomization is essential, and the top-edge corridor is explicitly described in the KAG as ideal for Start positions near the top rows when fire occupies the middle rows.
+- n_demos
+  - n_demos: 1
+  - Rationale for minimality: The episode is a single failure instance; the corridor analysis shows a single corrective demonstration along the top-edge route is sufficient to illustrate the safe corridor and to teach the agent to avoid central hazards in future episodes.
+- demo_variations
+  - Minimal variation (one demo only) due to the directive to use the smallest n_demos that address the failure mode unless multi-modal failures are evidenced. If needed later, variations could include a variant starting near (0,3) or slightly offsetting the start to test robustness within the top-edge corridor, but for this episode we keep to a single, focused demonstration.
+- Final note on grounding
+  - This proposal directly reflects the identified failure mode (fire avoidance generalization under dynamic, randomized hazards) and uses the Top-edge corridor, as defined in the KAG, to avoid central fires in this configuration.
+
+Key references from the provided data
+- Fires positions used to justify the corridor choice: (1,1), (2,2), (4,0)
+- Top-edge corridor description quoted above
+- The observed near-goal positions and the proposed corrective demonstrations (downward moves to reach the goal in the near-goal frames) used to identify the first wrong decision and grounding for the corridor path
+
+Caveat on the trajectory details
+- The step-by-step log is partial (only start, a mid-episode frame, and the final frame were explicitly provided). The first wrong decision is inferred from the available frame-level data and the known safe path to goal via the Top-edge corridor, with the earliest concrete divergence identified at step 9 due to the coordinate-accurate safe action (DOWN to (4,4)) contrasted with the narrative’s Right-label.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 1
+demo_variations: Single demonstration showing top-edge traversal from (0,0) to (4,4) with no start/goal offset, focusing on row 0 then column 4 to avoid central fires.
+rationale: Top-edge corridor is used to stay on the safe top row and descend along the final column, as described by the corridor fact 'Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens in the top_edge corridor area, where the safe path to the goal should run along the top row and then down the last column, but the agent previously mis-handled actions near the near-goal region (top-edge zone).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the top-edge corridor: start at (0,0), move right along the top row to (0,4), then move down the last column to reach the goal at (4,4). Specifically: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4), avoiding fires at (1,1), (2,2), and (4,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the top-edge corridor when hazards are present in the center, reinforcing a deterministic top-row path to the goal that avoids central fires and leads reliably to (4,4).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration is a focused, targeted example of the safe top-edge route; additional variations could be used later (e.g., starting slightly offset along the top row) if more coverage is needed.

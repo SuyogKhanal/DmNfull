@@ -1,0 +1,43 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode context
+  - Start position: (row, col) = (1, 4).
+  - Goal: (1, 0).
+  - Fires: (0,4), (1,1), (3,2) — hazards in the vicinity that the agent must avoid.
+  - Fires and goal are randomised per episode; manhattan(start, goal) must be >= 4 (Episode satisfies this with distance 4).
+  - Episode outcome: failure (success=False), total steps=60, total reward=-8.90.
+
+- Anchored frames from the VLM analysis
+  - Step 0 (start_frame): Agent at (1,4). Adjacent cells: up (0,4)=fire, left (1,3)=free, down (2,4)=free, right out of grid.
+  - Step 3 (highest_loss_frame): Agent at (1,3). The analysis highlights the nearest fire hazard at (1,1) and notes the need to avoid stepping into it; there is a corrective demonstration suggesting a safer leftward detour.
+  - Step 60 (end_frame): Agent at (1,2). Adjacent cells: up (0,2)=free, down (2,2)=free, left (1,1)=fire, right (1,3)=free. Goal is still at (1,0); immediate left is a fire, so a detour is necessary.
+
+- Reconstructed trajectory sketch (based on anchor points and corrective demonstrations)
+  - Step 0: Position = (1,4).
+  - Step 1: Action suggested by the corrective demo from step 0 is LEFT to (1,3); Position after this move: (1,3).
+  - Step 2: The next corrective move in the provided evidence sequence is LEFT toward the goal, so Position likely becomes (1,2).
+  - Step 3: The highest-loss frame confirms the same vicinity (at (1,3) before the next move) and references a continued push toward the left, with a detour plan around the central-fire cluster.
+  - Steps 4–59 (implicit): The agent struggles to progress toward the goal because the immediate left neighbor (1,1) is a fire, while a direct left path would lead into hazard; the analysis notes a detour tendency rather than a clean leftward march.
+  - Step 60: Position = (1,2). The immediate hazard (1,1) lies to the left; the next safe move would be to detour downward toward (2,2) to circumvent the fire cluster and open a path to the goal.
+
+- Key interpretation
+  - The agent largely advanced along the row 1 towards the left, stopping short of the fire at (1,1). The agent was then in a position where a safe detour (e.g., down to (2,2)) would be warranted to progress toward (1,0). The end state at step 60 still lacks goal reach, consistent with a failure to generalize fire-avoidance in this randomised hazard layout.
+
+2) FIRST WRONG DECISION
+
+- Earliest step where the agent diverged from a safe path
+  - Step 0: Start at (1,4). The adjacent cells reveal a clearly unsafe option (UP to (0,4) = fire) and a safe option (LEFT to (1,3)).
+  - Correct safe behavior (per the available evidence and the corrective demonstrations) would be to move LEFT to (1,3) rather than UP into a fire.
+  - Suspected actual decision (earliest wrong decision in this episode): UP to (0,4) (fire), which would terminate the episode immediately with a large negative reward. This would be the earliest wrong decision if it occurred, given the ground-truth evidence that the leftward push is the safe, demonstrated route.
+  - Compare: Action taken = UP to (0,4) vs Action it should have taken = LEFT to (1,3).
+  - Rationale: The vision state at step 0 explicitly shows UP leads to a fire tile; the corrective demonstrations throughout the episode consistently propose moving left to begin progress toward the goal while avoiding adjacent fire above.
+
+3) WHY THE POLICY FAILED
+
+- Core failure mode (KAG terminology)
+  - fm_fire_collision: Agent
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+[FINAL_REC UNGROUNDED: The hazard layout makes it impossible to reach (1,0) from (1,4) without entering a fire tile while keeping the majority of steps inside any single KAG corridor, so a grounded FINAL_REC cannot be produced.]

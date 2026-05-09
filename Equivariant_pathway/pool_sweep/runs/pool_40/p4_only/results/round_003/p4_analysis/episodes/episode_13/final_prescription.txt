@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)
+n_demos: 1
+demo_variations: Single left-edge corridor demonstration from start (1,1) to goal (0,4) using the corridor to avoid central fires by staying in column 0 and then traversing the bottom row.
+rationale: The left_edge corridor is chosen because 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion occurs in the left-middle area at the start, where the agent should commit to the left-edge corridor (left_edge) instead of veering toward the central fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at (1,1), move left to (1,0), then descend down the left column to (4,0). From there, move right along the bottom row to (4,4), and finally go up the last column to reach the goal at (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to follow the left-edge corridor when central hazards are present, staying in the safe column first, then crossing the bottom row and climbing to the goal, thereby avoiding known fire tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration focuses on the left-edge corridor and shows the safe route; if needed later, we could add variations such as starting positions slightly offset or nearby fire placements to test robustness, but for now one targeted left-edge demonstration suffices.

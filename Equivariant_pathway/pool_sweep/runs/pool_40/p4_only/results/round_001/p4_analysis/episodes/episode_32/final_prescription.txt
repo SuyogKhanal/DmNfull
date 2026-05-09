@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,3)->(4,2)->(4,1)->(4,0)->(3,0)
+n_demos: 2
+demo_variations: Variation 1: bottom-route along the left-edge corridor from start to goal; Variation 2: top-edge corridor route via the top row to the leftmost column and down to the goal
+rationale: It adheres to the left-edge corridor plan to 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.', which is justified by the central fire placements and shows both a bottom-edge and a top-edge corridor strategy to reach the goal without stepping on fire.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The failure is driven by central fire placements that tempt the agent to take routes near (3,1) or (3,2); the left-edge corridor is chosen to teach safe routing around those hazards.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough should demonstrate a safe route that avoids the central fires, first moving along a safe edge and then steering toward the goal, such as the bottom-edge path along the bottom row or an alternate top-edge path along the top row into the leftmost column before heading to the goal.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer corridor-aligned routes that avoid known fire tiles, using edge-based trajectories (bottom edge first, then leftward/upward movement along the edge) to reach the goal without stepping on fire.
+4. HOW MANY walkthroughs are needed and how should they vary? 2 walkthroughs are used (n_demos = 2): one using the left-edge bottom-row route and one using the top-edge route. They vary by which corridor edge is used and by the order in which the agent travels toward the leftmost column before finishing at the goal, covering two complementary safe paths.

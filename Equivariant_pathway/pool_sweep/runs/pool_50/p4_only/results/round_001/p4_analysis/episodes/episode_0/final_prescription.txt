@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: Variation: same top-edge route demonstrated from a nearby start position [4,3] to test robustness to small start offsets while keeping goal [1,0] and fires
+rationale: Top-edge corridor chosen because 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- In the top_edge corridor area (the upper-edge path toward the goal).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- Start at [4,4], move up along the rightmost column to [0,4], then traverse left along the top row to [0,0], and finally descend to the goal at [1,0]. So the sequence is: (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to follow the top-edge corridor when starting from positions like [4,4], avoiding the central fire tiles by staying on the top edge first, then descending along the goal column.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 is recommended for this local failure. The single demo teaches the top-edge route; variation (start offset to [4,3]) is provided to test robustness to small start-position changes without changing the goal or fire layout.

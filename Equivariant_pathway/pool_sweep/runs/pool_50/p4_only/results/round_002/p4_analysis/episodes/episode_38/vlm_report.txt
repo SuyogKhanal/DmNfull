@@ -1,0 +1,40 @@
+VISION REPORT
+Maze=heldout_039 Steps=60 Reward=-8.80 Success=False
+---
+--- start_frame frame step 0 ---
+1) Agent location and adjacents:
+- Agent is at (3,3). Adjacent cells: up (2,3), down (4,3), left (3,2), right (3,4). All four neighbors are open (no walls or fires there). The goal is not in an adjacent cell.
+
+2) Goal location and Manhattan distance:
+- Goal is at (1,1). Manhattan distance from (3,3) = |3-1| + |3-1| = 4.
+
+3) Fire hazards relative to the agent:
+- Fires are at (0,2), (0,4), and (1,2). Distances from the agent: 4, 4, and 3 respectively. The nearest fire is at (1,2) (distance 3). None of the fires are currently adjacent, but they constrain safe routes toward the goal, especially near column 2.
+
+4) First corrective demonstration move (exact action + justification):
+- Action: Move LEFT to (3,2).
+- Justification: Safe, non-fire neighbor that reduces the distance to the goal (4 → 3) and starts a fire-free corridor toward (1,1). Path could proceed (3,2) → (3,1) → (2,1) → (1,1).
+
+--- highest_loss_frame frame step 5 ---
+
+
+--- end_frame frame step 60 ---
+Structured analysis for end_frame (step 60)
+
+1) Agent location and adjacent cells
+- Agent is at (3,1).
+- Adjacent cells: up (2,1) — empty; down (4,1) — empty/neutral; left (3,0) — empty; right (3,2) — appears non-hazardous (blue-tinted cell, not a fire).
+- Nearby features: goal at (1,1); fires at (0,2), (0,4), (1,2) are not immediately adjacent.
+
+2) Goal location and Manhattan distance
+- Goal is at (1,1).
+- Manhattan distance from agent: |3-1| + |1-1| = 2.
+
+3) Fire hazards relative to the agent
+- Fire locations: (0,2), (0,4), (1,2).
+- Distances to agent: |3-0|+|1-2| = 4; |3-0|+|1-4| = 6; |3-1|+|1-2| = 3.
+- No fire is adjacent to the agent; the nearest fire is three steps away.
+
+4) First corrective demonstration move (exact action + justification)
+- Action: UP (move to 2,1).
+- Justification: It reduces the goal distance by 1, keeps the agent away from fire, and sets up a safe path toward (1,1) without stepping into hazards.

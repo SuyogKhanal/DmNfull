@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1)>
+n_demos: 2
+demo_variations: Variation A: (4,4)->(4,3)->(4,2)->(4,1)->(3,1)->(2,1); Variation B: (4,4)->(4,3)->(3,3)->(2,3)->(2,2)->(2,1)
+rationale: The chosen corridor 'left_edge' aligns with the documented path that stays on the bottom row and moves toward the goal ('Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.').
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI trips up near the central hazard region when moving from the start (4,4) toward the goal (2,1); the first hazardous decision occurs when the policy would move toward the fire at (2,4) rather than staying along a safe bottom-row path. The chosen corridor to address this is left_edge.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust walkthrough would guide the agent along the bottom row first: from (4,4) go left to (4,3), then (4,2), then (4,1), then head up to the goal column at (3,1) and finally reach the goal at (2,1). A second variation can start the same but detour slightly to demonstrate an alternative safe route: (4,4)->(4,3)->(3,3)->(2,3)->(2,2)->(2,1).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the left-edge corridor strategy when central fires threaten a direct upward route. The demonstrations emphasize avoiding the fire at (2,4) by keeping to the bottom row first, then proceeding safely along a corridor toward the GOAL.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- Use 2 demonstrations. Variation A shows the straightforward bottom-row progression to the goal, Variation B demonstrates a slight detour via (3,3)/(2,3) to highlight an alternative safe sub-path while still avoiding fires.

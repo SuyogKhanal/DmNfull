@@ -1,0 +1,92 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Start: position (row, col) = (0, 4). Fires present at (1,2), (2,3), (4,3); Goal at (2,2).
+
+- Step 1 (action taken by agent): DOWN from (0,4) to (1,4). Rationale (per vision-grounded note): this aligns with detouring toward the right-side corridor to skirt the central fire cluster.
+
+- Step 2 (action taken by agent): LEFT from (1,4) to (1,3). This is the earliest divergence from the corridor-guided detour that would keep you on the right edge (see Section 2).
+
+- Step 3 (action taken by agent): LEFT from (1,3) to (1,2), which is a FIRE tile. Entering terminates the episode.
+
+- End state: At end_frame the agent is on a fire tile (1,2). Final position thus (1,2). Episode terminates with FIRE_PENALTY (-10.0) plus step penalties (-0.1 per step). Total steps = 3; Total reward = -10.30.
+
+- Observed context from VLM report:
+  - At start, goal is (2,2); distance from start is 4 (Manhattan).
+  - Fire cluster in this episode sits at (1,2) and (2,3), with another at (4,3). The direct path toward the goal via (0,3)->(1,3)->(2,3) is blocked by fire at (2,3).
+  - The report highlights a corrective human demonstration after the failure: it suggests a detour path via the right-side region, e.g., (1,4)→(2,4)→(3,4)→(3,3)→(3,2)→(2,2). The proposed first corrective move is to go down to (2,2) from (1,2) to reach the goal in one step if starting on the hazard.
+
+- Summary of the failure event:
+  - The agent started along the right edge (Step 1), but then chose a leftward detour (Step 2) into the center-left corridor, ultimately stepping onto a fire at Step 3.
+
+2) FIRST WRONG DECISION
+
+- Earliest divergence from a safe corridor-following path: Step 2, at position (1,4).
+  - Position: (1,4)
+  - Action taken: LEFT to (1,3)
+  - Correct action (per corridor-based detour): DOWN to (2,4)
+
+- Rationale: The right-column corridor (which is most consistent with starting near the top-right) prescribes staying on the right edge to bypass central-fire clusters, i.e., continue downward along column 4 before any leftward moves that could encounter fire. The Step 2 LEFT move commits to a leftward route that risks stepping into the central-fire cluster (specifically toward (2,3)) and, as evidenced, leads to stepping onto (1,2) fire by Step 3.
+
+3) WHY THE POLICY FAILED
+
+- Root cause (tie to dynamic config and KAG):
+  - Failure mode activated: fire_collision. The agent entered a FIRE tile, indicating insufficient generalization of fire-avoidance across randomised start/goal/fire placements.
+  - Dynamic config factors:
+    - Fire hazards are randomised per episode (cfg_rand_fire; num_fire_tiles_default=3). The central cluster in this episode comprises (1,2) and (2,3). The policy must generalize to various fire layouts; this episode demonstrates a configuration where a direct detour around central fires via the right edge is superior but not consistently chosen by the policy.
+    - Start/goal positions are randomized per episode (cfg_rand_start, cfg_rand_goal) with a minimum start-goal Manhattan distance (min_start_goal_manhattan=4). This enforces more diverse routes, increasing the risk of mis-generalizing a given corridor under new configurations.
+  - Observational constraints and architecture contribute to the failure:
+    - Observation/Prediction Horizons (pc_horizons) specify obs_horizon=4, pred_horizon=3, with only the first predicted action executed. The agent’s first action (Step 1) aligns with the right-column corridor, but Step 2 requires deeper planning than a single-step horizon supports; the 3-step forecast may not propagate the safe detour adequately through the remaining steps.
+    - Locality of the vision encoder (CellAlignedEncoder) pools each grid cell independently, which helps spatial awareness but can still under-constrain long-horizon hazard planning when hazards occupy nearby cells just beyond the 3x3 window.
+  - Grounding in the evidence:
+    - The corridor-based failure mode discussion in the KAG emphasizes three failure modes (fire_collision, timeout, wall_thrashing) and notes that fire collisions indicate a lack of generalization to the given (start, goal, fire-placement) configuration.
+    - The corrective demonstration proposed in the Vision Analysis explicitly favors a right-edge detour (via (2,4), (3,4), (3,3), (3,2)) to avoid central hazards, which the policy did not follow in this episode.
+
+4) RAG CROSS-EPISODE EVIDENCE
+
+- No retrieved cases.
+  - No external case exemplars are retrieved in this analysis block. (Answer: "No retrieved cases.")
+
+5) CORRIDOR & PATH PROPOSAL
+
+- Corridor choice (name from KAG): Right-column corridor
+- Cited corridor fact (verbatim quote from KAG, section must quote exactly):
+  - 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+- Concrete corrective demonstration path (start -> … -> goal) avoiding all fires:
+  - Start: (0, 4)
+  - Step 1: Down to (1, 4)
+  - Step 2: Down to (2, 4)
+  - Step 3: Down to (3, 4)
+  - Step 4: Left to (3, 3)
+  - Step 5: Left to (3, 2)
+  - Step 6: Up to (2, 2) [goal]
+  - Rationale: This 6-step path hugs the right edge (column 4) to bypass the central fire cluster (1,2) and (2,3), then crosses leftward on a safe row (row 3) to reach the goal at (2,2). It adheres to the right-column corridor guidance and avoids all known fire tiles in this episode.
+
+- One-sentence justification grounded in sections 3 and 4:
+  - Because the episode places central fires that block the direct top/right routes, following the Right-column corridor and detouring via the right edge yields a safe path to the goal, addressing the fire_collision failure demonstrated in this episode. (This is consistent with Section 3’s identification of fire_collision as the failure mode and the need to generalize safe detours in a randomized fire layout.)
+
+Notes on the "minimum demonstrations" directive:
+- n_demos: 1 (one corrective demonstration is proposed, as this episode's failure is driven by a single fire_collision case with a distinct detour path; the corridor-guided fix is embodied in a single, explicit corrective path).
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: Variant with a near-top-right start offset (0,3) that still uses the right-column corridor detour: (0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)->(2,2)
+rationale: Right-column corridor detour to bypass central fires, per KAG: 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The AI struggles in the top-right region when central fires block the direct path, leading it to stray off the safe right-edge corridor (the right_edge corridor).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe detour that hugs the right edge: start at (0,4), move down along the rightmost column to (3,4), then step left to (3,3), left to (3,2), and finally up to the goal at (2,2). The actual sequence is: (0,4) -> (1,4) -> (2,4) -> (3,4) -> (3,3) -> (3,2) -> (2,2).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to rely on the Right-column corridor to bypass central fire clusters, and to complete the route by crossing left only after sufficiently hugging the safe edge, avoiding the fires (and reducing the chance of fire_collisions).
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos: 1. The variation line suggests a near-top-right start offset to show generalization (e.g., starting at (0,3) and then following the same right-edge detour). This single targeted demonstration teaches the core safe detour while indicating how small start-position changes can be handled within the same corridor strategy.

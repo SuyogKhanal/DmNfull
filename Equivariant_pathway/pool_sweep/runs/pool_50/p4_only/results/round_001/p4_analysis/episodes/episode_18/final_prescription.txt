@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (4,0)->(4,1)->(4,2)->(4,3)->(3,3)->(2,3)->(1,3)->(0,3)
+n_demos: 1
+demo_variations: Initial Right to (4,1) then follow the left-edge corridor down the bottom row and up to the goal, illustrating a fire-avoidant path that stays near the bottom edge.
+rationale: To maintain a robust fire-avoidant plan, follow the Left-edge corridor because 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI strays from the left-edge corridor in the lower-left area, choosing an interior Up move at Step 5 instead of continuing along the bottom-edge path of the Left-edge corridor.
+2. WHAT should a good walkthrough look like in that area? A good walkthrough stays along the bottom row (row 4) as long as it can, then climbs up to the goal at (0,3) using a corridor-aligned path: (4,0) -> (4,1) -> (4,2) -> (4,3) -> (3,3) -> (2,3) -> (1,3) -> (0,3).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to adhere to a hazard-avoidant corridor (Left-edge) to achieve long-horizon goals under dynamic fire placements, rather than pursuing short-horizon interior moves that risk stepping toward hazards.
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough is prescribed (n_demos = 1) with a variation that starts with an initial Right step into the bottom corridor and then follows the left-edge corridor to the goal, emphasizing consistent fire avoidance.

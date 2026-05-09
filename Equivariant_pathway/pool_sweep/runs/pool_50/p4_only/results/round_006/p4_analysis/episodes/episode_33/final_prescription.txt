@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)>
+n_demos: 1
+demo_variations: left-edge corridor demonstration with a slight variation in the final segment while staying on the left edge
+rationale: The left-edge corridor is selected to avoid central fires, consistent with the KAG fact 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to pursue a path that sometimes nears the central hazardous region, risking stepping onto a fire tile; the selected corridor to address this is the left_edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust walk-through would hug the left edge: start at (2,0), descend straight down the first column to (4,0), then move right along row 4 to (4,4), and finally move up the last column to reach the goal at (0,4), never stepping on a fire tile like (1,2), (2,3), or (3,1).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to the left-edge corridor when fires are clustered toward the center, thereby avoiding central fire tiles and reaching the goal safely.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos is 1. The single demonstration uses the left-edge corridor path; demo_variations describes a slight alternative final-segment variation while staying on the left edge to probe robustness of the corridor-following behavior.

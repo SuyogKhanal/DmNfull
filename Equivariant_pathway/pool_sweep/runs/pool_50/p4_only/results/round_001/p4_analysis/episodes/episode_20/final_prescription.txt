@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (0,4)->(1,4)->(2,4)->(3,4)->(4,4)
+n_demos: 1
+demo_variations: Single corridor demonstration along the Right-column corridor (0,4)->(1,4)->(2,4)->(3,4)->(4,4); variations would include small start offsets within the same corridor to cover start-position jitter
+rationale: To avoid the fire hazard while reaching GOAL, follow the Right-column corridor described by the KAG: 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It falters in the right_edge corridor near the top-right, specifically deviating at the (3,4) junction by going to (3,3) and then into the fire at (4,3).
+2. WHAT should a good walkthrough look like in that area? A safe walkthrough stays in the right-edge corridor: (0,4) -> (1,4) -> (2,4) -> (3,4) -> (4,4) (the GOAL), never leaving column 4.
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to maintain corridor-aligned navigation along the right-edge path to GOAL and avoid risky deviations that lead into fire tiles, improving generalization under dynamic fire placements.
+4. HOW MANY walkthroughs are needed and how should they vary? 1 walkthrough is used here; if more are drawn, vary start offsets within the same corridor (e.g., slight shifts along the right-edge path) to cover small start-position jitters while preserving corridor safety.

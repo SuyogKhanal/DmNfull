@@ -1,0 +1,36 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION — step-by-step reconstruction of what happened
+
+- Episode context (from the MAZE LAYOUT and DYNAMIC CONFIG):
+  - Start: (3,3)
+  - Goal: (1,1)
+  - Fires: (0,2), (0,4), (1,2)
+  - The agent ends up on a FIRE tile; episode terminates with negative reward.
+
+- Step-by-step trace, aligned to the provided frames (and noting the human corrective demonstrations that were recorded but not fully followed by the policy):
+  - Step 0 (start state): The agent is at (3,3). Human corrective demonstration recorded: "Left (from (3,3) to (3,2))." However, the policy’s inferred action at this moment did not execute that Left; the nearest frame shows the agent proceeding toward (2,3) (Up). In other words, the agent’s first action here was Up, not Left.
+    - Observations from the Vision report after step 0: Adjacent cells safe; no immediate fire in adjacent cells.
+  - Step 1: The agent is at (2,3). Here the
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (3,3)->(3,2)->(3,1)->(3,0)->(4,0)->(4,1)->(3,1)->(2,1)->(1,1)
+n_demos: 1
+demo_variations: Left-edge corridor demonstration with initial left-first path hugging the left edge toward row 4 before turning up to the goal.
+rationale: The corridor chosen is left_edge, justified by the KAG fact 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- In the left_edge corridor near the starting area (3,3), the AI initially chose Up (toward (2,3)) instead of Left to begin the left-edge path, risking a route that could bring it into top-row fire hazards.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe left-edge path would be: from (3,3) go left to (3,2), continue left to (3,1), then left to (3,0); descend to (4,0); move right along row 4 to (4,1); then move up along column 1 to reach the goal at (1,1) (passing through (3,1) and (2,1) on the way).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer hugging the left edge to avoid top-fire placements, to make the long descent along column 0, then cross row 4 toward the goal, and finally climb up the goal column, reducing exposure to fires early in the episode.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this local-failure case. The single demonstration uses the left-edge corridor path with a left-first habit to avoid the top-fire cluster; if more coverage were needed, you could add variations that start with slightly different offsets or slight changes in initial orientation while still following the left-edge corridor.

@@ -1,0 +1,68 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode context: Start at (0,4) with goal at (2,2). Fires at (1,2), (2,3), (4,3). The agent ended by stepping onto a FIRE tile at (1,2).
+- Step sequence (actual policy trajectory observed in this episode):
+  - Step 0: Position start = (0,4). Action taken by policy: LEFT to (0,3).
+  - Step 1: Position now = (0,3). Action taken by policy: LEFT to (0,2).
+  - Step 2: Position now = (0,2). Action taken by policy: DOWN to (1,2) (this is a FIRE tile; entering it terminates the episode).
+  - Step 3: Episode terminates immediately upon entering (1,2) due to FIRE tile; final position on a fire tile is recorded as (1,2); total steps = 3; total reward = -10.30 (fire penalty -10.0 plus step penalties).
+- Key hazard/context notes from the frames:
+  - Immediate adjacency on Step 0/Step 1 involved no fire in (0,3) or (0,2); fires exist at (1,2) and (2,3) but are not yet touching the agent.
+  - The critical misstep occurs when the agent then moves onto (1,2) on Step 2, a known fire tile, terminating the episode with a large negative reward.
+
+2) FIRST WRONG DECISION
+- Earliest wrong decision (step and coordinates):
+  - Step 0: From (0,4) the agent chose LEFT to (0,3).
+  - Correct safer alternative (as suggested by the corrective demonstration) would have been DOWN to (1,4) to begin a safer corridor, i.e., (0,4) -> (1,4).
+- Action comparison:
+  - Taken: Left from (0,4) to (0,3).
+  - Should have: Down from (0,4) to (1,4).
+- Why this is the first divergence:
+  - Keeping to the top edge (0,4) → (0,3) starts a path that quickly moves into the central region where hazards cluster (1,2) and (2,3). The corrective demonstration explicitly notes a safer starting move into (1,4), which would steer toward a corridor less encumbered by the central fire cluster.
+
+3) WHY THE POLICY FAILED
+- Grounding in failure taxonomy:
+  - Failure mode: fire_collision (NARRATIVE: Agent entered a FIRE tile) per the KAG.
+- Root-cause factors grounded in the dynamic config and environment:
+  - Dynamic randomization (cfg_rand_start, cfg_rand_goal, cfg_rand_fire) creates per-episode variations in where fire tiles appear relative to start and goal. The episode in question places fire hazards around the central region (notably (1,2) and (2,3)) that intersect commonly-traversed routes if one starts along the top edge.
+  - Observation/prediction horizons (obs_horizon=4, pred_horizon=3) and the CellAlignedEncoder shape (grid-aligned, 16-pixel cells) emphasize local cues. The immediate 3x3 neighborhood around the agent at (0,4) does not reveal the central fires (which are two steps away), so early decisions rely on a general policy rather than explicit hazard mapping.
+  - The policy’s action-selection mechanism (first predicted action in a denoised diffusion sequence) is deterministic at inference time (argmax over 4 channels of the first predicted action). This reduces the chance of exploratory hazard-avoidance in unfamiliar configurations; it inherits the demonstrator’s bias toward certain corridors and motion patterns.
+  - Demonstration signal gap: The corrective demonstration at the start (Down to 1,4) explicitly teaches a safer corridor beginning, but the agent's actual first decision was Left to 0,3. This indicates a misalignment between demonstrations and the agent’s inferred cueing, particularly for hazard avoidance in randomized layouts.
+- Synthesis: The failure arises from limited hazard-anticipation in the learned policy given dynamic fire placements, coupled with the rarity of corrective demonstrations that emphasize unsafe top-edge directions in this specific configuration. The agent interpreted the local observation as favoring a L-R movement pattern rather than starting a safe corridor toward the boundary, which ultimately led into a fire tile.
+
+4) RAG CROSS-EPISODE EVIDENCE
+- No retrieved cases. (No external cross-episode exemplars were provided for this step.)
+
+5) CORRIDOR & PATH PROPOSAL
+- Corridor to use (from KAG, with verbatim citation):
+  - Left-edge corridor (id=corridor_left_edge): 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+- Concrete corrective path (start -> ... -> goal) that avoids all fires in this episode:
+  - Path: (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (3,2) -> (2,2)
+  - Explanation of safety: This route stays on the left edge to row 4 before crossing to the goal column, avoiding the central fire cluster at (1,2) and (2,3) and the bottomfire at (4,3). None of the cells traversed are walls or fires, and the final step reaches the GOAL at (2,2).
+- One-sentence justification (grounded in sections 3 and 4):
+  - Because the episode’s fire placements create a central hazard cluster that the policy initially failed to avoid (as shown by the fire_collision), steering into the left-edge corridor provides a corridor that consistently bypasses central fires and reaches the goal without stepping on hazards, aligning with the corrective demonstration principle and reducing reliance on local hazard cues that the model currently misinterprets. (This justification ties to Section 3’s analysis of hazard generalization failure and Section 4’s absence of cross-episode corrections to this exact configuration.)
+- n_demos: 1
+  - Rationale: The episode demonstrates a single distinct failure mode (fire_collision due to misgeneralization in hazard-avoidance under dynamic randomization). A single corrective demonstration along the left-edge corridor path suffices to convey the corridor usage and safe avoidance pattern for this fire arrangement.
+
+Notes for downstream prescription:
+- The corrective demonstration should showcase a full left-edge corridor traversal from (0,4) to (2,2) as listed above, emphasizing the shift from a top-edge/central-route bias to a boundary-hugging strategy that avoids central fires.
+- If you want to hedge against multi-modal fire placements in other episodes, you could add a second corrective demonstration for scenarios where the right-column corridor would be safer, but in this episode the left-edge corridor is the most robust choice given the central-fire distribution.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: Alternate left-edge corridor demonstration with extended descent along column 0: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(3,1)->(2,1)->(2,2)
+rationale: The left-edge corridor is chosen per KAG: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.', which guides a safe left-edge progression away from central fires.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI was drifting toward the central fire cluster around (1,2) and (2,3 when starting near the top area, and its corrective cue points toward the left-edge corridor as the safer route.
+
+2. WHAT should a good walkthrough look like in that area? A robust demonstration should hug the left edge: start at (0,4), sweep left along the top row to (0,0), descend the left edge to (4,0), then move along the bottom row to approach the goal, finishing at (2,2). The path above shows: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prioritize boundary-hugging trajectories to avoid central fire hazards, reinforcing the left-edge corridor pattern as a risky-cell-avoidant strategy in dynamically placed fires.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this clearly localized failure, with one variation described (a slightly different final approach along the bottom area) to exposé the policy to minor path-variation within the same corridor.

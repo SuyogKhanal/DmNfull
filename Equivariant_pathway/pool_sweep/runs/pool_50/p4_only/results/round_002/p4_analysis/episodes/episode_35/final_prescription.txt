@@ -1,0 +1,21 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: Left-edge corridor demonstration with a minor start-position perturbation to test robustness of corridor-following.
+rationale: Left-edge corridor chosen because central fires block central routes, and 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.' provides a monotone fire-avoidant path to the goal.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles when central fires occupy the middle of the map (specifically near (1,2) and (2,3)), which tempts it to stray into risky central paths rather than committing to a safe corridor. The chosen corridor to illustrate the fix is the Left-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough along the Left-edge corridor would start at the top-right of the map, head left along the top row to reach the leftmost column, descend straight down that column to row 4, then move right along row 4 toward the goal column and finally move up to the goal at (2,2). Concretely, the demonstrated path is:
+  (0,4) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (3,2) -> (2,2)
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to favor a safe corridor strategy when central fires threaten the direct route, specifically the Left-edge corridor path that keeps to column 0, moves down to the bottom row, and then traverses toward the goal, avoiding known central-fire tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstrated path uses the Left-edge corridor. The variation described (demo_variations) suggests testing robustness with a slight start-observation perturbation to ensure corridor-following generalizes to minor perceptual changes.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: Top-edge corridor corrective trajectory from [1,4] to [1,0]: (1,4)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+rationale: The Top-edge corridor 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.' justifies avoiding the central fire at (1,1).
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the top region where the Top-edge corridor applies. The failure path initially hugs the middle/right side (moving from [1,4] to [1,3]) and then becomes vulnerable to the central fire at [1,1] when not detouring up to the top edge.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A corrective walkthrough is: start at [1,4], go left to [1,3], move up to reach the top row at [0,3], traverse left along the top row to [0,0], then descend to the goal at [1,0]. In coordinates: (1,4)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to follow the Top-edge corridor when fires appear in central rows, staying on the top row for the majority of the traversal and only dropping down at the end to reach the goal. This teaches a safe detour around central hazards and aligns action choices with the corridor guidance.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1 for this local failure. The single demonstration already encodes the required top-edge detour. If more robustness is needed later, you could add a second variation that starts similarly but explores a slightly different top-edge entry (e.g., different tiebreaker along the top row) while preserving the same corridor strategy.

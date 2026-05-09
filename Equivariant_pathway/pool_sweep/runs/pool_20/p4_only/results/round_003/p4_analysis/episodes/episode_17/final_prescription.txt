@@ -1,0 +1,21 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: Single demo: Top-edge corridor path from start (2,0) to goal (0,3) via Up, Up, Right, Right, Right
+rationale: Aligns with the KAG top-edge corridor: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It falters in the top-edge corridor zone: its very first move from the start (2,0) is RIGHT instead of staying on the top-edge path, which pushes it toward central hazards.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the top-edge corridor: from (2,0) go Up to (1,0), Up to (0,0), then Right to (0,1), Right to (0,2), and finally Right to (0,3) (the GOAL). This keeps the bulk of the travel along the safe top row, avoiding the central fires.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit early to the top-edge corridor when central fire hazards are present, avoiding the central fire cluster and the fire at (2,4) by traversing along row 0 to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos: 1
+- Variation: Single demonstration showing the top-edge corridor path from (2,0) to (0,3) (Up, Up, Right, Right, Right). If more demonstrations were added later, you could include minor start-offsets or different fire placements to test generalization, but for this failure a single targeted top-edge example suffices.

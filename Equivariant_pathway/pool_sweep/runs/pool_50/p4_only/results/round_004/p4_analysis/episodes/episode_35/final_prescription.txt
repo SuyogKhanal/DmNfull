@@ -1,0 +1,13 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: Left-edge corridor variant with a bottom detour after (4,0): (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(3,1)->(2,1)->(2,2)
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The confusion happens in the left_edge corridor region: the agent originally takes a dangerous step from (1,3) to (1,2) into a central Fire tile, failing to generalize fire avoidance in this configuration.
+2. WHAT should a good walkthrough look like in that area? A robust corrective walkthrough uses the left-edge corridor: start at (0,4), sweep along the top row to (0,0), descend down the left edge to (4,0), then travel along row 4 to the vicinity of the goal and finally head to (2,2) (the GOAL). The exact steps are: (0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(3,2)->(2,2).
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to avoid central fire clusters by staying in a safe corridor (left_edge) and approaching the goal along a hazard-free route, improving fire-avoidance generalization across randomized starts/goals/fires.
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 for this clearly targeted failure; a single corrective demonstration is used to fix the dominant fire-collision mode. The demo_variations line provides a natural single variation: a bottom-detour within the same left-edge corridor (a slight alternative safe path) to encourage robustness without over-proliferating demonstrations.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)>
+n_demos: 1
+demo_variations: start-offset: begin with immediate DOWN to (3,0) then follow the left-edge corridor; fire-side: hug the left edge longer (stay in column 0 until row 4) before crossing to (4,4)
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets confused in the Left-edge corridor region near the start, where the initial move can deviate from descending in column 0 (the early step that left the corridor path).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the Left-edge corridor: from the start at [2,0], move DOWN to [3,0], then DOWN to [4,0], then go RIGHT along row 4 to [4,4], and finally move UP to the goal at [1,4], never stepping into a fire tile.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit to a hazard-avoiding corridor strategy (the Left-edge corridor), staying on the edge first and then crossing along a safe row to reach the goal, which reduces exposure to fires near the start and central region.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration should cover the corridor-path scenario; the variation line describes two natural variants (start-offset and fire-side hugging) to illustrate non-committal deviations while still teaching corridor-based navigation.

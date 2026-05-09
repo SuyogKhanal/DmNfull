@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)
+n_demos: 1
+demo_variations: Left-first corrective demo starting from the initial position and guiding to the left-edge corridor (Variation A).
+rationale: The Left-edge corridor path avoids central fires and aligns with the KAG fact 'Left-edge corridor (id=corridor_left_edge): path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets misled near the start area, before heading into the central/right area, failing to commit to the left-edge corridor when fires are nearby.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough starts from (1,3) and moves left to reach the left-edge corridor: (1,3) -> (1,2) -> (1,1) -> (1,0), then descends along column 0: -> (2,0) -> (3,0) -> (4,0) (the GOAL).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to favor a left-first routing that keeps to the left-edge corridor, reducing exposure to central fires and steering toward the goal without stepping on hazards.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1, with Variation A: a left-first corrective demo guiding from the start to the left-edge corridor and down to the goal.

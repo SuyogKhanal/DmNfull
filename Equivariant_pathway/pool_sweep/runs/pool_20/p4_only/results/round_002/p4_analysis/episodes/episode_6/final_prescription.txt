@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)
+n_demos: 1
+demo_variations: Top-edge corridor variation: same safe top-row traversal with minor start offsets (e.g., (0,0) vs (0,1)) and a fire-side preference that stays on the top edge before descending.
+rationale: Adopt the Top-edge corridor because it follows 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.' and avoids the central fire cluster, addressing the fire_collision failure.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It tends to drop straight down toward the central hazard region near the start, which corresponds to the top-left area where the central fire cluster can be encountered; the safe remedy aligns with the Top-edge corridor.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A robust walkthrough keeps the agent on the top edge: start at (0,0), move right along the top row to (0,4), then move down to the goal at (1,4). In coordinates: (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid the central fire cluster by following a safe top-edge corridor when the fire layout blocks more direct progress, improving hazard-avoidance generalization under dynamic fire placements.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the single Top-edge corridor walkthrough as the baseline. Variation can be added by occasionally starting with a slight top-edge offset (e.g., (0,1) as the initial step) or by emphasizing a fire-side preference that keeps to the top edge before descending, as described in the demo_variations line.

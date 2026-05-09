@@ -1,0 +1,45 @@
+VISION REPORT
+Maze=heldout_023 Steps=60 Reward=-8.75 Success=False
+---
+--- start_frame frame step 0 ---
+Structured analysis (start_frame, step 0)
+
+1) Agent location and adjacents
+- Agent at (4,0). Adjacent cells: Up to (3,0) (empty), Right to (4,1) (empty). No walls indicated in these cells. The nearest goal is far away at (0,0). No immediate fire in adjacent cells.
+
+2) Goal location and Manhattan distance
+- Goal at (0,0). Current Manhattan distance from agent: |4-0| + |0-0| = 4.
+
+3) Fire hazards relative to the agent
+- Fires at: (1,1), (3,4), (4,3).
+  - Distances to agent (4,0): to (1,1) = 4, to (3,4) = 5, to (4,3) = 3.
+- No fire in adjacent cells; the nearest hazard is at (4,3) (distance 3), with others farther away.
+
+4) First corrective demonstration move
+- Action: Up (from (4,0) to (3,0)).
+- Justification: This reduces Manhattan distance to the goal from 4 to 3, follows a clear vertical corridor toward (0,0), and avoids stepping toward any fire hazard.
+
+--- highest_loss_frame frame step 7 ---
+Structured analysis for highest_loss_frame (step 7)
+
+1) Agent location and adjacent cells
+- Agent is at (2,3). Adjacent cells: 
+  - Up (1,3) – empty
+  - Down (3,3) – empty
+  - Left (2,2) – empty
+  - Right (2,4) – empty
+- Nearby hazards: fires are at (1,1), (3,4), and (4,3); no fire in adjacent cells, but (2,4) and (3,3) are each one step away from the fire at (3,4), so moving into those could raise short-term risk.
+
+2) Goal location and Manhattan distance
+- Goal is at (0,0).
+- Current Manhattan distance from (2,3) to (0,0) is |2-0| + |3-0| = 5.
+
+3) Fire hazards relative to the agent
+- Distances to fires from (2,3): to (1,1) = 3, to (3,4) = 2, to (4,3) = 2.
+- No immediate (distance 1) fire threat, but moving to (2,4) or (3,3) would place the agent one step from a fire (notably (3,4)) increasing short-term risk.
+
+4) First corrective demonstration move
+- Action: Up (from (2,3) to (1,3)).
+- Justification: reduces distance to the goal (5 → 4), keeps away from immediate fire adjacency, and continues progress toward (0,0) with a safer direction.
+
+--- end_frame frame step 60 ---

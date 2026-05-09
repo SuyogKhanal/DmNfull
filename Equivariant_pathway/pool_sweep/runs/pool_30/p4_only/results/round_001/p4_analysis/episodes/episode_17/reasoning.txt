@@ -1,0 +1,32 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+
+- Episode context:
+  - Start position: [2, 0]
+  - Goal: [0, 3]
+  - Fires: (2,4), (3,2), (3,3)
+  - Total steps: 60
+  - Outcome: Failure (not reaching GOAL); final reward -8.70
+- Step-by-step trace (as grounded in the provided logs):
+  - Step 0 (start): Agent at (2,0). The Vision block notes a corrective demonstration move proposed: Up to (1,0). This aligns with an initial attempt to head toward the goal while maintaining a safe approach away from immediate hazards.
+  - Early phase (steps 1–6 approximate in the provided trace): The exact per-step coordinates are not enumerated in the provided log; however, by Step 7 the agent has reached (4,3). This indicates substantial movement from the start region toward the lower-right quadrant, likely exploring around central rows where central-fire hazards exist.
+  - Step 7 (highest_loss_frame): Agent at (4,3). Adjacents:
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+n_demos: 1
+demo_variations: Top-edge corridor single demonstration along the safe top-row path from start to goal: (2,0)->(1,0)->(0,0)->(0,1)->(0,2)->(0,3)
+rationale: 'Stay in row 0 while traversing to the goal column, then descend along that column.' This top-edge path avoids central fire hazards and reaches the goal from the given start position.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? The AI tends to struggle when navigating near the central fire cluster (especially around (3,2) and (3,3)). The safe route is to avoid dipping into the central area and use the top-edge corridor instead.
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough stays on the top edge: move up from the start to reach the top row, then sweep horizontally along row 0 to the goal column, reaching the goal at (0,3). The demonstrated path is: (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to prefer the top-edge corridor in this configuration, prioritizing a top-row traversal to avoid central fires and reach the goal efficiently.
+
+4. HOW MANY walkthroughs are needed and how should they vary? They require 1 demonstration here because the failure is local to a single corridor/route. If more robustness is desired, you could add a second variation starting slightly offset (e.g., starting from (2,1) and tracing a top-edge path) to test generalization, but the current plan uses one targeted top-edge demonstration.

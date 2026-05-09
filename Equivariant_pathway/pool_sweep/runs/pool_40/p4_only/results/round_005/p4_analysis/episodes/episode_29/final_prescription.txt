@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,4)->(1,3)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: One demo showing top-edge traversal from (1,4) to (1,0) via (1,3)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0) to avoid (0,4).
+rationale: The top-edge corridor is justified by 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion occurs near the top-right area when starting at (1,4); trying to stay on a top-edge path risks stepping on the fire at (0,4). The chosen corridor is top_edge.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe top-edge walkthrough from the start is: (1,4) -> (1,3) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0). This uses the top row to move left across the maze, then drops down to the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid the top-right fire by detouring to the top row first (via (0,3)) and then moving left along the top row before descending to the goal, illustrating a safe top-edge strategy for this fire placement.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration uses the top_edge corridor as described. If more coverage is needed later, you could add variations with slight start-offsets or alternate detours along the top row, but for now one targeted demo suffices to address the local fire-avoidance failure.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: corridor_right_col
+steps: (1,4)->(2,4)->(2,3)->(2,2)->(2,1)->(2,0)->(1,0)
+n_demos: 1
+demo_variations: Same detour path with a slight start offset within the top-right region (e.g., starting at (2,4) instead of (1,4))
+rationale: This path follows the Right-column corridor to bypass the top-right fire hazard, per the KAG corridor fact: 'path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens in the top-right region where the agent tends to try a leftward shortcut along row 1, which can lead into the fire cluster around (1,1) or into the top fire at (0,4). The FINAL_REC uses the Right-column corridor (corridor_right_col) as the grounding for the corrective path.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough from the starting position (1,4) is: move down to (2,4), then sweep left along row 2: (2,3), (2,2), (2,1), (2,0), and finally step up to the goal at (1,0). This detour keeps you away from the fire at (0,4) and avoids the fire at (1,1), arriving at the goal safely.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to avoid hazardous patches by taking a corridor-guided detour: drop down from the top-right area into a safer row, traverse laterally along an open row to bypass hazards, then rejoin toward the goal. This reinforces the idea of using a Right-column corridor strategy when central/bottom-left regions are fire-blocked.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single demonstration is complemented by the variation described in demo_variations (a near-identical detour starting from a slightly offset top-right position, e.g., starting at (2,4) instead of (1,4)) to test robustness without multiplying the data unnecessarily.

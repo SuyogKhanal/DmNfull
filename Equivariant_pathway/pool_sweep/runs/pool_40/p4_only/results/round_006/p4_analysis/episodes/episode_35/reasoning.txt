@@ -1,0 +1,97 @@
+=== ROOT CAUSE ANALYSIS ===
+1) TRAJECTORY RECONSTRUCTION
+- Episode start
+  - Start position: (0, 4). Fires: at (1,2), (2,3), (4,3). Goal: (2,2). Distance Start→Goal = 4 (Manhattan).
+
+- Step 1
+  - Action taken: Down (MOVE UP/DOWN index 1) to (1, 4).
+  - Rationale given by the step-descriptions: This aligns with staying along the right-side corridor (safe region) and progressing toward the goal while keeping clear of the known fire tiles.
+
+- Step 2
+  - Action taken: Left (MOVE LEFT index 2) to (1, 3).
+  - Rationale: A plausible local-step to navigate toward the corridor path but now moving off the rightmost column.
+
+- Step 3
+  - Action taken: Left (MOVE LEFT index 2) to (1, 2).
+  - Result: This tile is a FIRE tile. Episode terminates immediately with negative reward.
+  - State at termination: Agent on a FIRE tile; no goal reached.
+
+- Summary of trajectory
+  - Start (0,4) -> (1,4) -> (1,3) -> (1,2) [FIRE; termination]
+  - Total steps: 3
+  - Outcome: Failure (fire_collision), reward -10.30.
+
+2) FIRST WRONG DECISION
+- Earliest divergence from a safe path: Step 3.
+  - Location before the decision: (1,3).
+  - Action taken: Left to (1,2) (tile FIRE).
+  - Action that should have been taken instead: Right back to (1,4) (i.e., from (1,3) take RIGHT).
+  - Rationale: The corridor-informed safe route from the starting position is the Right-column corridor. From (1,3), the best corrective move to preserve the corridor and avoid hazards is to re-enter column 4 by moving RIGHT to (1,4) and continue down along column 4 to bypass central fires (ultimately reaching the goal via a safe detour). The alternative LEFT into (1,2) directly steps onto a FIRE tile, causing the observed terminal failure.
+
+3) WHY THE POLICY FAILED
+- Core failure mode: fm_fire_collision (Agent entered a FIRE tile).
+- Evidence grounding:
+  - The episode’s topography has fires at (1,2) and (2,3) that create a hazard corridor near the intended right-column route. The agent’s Step 3 decision to move from (1,3) to (1,2) directly enters a known hazard tile, indicating the policy did not generalize safe fire-avoidance for this (start, goal, fire-placement) configuration.
+  - The KAG defines a Right-column corridor intended for top-right starts when central and bottom-left regions are blocked by fire: “path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.” The observed failure contradicts this corridor guidance once the agent turns left into a fire tile instead of continuing along the safe right-hand column.
+  - Dynamic configuration context: randomised start, goal, and 3-fire placements per episode (FIRE tiles are randomized). The agent must generalize fire-avoidance across configurations. The episode demonstrates a fire-avoidance failure in a configuration that should be solvable via a corridor-based plan.
+  - The policy constraints (Stochastic DDPM Inference, CellAlignedEncoder, Observation/Prediction Horizons) imply a reliance on local vision signals and recent history. The observed misstep suggests either insufficient exposure to corridor-guided fire-avoidance demonstrations or insufficient encoding/conditioning to reliably stay in the safe corridor when a hazard sits adjacent to the anticipatory path.
+- Grounding from KAG vocabulary
+  - Failure mode cited: fm_fire_collision (Tile FIRE causes termination and a large negative reward when entered).
+  - The episode demonstrates a direct fire collision stemming from a single-step decision, indicating a local misgeneralization rather than a windowed timeout or wall-thrashing (which would show different patterns in the trace).
+
+- Additional notes tied to dynamic configuration
+  - The episode’s randomized start (0,4) and goal (2,2) satisfy min_start_goal_manhattan=4, but still require robust generalization to avoid fires placed in adjacent columns/rows that could tempt short-horizon detours.
+  - Because the corridor guidance (Right-column corridor) is designed for top-right starts with fires in central regions, a single mis-step (as observed) reveals the policy’s tendency to deviate from corridor-based avoidance when the local neighborhood hints at a hazard. This aligns with the need for corrective demonstrations that emphasize staying within the safe corridor and avoiding diagonal/shortcuts that lead into fire tiles.
+
+4) RAG CROSS-EPISODE EVIDENCE
+- No retrieved cases.
+  - No external (retrieval-augmented) cross-episode evidence is available or cited in this analysis block. The section is left as “No retrieved cases.”
+
+5) CORRIDOR & PATH PROPOSAL
+- Corridor selection
+  - Chosen corridor: Right-column corridor (id=corridor_right_col)
+  - Verbatim corridor fact from KAG:
+    - 'Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+- Concrete corrective path (start -> goal) that avoids all fires
+  - Proposed coordinate path:
+    - Start: (0, 4)
+    - (1, 4)
+    - (2, 4)
+    - (3, 4)
+    - (3, 3)
+    - (3, 2)
+    - (2, 2)  // Goal
+  - Path validation: All tiles in this path are FREE (except for the final GOAL at (2,2)). The path stays in column 4 as long as needed, then turns left on row 3 to reach the goal, avoiding the FIRE tiles at (1,2), (2,3), and (4,3). This route aligns with the Right-column corridor’s safe-avoidance guidance for a top-right start with central fires.
+- One-sentence justification grounded in sections 1–3
+  - Justification: After Step 2, the agent should have persisted in the safe Right-column corridor to avoid stepping onto (1,2) or (2,3); the proposed corridor-based path provides a single, robust detour route that avoids all fires and reaches the goal, addressing the fire_collision root cause identified in Section 3.
+
+- Demo plan (minimum, per SAMPLE-EFFICIENCY DIRECTIVE)
+  - n_demos: 1
+  - demo_variations: 1
+  - Rationale: This episode’s failure is a single-fire collision (fm_fire_collision) in a configuration that a corridor-based plan (Right-column corridor) can handle with a single corrective demonstration. A single corrective example showing the corridor-following safe detour suffices to cover this hazard configuration in the training distribution, given the dynamic randomization context.
+
+Note on corridor usage and grounding
+- The corridor-based demonstration aligns with the environment’s failure taxonomy and corridor definitions, and it is explicitly chosen to address the fire-avoidance failure observed in this episode. The quoted corridor fact provides the justification for selecting the right-column corridor as the grounding route for a top-right start under fire placement conditions like those in this episode.
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: right_edge
+steps: (0,4)->(1,4)->(2,4)->(3,4)->(3,3)->(3,2)->(2,2)
+n_demos: 1
+demo_variations: One corridor-following corrective demonstration along the Right-column corridor; slight start-offset variation near the top-right region could be used to cover nearby configurations
+rationale: Follows the Right-column corridor to stay along column 4 and detour around central fires, as justified by 'Right-column corridor (id=corridor_right_col): path_description=Reach column 4 along the top, then descend column 4 to the goal row., ideal_for=Start positions near the top-right when the central and bottom-left regions are blocked by fire.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the Right-edge (Right-column) corridor area, specifically around Step 3 of the Episode when it deviates from the safe corridor path and risks entering hazard zones near the top-right.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough follows the Right-edge corridor: start at (0,4), move down the rightmost column along (1,4) and (2,4), reach (3,4), then detour left via (3,3) and (3,2) to finally enter the goal at (2,2).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- The AI will learn to stay primarily in the safe right-column corridor to avoid central fires and to perform a safe detour within that corridor region when a direct shortcut would step onto a fire tile.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single corridor-following demonstration should be sufficient for this local failure since it demonstrates the corridor-based avoidance path in the top-right region; the variation line notes a possible slight start-offset near the top-right to cover nearby configurations, but only one concrete demonstration is used here.

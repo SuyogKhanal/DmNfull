@@ -1,0 +1,16 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (4,4)->(3,4)->(2,4)->(1,4)->(0,4)->(0,3)->(0,2)->(0,1)->(0,0)->(1,0)
+n_demos: 1
+demo_variations: One variation: same Top-edge corridor path with a slight start-offset (e.g., begin by moving Up to (3,4) and then follow the corridor).
+rationale: This uses the Top-edge corridor to stay on the top row and bypass the upper-middle fires, as defined by the KAG fact: 'Top-edge corridor (id=corridor_top_edge): path_description=Stay in row 0 while traversing to the goal column, then descend along that column., ideal_for=Start positions near the top rows when fire occupies the middle rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? It struggles in the Top-edge corridor area, i.e., it fails to consistently use the top-edge path that avoids central and upper fires (top_edge corridor).
+
+2. WHAT should a good walkthrough look like in that area? A good walkthrough follows the Top-edge corridor: from the start (4,4) go Up along the rightmost column to reach the top row (4,4) → (3,4) → (2,4) → (1,4) → (0,4), then traverse left along the top row (0,4) → (0,3) → (0,2) → (0,1) → (0,0), and finally descend to the goal at (1,0) (0,0) → (1,0).
+
+3. WHAT will the AI learn from seeing that walkthrough? It will learn to consistently prefer a top-edge monotone path when fires occupy the middle/bottom regions, effectively generalizing fire-avoidance by staying on the top row during the horizontal transit and then descending along the chosen column to the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? n_demos = 1 with a single Top-edge corridor demonstration as the core lesson. If a follow-up is desired, a minor variation could show a start-offset on the top edge (e.g., starting from a nearby top-edge position) while still using the same corridor strategy.

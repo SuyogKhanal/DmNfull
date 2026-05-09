@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: (1,4)->(2,4)->(3,4)->(4,4)->(4,3)->(4,2)->(4,1)->(4,0)->(3,0)->(2,0)->(1,0)
+n_demos: 1
+demo_variations: One demonstration using the left-edge corridor; a natural variation would offset the start within the corridor vicinity while keeping the same safe route.
+rationale: The left-edge corridor path 'Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column' directly justifies choosing left_edge to avoid central-fire hazards in this episode.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   - The AI tends to over-rely on top-centered routes that risk stepping into central fires, especially when starting near the top-right. The left-edge corridor is chosen here to avoid those central-fire hazards.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+   - Start at (1,4). Move down along column 4 to (4,4). Then travel left along the bottom row to (4,0). Finally move up along column 0 to reach the goal at (1,0). This path keeps most steps along the bottom edge (the left-edge corridor) and avoids the fire tiles while ending at the goal.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+   - It will learn to prefer the left-edge corridor when central rows contain fires, using the bottom row to bypass hazards and then climbing back up to the goal along a safe vertical corridor.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+   - n_demos = 1 for this local failure. The single demo should illustrate the left-edge corridor; variations could include a slight start-offset within the corridor vicinity to test robustness, as described in the demo_variations line.

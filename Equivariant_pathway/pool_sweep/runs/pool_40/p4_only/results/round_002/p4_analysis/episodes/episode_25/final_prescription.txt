@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (1,2)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)->(4,3)
+n_demos: 1
+demo_variations: Variant: use the Right-column corridor path (reach column 4 along the top, then descend) as an alternate safe route.
+rationale: Selected corridor top_edge is justified by KAG's 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- The confusion happens in the Top-edge corridor region (top_edge). The earliest misstep is Step 1, where the agent goes DOWN from (1,2) toward the central area instead of following the top-edge corridor to reach the safe column before descending.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A safe walkthrough along the Top-edge corridor would be: start at (1,2), move UP to (0,2), then traverse along the top row to (0,3) and (0,4). From there, descend the safe column to (4,4) and finally go left to the GOAL at (4,3). The full path is: (1,2)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)->(3,4)->(4,4)->(4,3).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to commit early to a fire-avoidant corridor strategy (specifically the Top-edge corridor) when fires cluster in the bottom-left region, reducing the likelihood of drifting into hazardous zones and improving robustness across randomized starts/goals.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the single Top-edge corridor demonstration described above as the core correction. The demo_variations line notes an alternate safe route (Right-column corridor) that could be explored in additional demonstrations in future iterations to test corridor-choice flexibility.

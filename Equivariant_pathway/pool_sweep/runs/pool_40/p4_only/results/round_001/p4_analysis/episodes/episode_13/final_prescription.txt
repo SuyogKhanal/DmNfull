@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)>
+n_demos: 1
+demo_variations: One variation: start near the top-left quadrant and illustrate the same left-edge routing to avoid central fires.
+rationale: This corrective path follows the left-edge corridor because 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It gets confused in the top-left region when fires cluster near the start, leading it to take a rightward move toward the central hazards; the chosen corridor to fix this is the Left-edge corridor (left_edge).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A correct walkthrough starts by moving left from the start (1,1) to (1,0), then descends down the left column to (4,0). From there, traverse along the bottom row to (4,4), and finally go up the rightmost column to reach the goal at (0,4). The entire path is: (1,1) -> (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (4,4) -> (3,4) -> (2,4) -> (1,4) -> (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- It will learn to prefer the left-edge corridor in configurations where central fires threaten early-right paths, staying in column 0 down to row 4, then moving along row 4 toward the goal, and finally adjusting to reach the goal without stepping on hazardous tiles.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. The single variation should illustrate starting near the top-left with the same left-edge routing, emphasizing fire avoidance in this layout.

@@ -1,0 +1,20 @@
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(1,3)->(1,2)->(1,1)->(1,0)->(2,0)->(3,0)->(4,0)>
+n_demos: 1
+demo_variations: Left-edge corridor demonstration starting at (1,3) with initial left moves to column 0 and then straight down to the goal
+rationale: To avoid the top-fire hazard and reach the goal via the safe left-edge corridor, as described by 'Left-edge corridor: path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows.'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+- It struggles in the left-edge region near the starting area, i.e., the left_edge corridor near the top-left quadrant where fires are nearby (the start is at (1,3) and the model must avoid the nearby hazards).
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+- A good walkthrough would move from the start (1,3) left along the row to the left-most column: (1,3) -> (1,2) -> (1,1) -> (1,0), then descend straight down the left edge: (2,0) -> (3,0) -> (4,0), ending at the goal. This keeps the agent in the left_edge corridor for the bulk of the path and avoids stepping into fire tiles.
+
+3. WHAT will the AI learn from seeing that walkthrough?
+- The AI will learn that, in this fire configuration, preferring the left-edge corridor is a safer strategy to reach the goal without triggering fire hazards. It will associate staying on the left edge and descending there with safer progress toward the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+- n_demos = 1. Use the variation described in demo_variations: a single left-edge corridor demonstration starting at (1,3) with initial left moves to column 0 and then straight down to the goal. If later episodes reveal other hazard placements that require different corridors (top_edge or right_column), add targeted variations that reflect those alternative safe corridors.

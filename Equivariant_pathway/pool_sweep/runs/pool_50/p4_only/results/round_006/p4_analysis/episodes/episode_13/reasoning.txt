@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: left_edge
+steps: <(1,1)->(1,0)->(2,0)->(3,0)->(4,0)->(4,1)->(4,2)->(4,3)->(4,4)->(3,4)->(2,4)->(1,4)->(0,4)>
+n_demos: 1
+demo_variations: Variant start_pos offset to (1,0); follow the same left-edge corridor route to the goal.
+rationale: 'path_description=Stay in column 0 while descending to row 4, then travel along row 4 toward the goal column., ideal_for=Start positions near the top-left quadrant when fire occupies the central rows'
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   - The confusion tends to occur when central-fire blocks force the agent to reconsider its path; the chosen corridor left_edge targets the top-left start region and avoids the central fire cluster.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+   - A good walkthrough should start at the given start, slide left to column 0, descend straight down to row 4 along column 0, then traverse right along row 4 to reach column 4, and finally move up the goal column to the goal at (0,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+   - It will learn to prefer the left-edge route when fires occupy central rows, leveraging a safe corridor that keeps it away from central hazards while still reaching the goal column and then the goal row.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+   - One demonstration is provided (n_demos = 1) to address a local, corridor-specific failure. A minor variation is described in demo_variations: starting one cell to the left (1,0) and following the same left-edge corridor path to the goal, to test robustness to small start-position shifts.

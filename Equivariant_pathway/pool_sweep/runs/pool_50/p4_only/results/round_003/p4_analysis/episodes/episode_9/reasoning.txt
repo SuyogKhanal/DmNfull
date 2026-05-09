@@ -1,0 +1,25 @@
+=== ROOT CAUSE ANALYSIS ===
+
+
+
+=== DEMONSTRATION PRESCRIPTION ===
+<<<FINAL_REC>>>
+corridor: top_edge
+steps: (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4)
+n_demos: 1
+demo_variations: Single demonstration using top-edge corridor path (0,0)->(0,1)->(0,2)->(0,3)->(0,4)->(1,4)->(2,4); future variations test small start offsets on the top row and alternative fire placements while using the same corridor
+rationale: 'path_description=Stay in row 0 while traversing to the goal column, then descend along that column' provides a safe path that avoids fires while reaching the goal.
+<<<END_FINAL_REC>>>
+
+PLAIN-ENGLISH EXPLANATION FOR THE HUMAN DEMONSTRATOR:
+1. WHERE in the maze does the AI get confused? (reference the corridor named in FINAL_REC)
+   - The AI tends to confuse its path when fires block the left edge (left_edge corridor). To address this, we guide it along the top_edge corridor which avoids the left-side fires and leads to the goal.
+
+2. WHAT should a good walkthrough look like in that area? (describe the same path FINAL_REC specifies)
+   - Move along the top row from the start (0,0) to (0,4), then drop down the rightmost column to the goal at (2,4): (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).
+
+3. WHAT will the AI learn from seeing that walkthrough?
+   - It learns to prefer top-edge navigation when fires occupy the central/left regions, staying on the top row to avoid hazards and then descending to reach the goal.
+
+4. HOW MANY walkthroughs are needed and how should they vary? (state n_demos from FINAL_REC and reuse demo_variations)
+   - n_demos = 1. The single demonstration uses the top-edge corridor path; future variations should test small start offsets along the top row and different fire placements while keeping the same corridor to verify robustness.
