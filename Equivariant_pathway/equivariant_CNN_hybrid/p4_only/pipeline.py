@@ -82,13 +82,43 @@ def _bootstrap(seed, initial_epochs, initial_demos):
     DEMO_DIR.mkdir(parents=True, exist_ok=True)
     CKPT_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    # baseline_only/demos/ contains BOTH the 20 initial BFS demos AND
+    # every corrective demo the hybrid DAgger loop saved on top of
+    # them. P4 must start from the SAME initial 20 to be comparable,
+    # so we filter on the JSON 'source' field:
+    #   - "equivariant_pathway_bfs"             -> initial BFS demo  (KEEP)
+    #   - "hybrid_baseline_dagger_correction"   -> DAgger correction (SKIP)
+    # Anything unrecognised is skipped with a warning rather than
+    # silently let through.
     n_copied = 0
+    n_skipped_dagger = 0
+    n_skipped_unknown = 0
     for src in sorted(BO_DEMOS.glob("*.json")):
+        try:
+            with open(src, "r") as f:
+                payload = json.load(f)
+        except Exception as e:
+            _info(f"demos: skipping unreadable {src.name} ({e!r})")
+            n_skipped_unknown += 1
+            continue
+        source = (payload.get("source") or "").strip()
+        if source == "hybrid_baseline_dagger_correction":
+            n_skipped_dagger += 1
+            continue
+        if source != "equivariant_pathway_bfs":
+            _info(f"demos: skipping {src.name} (unrecognised source={source!r})")
+            n_skipped_unknown += 1
+            continue
         dst = DEMO_DIR / src.name
         if not dst.exists():
             shutil.copy2(src, dst)
             n_copied += 1
-    _info(f"copied {n_copied} initial demos -> {DEMO_DIR}")
+    n_now = sum(1 for _ in DEMO_DIR.glob("*.json"))
+    _info(
+        f"demos: copied {n_copied} initial BFS demos from {BO_DEMOS}; "
+        f"skipped {n_skipped_dagger} baseline-DAgger corrections, "
+        f"{n_skipped_unknown} unknown. Total now in {DEMO_DIR}: {n_now}."
+    )
 
     init_best = BO_CKPT / "initial_best_hybrid_policy.pth"
     init_last = BO_CKPT / "initial_last_hybrid_policy.pth"
