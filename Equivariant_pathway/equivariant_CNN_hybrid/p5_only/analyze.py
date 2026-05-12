@@ -45,12 +45,16 @@ AGGREGATOR_ADDENDUM = (
     "      n_failure_episodes  4-7   -> aim for 2-4\n"
     "      n_failure_episodes  8-15  -> aim for 3-7\n"
     "      n_failure_episodes  16+   -> aim for 5-10\n"
-    "   Always keep total < n_failure_episodes (otherwise no compression).\n"
-    "5. RAG NOTE: when the per-episode reasoning above cites RAG-retrieved similar past\n"
-    "   failures, prefer to merge those failures into a single cluster rather than\n"
-    "   creating cosmetically-distinct clusters. The retrieved cases are evidence the\n"
-    "   failure mode is recurring; one well-chosen layout for the cluster is usually\n"
-    "   the right call.\n"
+    "   Always keep total <= n_failure_episodes (otherwise no compression).\n"
+    "5. RAG NOTE: when the per-episode reasoning cites RAG-retrieved similar past\n"
+    "   failures, treat those retrievals as evidence that previous prescriptions did\n"
+    "   NOT fully fix the corridor / failure-mode — the policy is still failing on it\n"
+    "   even after the matched demo was trained on. Prescribe at least one layout\n"
+    "   that explicitly DIFFERS from the retrieved cases (different start, goal, or\n"
+    "   fire layout on the SAME corridor) so the new demo adds coverage rather than\n"
+    "   duplicating what the policy already has. Do NOT use RAG matches as a reason\n"
+    "   to collapse otherwise-distinct failure clusters into one — collapsing here\n"
+    "   under-prescribes and prolongs the loop.\n"
 )
 
 

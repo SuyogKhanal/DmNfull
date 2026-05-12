@@ -313,7 +313,15 @@ def main():
                  max_steps=args.max_steps)
         corr_metrics = _read_sr(corr_dir)
         analysis_dir = round_dir / "p5_analysis"
-        rag_bank = RAG_BANK_ROOT / f"round_{rnd:03d}"
+        # Persistent RAG bank across rounds within this profile. Previously
+        # we passed a fresh rag_bank/round_NNN/ subdir each round, which
+        # meant every round queried an empty bank (rag_bank.py:retrieve
+        # returns "" when ntotal == 0) and writes only landed in the new
+        # subdir the NEXT round never read. Pointing at RAG_BANK_ROOT
+        # directly lets round N retrieve from rounds 1..N-1's stores.
+        # Isolation across profiles / pool sizes is still guaranteed
+        # because RAG_BANK_ROOT lives under this method's ROOT.
+        rag_bank = RAG_BANK_ROOT
         _analyze(corr_dir, analysis_dir, rag_bank)
 
         rec_path = _flatten_recommended_layouts(analysis_dir)

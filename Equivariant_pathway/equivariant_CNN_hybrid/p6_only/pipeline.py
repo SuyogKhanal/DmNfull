@@ -313,7 +313,11 @@ def main():
                  max_steps=args.max_steps)
         corr_metrics = _read_sr(corr_dir)
         analysis_dir = round_dir / "p6_analysis"
-        rag_bank = RAG_BANK_ROOT / f"round_{rnd:03d}"
+        # Persistent RAG bank across rounds within this profile. See the
+        # matching comment in p5_only/pipeline.py for the rationale —
+        # a per-round subdir means round N queries an empty bank because
+        # round (N-1)'s writes never reach it.
+        rag_bank = RAG_BANK_ROOT
         _analyze(corr_dir, analysis_dir, rag_bank)
 
         rec_path = _flatten_recommended_layouts(analysis_dir)
