@@ -1,0 +1,287 @@
+[
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 23,
+    "maze_name": "heldout_024",
+    "seed": 5023,
+    "total_steps": 60,
+    "total_reward": -8.85000000000001,
+    "success": false,
+    "start_pos": [
+      1,
+      0
+    ],
+    "goal_pos": [
+      0,
+      3
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "1"
+      ],
+      [
+        "1",
+        "4"
+      ],
+      [
+        "2",
+        "4"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        0
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent chooses a move toward the adjacent fire at (1,4) instead of following a hazard-avoiding corridor, failing to plan safely and ending the episode without reaching the goal. Key configuration: 5x5 grid with Start [1,0], Goal [0,3], fires at [0,1], [1,4], [2,4]. Correct path: follow the left-edge corridor to bypass fires: (1,0) -> (2,0) -> (3,0) -> (4,0) -> (4,1) -> (4,2) -> (4,3) -> (3,3) -> (2,3) -> (1,3) -> (0,3). The agent should stay away from hazards and reach the goal along this longer, safety-first route.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 35,
+    "maze_name": "heldout_036",
+    "seed": 5035,
+    "total_steps": 60,
+    "total_reward": -8.90000000000001,
+    "success": false,
+    "start_pos": [
+      0,
+      4
+    ],
+    "goal_pos": [
+      2,
+      2
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "2"
+      ],
+      [
+        "2",
+        "3"
+      ],
+      [
+        "4",
+        "3"
+      ]
+    ],
+    "config_key": [
+      [
+        0,
+        4
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          4,
+          3
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent diverged early from the safe right-edge corridor, taking a left detour to (1,3) instead of continuing down the rightmost column, increasing exposure to central fires and blocking the route to the goal.\n\nKey configuration: Start at (0,4) with the goal at (2,2) and fires at (1,2), (2,3), and (4,3); the intended safe corridor is the right edge (column 4).\n\nCorrect path: Stay on the right-edge corridor down along column 4 (0,4 -> 1,4 -> 2,4 -> 3,4 -> 4,4) and then exit via (3,3) -> (3,2) -> (2,2) to reach the goal, avoiding the central fire cluster.\n\nExpected outcome: By adhering to the right-edge corridor, the agent should reach the goal without stepping onto fire and avoid the failed detour that led to a near-fire adjacency.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 30,
+    "maze_name": "heldout_031",
+    "seed": 5030,
+    "total_steps": 3,
+    "total_reward": -10.299999999999999,
+    "success": false,
+    "start_pos": [
+      1,
+      1
+    ],
+    "goal_pos": [
+      2,
+      4
+    ],
+    "fire_positions": [
+      [
+        "2",
+        "3"
+      ],
+      [
+        "3",
+        "1"
+      ],
+      [
+        "4",
+        "0"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          0
+        ]
+      ]
+    ],
+    "summary": "- Root cause: The agent collided with a Fire tile (2,3) by moving DOWN from (1,3), indicating a failure to follow a hazard-avoidant corridor under randomised layouts.\n- Key configuration: Start at (1,1); fires at (2,3), (3,1), (4,0); goal at (2,4); episode ended after 3 steps with a fire penalty.\n- Correct path: Follow the Top-edge corridor: (1,1) -> (0,1) -> (0,2) -> (0,3) -> (0,4) -> (1,4) -> (2,4).\n- Outcome: The unsafe step into (2,3) caused termination; the top-edge corridor provides a safe alternative to reach the goal in this configuration.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 29,
+    "maze_name": "heldout_030",
+    "seed": 5029,
+    "total_steps": 3,
+    "total_reward": -10.299999999999999,
+    "success": false,
+    "start_pos": [
+      1,
+      4
+    ],
+    "goal_pos": [
+      1,
+      0
+    ],
+    "fire_positions": [
+      [
+        "0",
+        "4"
+      ],
+      [
+        "1",
+        "1"
+      ],
+      [
+        "3",
+        "2"
+      ]
+    ],
+    "config_key": [
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        [
+          0,
+          4
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          3,
+          2
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent followed a middle-row leftward path that collided with a central fire at (1,1) instead of switching to a top-edge corridor to bypass hazards.  \nKey configuration: Start at (1,4), goal at (1,0), fires at (0,4), (1,1), and (3,2); the safe corridor requires leveraging the top edge when central fires obstruct direct progress.  \nCorrect path: (1,4) -> (1,3) -> (0,3) -> (0,2) -> (0,1) -> (0,0) -> (1,0).  \nOutcome rationale: This top-edge corridor route avoids (1,1) and (0,4) fires, aligning with the intended corridor strategy to reach the goal safely.",
+    "root_cause": "pending"
+  },
+  {
+    "run_id": "p6_analysis",
+    "episode_id": 33,
+    "maze_name": "heldout_034",
+    "seed": 5033,
+    "total_steps": 60,
+    "total_reward": -8.85000000000001,
+    "success": false,
+    "start_pos": [
+      2,
+      0
+    ],
+    "goal_pos": [
+      0,
+      4
+    ],
+    "fire_positions": [
+      [
+        "1",
+        "2"
+      ],
+      [
+        "2",
+        "3"
+      ],
+      [
+        "3",
+        "1"
+      ]
+    ],
+    "config_key": [
+      [
+        2,
+        0
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          1
+        ]
+      ]
+    ],
+    "summary": "Root cause: The agent failed to generalize fire-avoidance and did not commit to the safe top-edge corridor when central fires were nearby, leading to a near-fire path and no goal reach within 60 steps. Key configuration: start at (2,0); fires at (1,2), (2,3), (3,1); goal at (0,4). The first corrective cue suggested moving Up from (1,0) to (0,0) to stay on the safe edge, but the agent diverged from this corridor after step 5. Correct path: follow the top-edge corridor: (2,0) -> (1,0) -> (0,0) -> (0,1) -> (0,2) -> (0,3) -> (0,4).",
+    "root_cause": "pending"
+  }
+]
