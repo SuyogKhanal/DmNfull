@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=hybrid_bo_vs_p4
+#SBATCH --job-name=bo_vs_p4_hybrid
 #SBATCH --partition=gpu
-#SBATCH --qos=batch-long
+#SBATCH --qos=batch-short
 #SBATCH --gpus=4
 #SBATCH --mem=200G
 #SBATCH --cpus-per-gpu=8
-#SBATCH --time=72:00:00
+#SBATCH --time=48:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=s226137394@deakin.edu.au
 #SBATCH --output=slurm_logs/%x_%j.out

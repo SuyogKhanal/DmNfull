@@ -88,6 +88,18 @@ def _run_analysis(rollout_dir: Path, out_dir: Path, demo_dir: Path,
         },
         "tkf": {"demo_dir": str(demo_dir)},
     }
+    # Optional sequential override: when P4_PHASE_B_MAX_WORKERS is set to a
+    # positive int (the notebook sets it to "1"), force Phase B fan-out to
+    # that many workers so OpenAI calls run sequentially. Unset (e.g. the
+    # swatch.sh / Slurm path) leaves `extra` untouched -> parallel as before.
+    _pbw = os.environ.get("P4_PHASE_B_MAX_WORKERS")
+    if _pbw:
+        try:
+            _n = int(_pbw)
+        except (TypeError, ValueError):
+            _n = 0
+        if _n > 0:
+            extra["pipeline"] = {"phase_b_max_workers": _n}
     return run_profile_analysis(
         profile_yaml_name=PROFILE_YAML,
         rollout_dir=str(rollout_dir),
