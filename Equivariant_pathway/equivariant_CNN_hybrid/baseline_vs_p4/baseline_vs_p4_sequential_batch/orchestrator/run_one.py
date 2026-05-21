@@ -32,10 +32,7 @@ from typing import Dict, List
 import yaml
 
 from ..layouts import contamination as cross_run_contam
-from ..layouts.layout_setup import (
-    ensure_correction_layouts_for_run,
-    ensure_shared_layouts,
-)
+from ..layouts.layout_setup import ensure_shared_layouts
 from . import bootstrap as bootstrap_mod
 from .workspace import RunWorkspace, workspace_for
 
@@ -70,7 +67,7 @@ def _smoke_overrides(cfg: Dict) -> Dict:
 
 
 def _run_baseline(
-    ws: RunWorkspace, cfg: Dict, correction_yaml: Path, heldout_yaml: Path,
+    ws: RunWorkspace, cfg: Dict, train_yaml: Path, heldout_yaml: Path,
 ) -> Dict:
     from ..selection import baseline_dagger
     trainer_cfg = cfg.get("trainer", {}) or {}
@@ -85,8 +82,10 @@ def _run_baseline(
         bo_root=ws.method_root("baseline"),
         shared_demo_dir=ws.init_demos,
         shared_ckpt_dir=ws.init_checkpoints,
-        correction_yaml=correction_yaml,
+        train_yaml=train_yaml,
         heldout_yaml=heldout_yaml,
+        run_shared_dir=ws.shared,
+        correction_n=int(cfg.get("correction_n", 50)),
         budget=int(cfg.get("budget", 15)),
         target_sr=float(cfg.get("target_sr", 0.90)),
         max_rounds=int(cfg.get("max_rounds", 50)),
@@ -105,7 +104,7 @@ def _run_p4(
     method_name: str,
     ws: RunWorkspace,
     cfg: Dict,
-    correction_yaml: Path,
+    train_yaml: Path,
     heldout_yaml: Path,
 ) -> Dict:
     """Dispatch to p4.pipeline_seq or p4.pipeline_batch.
@@ -133,8 +132,10 @@ def _run_p4(
         method_root=ws.method_root(method_name),
         shared_demo_dir=ws.init_demos,
         shared_ckpt_dir=ws.init_checkpoints,
-        correction_yaml=correction_yaml,
+        train_yaml=train_yaml,
         heldout_yaml=heldout_yaml,
+        run_shared_dir=ws.shared,
+        correction_n=int(cfg.get("correction_n", 50)),
         config=p4_cfg,
     )
 
@@ -265,23 +266,34 @@ def main():
         per_run_demos_dir=ws.init_demos,
         per_run_ckpt_dir=ws.init_checkpoints,
     )
-    correction_yaml = ensure_correction_layouts_for_run(
-        run_id=ws.run_id,
-        correction_n=int(cfg.get("correction_n", 50)),
-        train_yaml=shared["train"],
-        heldout_yaml=shared["heldout"],
-        out_dir=ws.shared,
-    )
-    _info(f"correction pool -> {correction_yaml}")
+    # Correction pool rotates per round inside each method's loop; the
+    # orchestrator no longer pre-samples. Clean up the legacy single-pool
+    # yaml so it can't be silently picked up by a stale tool reading
+    # `shared/correction_layouts.yaml`.
+    legacy_pool = ws.shared / "correction_layouts.yaml"
+    if legacy_pool.exists():
+        try:
+            legacy_pool.unlink()
+            _info(f"removed legacy single-pool yaml {legacy_pool}")
+        except OSError:
+            pass
+    legacy_report = ws.shared / "layout_setup_report.json"
+    if legacy_report.exists():
+        try:
+            legacy_report.unlink()
+        except OSError:
+            pass
+    _info(f"per-round pools will land under {ws.shared}/round_NNN/")
 
     # ---- Phase 3: run methods sequentially -------------------------------
     summary: Dict = {
         "run_id": ws.run_id,
         "budget": int(cfg.get("budget", 15)),
         "target_sr": float(cfg.get("target_sr", 0.90)),
-        "correction_yaml": str(correction_yaml),
+        "correction_yaml_dir": str(ws.shared),
         "heldout_yaml": str(shared["heldout"]),
         "training_yaml": str(shared["train"]),
+        "correction_n": int(cfg.get("correction_n", 50)),
         "methods": methods,
         "results": {},
     }
@@ -290,9 +302,9 @@ def main():
         _section(f"PHASE 3: {m}", char="-")
         try:
             if m == "baseline":
-                result = _run_baseline(ws, cfg, correction_yaml, shared["heldout"])
+                result = _run_baseline(ws, cfg, shared["train"], shared["heldout"])
             elif m in ("p4_sequential", "p4_batch"):
-                result = _run_p4(m, ws, cfg, correction_yaml, shared["heldout"])
+                result = _run_p4(m, ws, cfg, shared["train"], shared["heldout"])
             else:
                 _info(f"unknown method '{m}', skipping")
                 continue

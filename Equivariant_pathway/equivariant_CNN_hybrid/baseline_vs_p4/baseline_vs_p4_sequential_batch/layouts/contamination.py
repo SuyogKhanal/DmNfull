@@ -35,8 +35,32 @@ def _run_dirs(results_root: Path) -> List[Path]:
     )
 
 
-def _correction_signatures(run_dir: Path) -> Set[Tuple]:
-    return _signatures_from_yaml(run_dir / "shared" / "correction_layouts.yaml")
+def _per_round_correction_signatures(run_dir: Path) -> Dict[int, Set[Tuple]]:
+    """Return ``{round_idx: signature_set}`` for every per-round
+    correction pool yaml under ``run_dir/shared/round_*/``.
+
+    Falls back to the legacy single-file
+    ``run_dir/shared/correction_layouts.yaml`` (stored under the
+    sentinel round_idx ``0``) so reports stay sensible if the user has a
+    mix of pre-rotation and post-rotation runs on disk.
+    """
+    out: Dict[int, Set[Tuple]] = {}
+    shared = run_dir / "shared"
+    for d in sorted(shared.glob("round_*")):
+        if not d.is_dir():
+            continue
+        try:
+            idx = int(d.name.split("_")[-1])
+        except ValueError:
+            continue
+        sigs = _signatures_from_yaml(d / "correction_layouts.yaml")
+        if sigs:
+            out[idx] = sigs
+    if not out:
+        legacy = _signatures_from_yaml(shared / "correction_layouts.yaml")
+        if legacy:
+            out[0] = legacy
+    return out
 
 
 def _demo_signature(demo_json: dict) -> Tuple:
@@ -81,14 +105,32 @@ def cross_run_check(
     """Run the across-run contamination check and return a structured
     report.
 
-    The report has shape::
+    Per-round rotation means each run owns N pools (one per round). We
+    pair-check every ``(run_a, round_a) × (run_b, round_b)`` for layout
+    overlap and split the findings:
+
+    * ``correction_pool_intra_run_overlap`` — same run, different rounds.
+      Should always be empty if
+      :func:`layout_setup.ensure_correction_layouts_for_round`'s blocked
+      set worked. Surfacing it is a correctness check on the rotation.
+    * ``correction_pool_cross_run_overlap`` — different runs. Overlaps
+      here are statistically possible (rounds at the same index in two
+      different runs may happen to draw the same layout); we just want
+      visibility.
+
+    Report shape::
 
         {
           "status": "ok" | "violation",
           "n_runs_checked": int,
+          "n_pools_checked": int,
+          "correction_pool_intra_run_overlap": [
+              {"pool_a": [run_i, round_a], "pool_b": [run_i, round_b],
+               "n_overlap": int, "samples": [...]}, ...
+          ],
           "correction_pool_cross_run_overlap": [
-              {"runs": [i, j], "n_overlap": int, "samples": [...]},
-              ...
+              {"pool_a": [run_i, round_a], "pool_b": [run_j, round_b],
+               "n_overlap": int, "samples": [...]}, ...
           ],
           "demo_cross_run_overlap": {
               "<method>": [
@@ -97,27 +139,37 @@ def cross_run_check(
               ],
               ...
           }
-      }
+        }
     """
     run_dirs = _run_dirs(results_root)
     run_ids = [int(d.name.split("_")[-1]) for d in run_dirs]
 
     # ---- correction pool overlaps -----------------------------------------
-    corr_sigs: Dict[int, Set[Tuple]] = {
-        rid: _correction_signatures(d) for rid, d in zip(run_ids, run_dirs)
-    }
-    corr_overlaps: List[Dict] = []
-    for (rid_a, sigs_a), (rid_b, sigs_b) in combinations(corr_sigs.items(), 2):
-        inter = sigs_a & sigs_b
-        if inter:
-            samples = [list(s) for s in list(inter)[:sample_overlap_limit]]
-            corr_overlaps.append({
-                "runs": [rid_a, rid_b],
-                "n_overlap": len(inter),
-                "samples": samples,
-            })
+    # pools[(run_id, round_idx)] = signature_set
+    pools: Dict[Tuple[int, int], Set[Tuple]] = {}
+    for rid, rdir in zip(run_ids, run_dirs):
+        for round_idx, sigs in _per_round_correction_signatures(rdir).items():
+            pools[(rid, round_idx)] = sigs
 
-    # ---- per-method demo overlaps -----------------------------------------
+    intra_overlaps: List[Dict] = []
+    cross_overlaps: List[Dict] = []
+    for (key_a, sigs_a), (key_b, sigs_b) in combinations(pools.items(), 2):
+        inter = sigs_a & sigs_b
+        if not inter:
+            continue
+        samples = [list(s) for s in list(inter)[:sample_overlap_limit]]
+        entry = {
+            "pool_a": [key_a[0], key_a[1]],
+            "pool_b": [key_b[0], key_b[1]],
+            "n_overlap": len(inter),
+            "samples": samples,
+        }
+        if key_a[0] == key_b[0]:
+            intra_overlaps.append(entry)
+        else:
+            cross_overlaps.append(entry)
+
+    # ---- per-method demo overlaps (unchanged: aggregate per run) ----------
     demo_overlaps: Dict[str, List[Dict]] = {m: [] for m in methods}
     for m in methods:
         demo_sigs: Dict[int, Set[Tuple]] = {
@@ -133,11 +185,17 @@ def cross_run_check(
                     "samples": samples,
                 })
 
-    any_violation = bool(corr_overlaps) or any(demo_overlaps[m] for m in methods)
+    any_violation = (
+        bool(intra_overlaps)
+        or bool(cross_overlaps)
+        or any(demo_overlaps[m] for m in methods)
+    )
     return {
         "status": "violation" if any_violation else "ok",
         "n_runs_checked": len(run_dirs),
-        "correction_pool_cross_run_overlap": corr_overlaps,
+        "n_pools_checked": len(pools),
+        "correction_pool_intra_run_overlap": intra_overlaps,
+        "correction_pool_cross_run_overlap": cross_overlaps,
         "demo_cross_run_overlap": demo_overlaps,
     }
 
@@ -149,14 +207,26 @@ def write_report(report: Dict, out_path: Path) -> None:
 
 
 def print_summary(report: Dict) -> None:
-    n = report.get("n_runs_checked", 0)
+    n_runs = report.get("n_runs_checked", 0)
+    n_pools = report.get("n_pools_checked", 0)
     if report.get("status") == "ok":
-        print(f"[contamination] OK  (n_runs_checked={n})")
-        return
-    print(f"[contamination] VIOLATION  (n_runs_checked={n})")
-    for overlap in report.get("correction_pool_cross_run_overlap", []):
         print(
-            f"  correction pool overlap: runs={overlap['runs']} "
+            f"[contamination] OK  "
+            f"(n_runs_checked={n_runs}, n_pools_checked={n_pools})"
+        )
+        return
+    print(
+        f"[contamination] VIOLATION  "
+        f"(n_runs_checked={n_runs}, n_pools_checked={n_pools})"
+    )
+    for overlap in report.get("correction_pool_intra_run_overlap", []) or []:
+        print(
+            f"  INTRA-run pool overlap: {overlap['pool_a']} vs {overlap['pool_b']} "
+            f"n_overlap={overlap['n_overlap']}  (this should never happen)"
+        )
+    for overlap in report.get("correction_pool_cross_run_overlap", []) or []:
+        print(
+            f"  cross-run pool overlap: {overlap['pool_a']} vs {overlap['pool_b']} "
             f"n_overlap={overlap['n_overlap']}"
         )
     for m, lst in (report.get("demo_cross_run_overlap") or {}).items():

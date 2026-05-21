@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -163,6 +163,11 @@ def ensure_correction_layouts_for_run(
 
     Per-run seed = CORRECTION_SEED_BASE + run_id so each of the N runs
     produces a deterministically distinct pool.
+
+    LEGACY: this function pre-dates per-round rotation. The orchestrator
+    no longer calls it; new code should use
+    :func:`ensure_correction_layouts_for_round`. Kept for back-compat with
+    any external caller that still expects a single per-run pool yaml.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "correction_layouts.yaml"
@@ -186,10 +191,96 @@ def ensure_correction_layouts_for_run(
     return out_path
 
 
-def _save_report(out_dir: Path, run_id: int, report: Dict[str, int]) -> None:
+def _prior_round_yamls(run_shared_dir: Path, current_round: int) -> List[Path]:
+    """Return every ``round_NNN/correction_layouts.yaml`` under
+    ``run_shared_dir`` with round index strictly less than
+    ``current_round``. Used to feed the sampler's blocked-signature set
+    so each round's pool is disjoint from every earlier round in the
+    same run.
+    """
+    out: List[Path] = []
+    if not run_shared_dir.exists():
+        return out
+    for d in sorted(run_shared_dir.glob("round_*")):
+        if not d.is_dir():
+            continue
+        try:
+            idx = int(d.name.split("_")[-1])
+        except ValueError:
+            continue
+        if idx >= int(current_round):
+            continue
+        p = d / "correction_layouts.yaml"
+        if p.exists():
+            out.append(p)
+    return out
+
+
+def ensure_correction_layouts_for_round(
+    run_id: int,
+    round_idx: int,
+    correction_n: int,
+    train_yaml: Path,
+    heldout_yaml: Path,
+    run_shared_dir: Path,
+) -> Path:
+    """Sample a fresh correction pool for a single (run, round) pair.
+
+    Writes ``run_shared_dir/round_{round_idx:03d}/correction_layouts.yaml``.
+    The seed combines run_id and round_idx so different rounds in the same
+    run produce different layouts, and different runs at the same round
+    index also differ. The blocked-signature set is the union of:
+
+    * the global training layouts,
+    * the global heldout layouts,
+    * every earlier round's correction pool *for this run* (so rounds
+      within one run are mutually disjoint).
+
+    Idempotent — if the round's yaml already exists on disk we just
+    re-verify non-contamination against training + heldout and return the
+    path. This means baseline / p4_sequential / p4_batch can all call
+    this function with the same (run_id, round_idx) and get the same
+    yaml back; whoever runs first does the sampling, the others read.
+    """
+    round_dir = run_shared_dir / f"round_{int(round_idx):03d}"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    out_path = round_dir / "correction_layouts.yaml"
+    if out_path.exists():
+        report = assert_no_contamination(out_path, train_yaml, heldout_yaml)
+        _save_report(round_dir, run_id, report, round_idx=round_idx)
+        return out_path
+
+    prior = _prior_round_yamls(run_shared_dir, round_idx)
+    blocked_inputs = [str(train_yaml), str(heldout_yaml)] + [str(p) for p in prior]
+    blocked = _load_blocked_signatures(blocked_inputs)
+    layouts = sample_layouts(
+        n=correction_n, grid_size=5, num_fires=3, min_manhattan=4,
+        seed=CORRECTION_SEED_BASE + int(run_id) * 1000 + int(round_idx),
+        blocked_signatures=blocked,
+    )
+    for i, L in enumerate(layouts):
+        L["name"] = f"corr_r{int(run_id):02d}_rnd{int(round_idx):03d}_{i + 1:03d}"
+    write_yaml(layouts, out_path, grid_size=5)
+
+    report = assert_no_contamination(out_path, train_yaml, heldout_yaml)
+    _save_report(round_dir, run_id, report, round_idx=round_idx)
+    return out_path
+
+
+def _save_report(
+    out_dir: Path,
+    run_id: int,
+    report: Dict[str, int],
+    round_idx: Optional[int] = None,
+) -> None:
+    if round_idx is None:
+        seed = CORRECTION_SEED_BASE + int(run_id)
+    else:
+        seed = CORRECTION_SEED_BASE + int(run_id) * 1000 + int(round_idx)
     out = {
         "run_id": int(run_id),
-        "correction_seed": CORRECTION_SEED_BASE + int(run_id),
+        "round_idx": int(round_idx) if round_idx is not None else None,
+        "correction_seed": seed,
         "global_train_seed": GLOBAL_TRAIN_SEED,
         "global_heldout_seed": GLOBAL_HELDOUT_SEED,
         **report,

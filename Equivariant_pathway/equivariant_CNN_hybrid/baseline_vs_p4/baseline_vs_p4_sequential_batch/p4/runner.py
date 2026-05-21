@@ -53,6 +53,18 @@ def run_analysis(
         },
         "tkf": {"demo_dir": str(demo_dir)},
     }
+    # Cluster-portable model override: when the Qwen sbatch sets
+    # LLM_MODEL_NAME / VLM_MODEL_NAME these flow into the upstream
+    # pipeline's `llm.model` / `llm.vlm_model` config via _deep_merge,
+    # so reasoning/aggregator/plain calls and vlm_analyser request
+    # the Qwen served-model-names. Unset (OpenAI cluster) -> upstream
+    # experiment_config.yaml defaults are used (no behavior change).
+    env_llm = os.environ.get("LLM_MODEL_NAME")
+    env_vlm = os.environ.get("VLM_MODEL_NAME")
+    if env_llm:
+        extra["llm"]["model"] = env_llm
+    if env_vlm:
+        extra["llm"]["vlm_model"] = env_vlm
     # Honor the upstream env knob for sequential Phase-B fan-out so the
     # OpenAI rate-limit story is identical.
     pbw = os.environ.get("P4_PHASE_B_MAX_WORKERS")

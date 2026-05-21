@@ -15,8 +15,10 @@ def run(
     method_root: Path,
     shared_demo_dir: Path,
     shared_ckpt_dir: Path,
-    correction_yaml: Path,
+    train_yaml: Path,
     heldout_yaml: Path,
+    run_shared_dir: Path,
+    correction_n: int,
     config: Dict,
 ) -> Dict:
     return run_loop(
@@ -25,7 +27,9 @@ def run(
         method_root=method_root,
         shared_demo_dir=shared_demo_dir,
         shared_ckpt_dir=shared_ckpt_dir,
-        correction_yaml=correction_yaml,
+        train_yaml=train_yaml,
         heldout_yaml=heldout_yaml,
+        run_shared_dir=run_shared_dir,
+        correction_n=correction_n,
         config=config,
     )

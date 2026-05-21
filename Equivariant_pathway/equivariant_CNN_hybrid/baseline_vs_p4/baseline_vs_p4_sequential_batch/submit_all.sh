@@ -27,6 +27,11 @@ cd "${SCRIPT_DIR}"
 # child sbatch via --export so the per-run job sees the override.
 N_RUNS="${N_RUNS:-10}"
 CONFIG="${CONFIG:-${SCRIPT_DIR}/config.yaml}"
+# SUBMIT_SCRIPT picks the underlying sbatch script. Defaults to the
+# OpenAI-cluster path; set to ``submit_one_qwen.sh`` on the H100/H200
+# cluster (vLLM + local Qwen models). The submit script must live next
+# to submit_all.sh in this suite directory.
+SUBMIT_SCRIPT="${SUBMIT_SCRIPT:-submit_one.sh}"
 METHODS="${METHODS:-}"
 BUDGET="${BUDGET:-}"
 TARGET_SR="${TARGET_SR:-}"
@@ -83,7 +88,7 @@ for ((i=1; i<=N_RUNS; i++)); do
     JOB_ID=$(sbatch --parsable \
         --job-name="bvp_run_${i}" \
         --export="${EXPORT_BASE},RUN_ID=${i}" \
-        "${SCRIPT_DIR}/submit_one.sh")
+        "${SCRIPT_DIR}/${SUBMIT_SCRIPT}")
     JOB_IDS+=("${JOB_ID}")
     echo "[submit_all] run_id=${i}  sbatch_job_id=${JOB_ID}"
 done

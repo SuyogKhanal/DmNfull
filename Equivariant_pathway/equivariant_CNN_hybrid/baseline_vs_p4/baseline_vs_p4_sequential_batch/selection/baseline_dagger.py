@@ -37,6 +37,7 @@ from Equivariant_pathway.equivariant_CNN_hybrid.baseline_vs_p4 import (  # noqa:
     baseline_budget as _upstream,
 )
 
+from ..layouts.layout_setup import ensure_correction_layouts_for_round
 from ..logging_ext.training_log import TrainingLog
 from .rank import rank_failures
 
@@ -92,8 +93,10 @@ def run(
     bo_root: Path,
     shared_demo_dir: Path,
     shared_ckpt_dir: Path,
-    correction_yaml: Path,
+    train_yaml: Path,
     heldout_yaml: Path,
+    run_shared_dir: Path,
+    correction_n: int,
     budget: int,
     target_sr: float,
     max_rounds: int,
@@ -109,10 +112,16 @@ def run(
 ) -> Dict:
     """Execute the budget-constrained baseline DAgger loop for one method.
 
+    Correction pool rotates per round: each round samples 50 fresh
+    layouts (configurable via ``correction_n``) into
+    ``run_shared_dir/round_NNN/correction_layouts.yaml``, blocked from
+    training + heldout + prior rounds in this run.
+
     Writes:
       - bo_root/demos/round_NNN/...
       - bo_root/checkpoints/{best,last}_hybrid_policy.pth, training_log.json
-      - bo_root/results/learning_curve.json (legacy schema)
+      - bo_root/results/learning_curve.json (legacy schema, plus a
+        ``correction_yaml`` field per history row)
       - bo_root/results/round_NNN/ranking.json
       - bo_root/results/training_log.csv
     """
@@ -132,10 +141,7 @@ def run(
         if s.exists():
             shutil.copy2(s, ckpt_dir / name)
 
-    # Round 0 heldout eval.
-    layouts = _upstream._load_correction_layouts(correction_yaml)
-    if not layouts:
-        raise SystemExit(f"no correction layouts in {correction_yaml}")
+    # Round 0 heldout eval (no correction pool yet — sampled per round below).
     initial = _upstream._eval_heldout(
         ckpt_dir, heldout_yaml, results_dir,
         tag="round_000", seed=seed, max_steps=max_steps,
@@ -153,10 +159,11 @@ def run(
         "n_failures_in_pool": None,
         "n_picked": 0,
         "n_new_demos": 0,
+        "correction_yaml": None,
     }]
     _persist_curve(
         results_dir, history, budget, target_sr, demo_dir, ckpt_dir,
-        correction_yaml, heldout_yaml, run_id,
+        run_shared_dir, heldout_yaml, run_id,
     )
     tlog = TrainingLog(results_dir / "training_log.csv")
     tlog.write_row(
@@ -179,6 +186,19 @@ def run(
             break
 
         _section(f"BASELINE-DAGGER ROUND {rnd}  (remaining budget = {remaining})")
+
+        # Pass 0: sample THIS round's fresh correction pool. Idempotent —
+        # the P4 methods will re-call this with the same (run_id, rnd) and
+        # get the same yaml back, so the three methods share the round's
+        # layouts and the comparison stays apples-to-apples within round.
+        correction_yaml_rnd = ensure_correction_layouts_for_round(
+            run_id=run_id, round_idx=rnd, correction_n=correction_n,
+            train_yaml=train_yaml, heldout_yaml=heldout_yaml,
+            run_shared_dir=run_shared_dir,
+        )
+        layouts = _upstream._load_correction_layouts(correction_yaml_rnd)
+        if not layouts:
+            raise SystemExit(f"no correction layouts in {correction_yaml_rnd}")
 
         # Pass 1: rollout correction pool, score each episode.
         model = _upstream._load_model(ckpt_dir / "best_hybrid_policy.pth", device)
@@ -286,10 +306,11 @@ def run(
             "n_failures_in_pool": len(failures),
             "n_picked": len(picked_ranks),
             "n_new_demos": saved,
+            "correction_yaml": str(correction_yaml_rnd),
         })
         _persist_curve(
             results_dir, history, budget, target_sr, demo_dir, ckpt_dir,
-            correction_yaml, heldout_yaml, run_id,
+            run_shared_dir, heldout_yaml, run_id,
         )
         tlog.write_row(
             round_idx=rnd, demos_added_total=extras_saved,
@@ -312,11 +333,15 @@ def run(
 
 def _persist_curve(
     results_dir: Path, history: List[Dict], budget: int, target_sr: float,
-    demo_dir: Path, ckpt_dir: Path, correction_yaml: Path, heldout_yaml: Path,
+    demo_dir: Path, ckpt_dir: Path, run_shared_dir: Path, heldout_yaml: Path,
     run_id: int,
 ) -> None:
     """Match upstream's learning_curve.json schema so existing
-    aggregation tools keep working."""
+    aggregation tools keep working. The correction pool now rotates per
+    round, so we record the shared *directory* (which contains
+    ``round_NNN/correction_layouts.yaml`` subtrees) instead of a single
+    yaml path. Each history row also carries its round's yaml path.
+    """
     out = {
         "method": "baseline_dagger_seqbatch",
         "run_id": int(run_id),
@@ -324,7 +349,7 @@ def _persist_curve(
         "target_sr": float(target_sr),
         "demo_dir": str(demo_dir),
         "checkpoint_dir": str(ckpt_dir),
-        "correction_yaml": str(correction_yaml),
+        "correction_yaml_dir": str(run_shared_dir),
         "heldout_yaml": str(heldout_yaml),
         "history": history,
     }

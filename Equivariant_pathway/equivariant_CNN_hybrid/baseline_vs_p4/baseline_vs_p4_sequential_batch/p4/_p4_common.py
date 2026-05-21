@@ -23,6 +23,7 @@ from Equivariant_pathway.equivariant_CNN_hybrid.baseline_vs_p4 import (  # noqa:
     p4_budget as _upstream_p4,
 )
 
+from ..layouts.layout_setup import ensure_correction_layouts_for_round
 from ..logging_ext.compression_log import CompressionLog
 from ..logging_ext.prescription_overlap import PrescriptionOverlapLog
 from ..logging_ext.training_log import TrainingLog
@@ -69,8 +70,13 @@ def _finetune(
 def _persist_curve(
     method: str, results_dir: Path, history: List[Dict],
     budget: int, target_sr: float, demo_dir: Path, ckpt_dir: Path,
-    correction_yaml: Path, heldout_yaml: Path, run_id: int,
+    run_shared_dir: Path, heldout_yaml: Path, run_id: int,
 ) -> None:
+    """Persist the learning curve. Correction pool rotates per round, so
+    we store the run's shared directory (which holds the per-round
+    yamls) instead of a single yaml path; each history row already
+    carries its own ``correction_yaml`` field.
+    """
     out = {
         "method": method,
         "run_id": int(run_id),
@@ -78,7 +84,7 @@ def _persist_curve(
         "target_sr": float(target_sr),
         "demo_dir": str(demo_dir),
         "checkpoint_dir": str(ckpt_dir),
-        "correction_yaml": str(correction_yaml),
+        "correction_yaml_dir": str(run_shared_dir),
         "heldout_yaml": str(heldout_yaml),
         "history": history,
     }
@@ -93,11 +99,22 @@ def run_loop(
     method_root: Path,
     shared_demo_dir: Path,
     shared_ckpt_dir: Path,
-    correction_yaml: Path,
+    train_yaml: Path,
     heldout_yaml: Path,
+    run_shared_dir: Path,
+    correction_n: int,
     config: Dict,
 ) -> Dict:
     """Execute the budget-constrained P4 loop for one method.
+
+    The correction pool rotates per round: at the top of each round we
+    call ``ensure_correction_layouts_for_round(run_id, rnd, ...)`` which
+    samples 50 fresh layouts (blocked from training + heldout + prior
+    rounds in this run) and writes them to
+    ``run_shared_dir/round_NNN/correction_layouts.yaml``. baseline /
+    p4_sequential / p4_batch all call the same function with the same
+    (run_id, rnd); whichever runs first does the sampling, the others
+    re-read the cached yaml.
 
     Args:
         mode: "sequential" (1 layout/round) or "batch" (LLM decides,
@@ -105,7 +122,10 @@ def run_loop(
         run_id: run identifier (used for seeds + log tags).
         method_root: e.g. results/run_5/p4_sequential/.
         shared_demo_dir / shared_ckpt_dir: per-run bootstrap source.
-        correction_yaml / heldout_yaml: layout YAMLs.
+        train_yaml / heldout_yaml: global layouts used as blocked set.
+        run_shared_dir: the per-run ``shared/`` dir that holds the
+            ``round_NNN/`` subtrees.
+        correction_n: number of layouts to sample for each round.
         config: parsed config.yaml dict.
     """
     assert mode in ("sequential", "batch"), f"unknown mode: {mode}"
@@ -183,9 +203,10 @@ def run_loop(
         "n_new_demos": 0,
     }]
     method_full_label = f"p4_{'sequential' if mode == 'sequential' else 'batch'}_seqbatch"
+    history[0]["correction_yaml"] = None
     _persist_curve(
         method_full_label, results_dir, history, budget, target_sr,
-        demo_dir, ckpt_dir, correction_yaml, heldout_yaml, run_id,
+        demo_dir, ckpt_dir, run_shared_dir, heldout_yaml, run_id,
     )
     tlog.write_row(
         round_idx=0, demos_added_total=0, training_rounds_total=0,
@@ -209,10 +230,20 @@ def run_loop(
         round_dir = results_dir / f"round_{rnd:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
 
+        # ---- Pre-Phase A: sample THIS round's fresh correction pool ------
+        # Idempotent — within the same (run_id, rnd), baseline and the
+        # two P4 methods all retrieve the same yaml so the comparison
+        # stays apples-to-apples for the round.
+        correction_yaml_rnd = ensure_correction_layouts_for_round(
+            run_id=run_id, round_idx=rnd, correction_n=correction_n,
+            train_yaml=train_yaml, heldout_yaml=heldout_yaml,
+            run_shared_dir=run_shared_dir,
+        )
+
         # ---- Phase A: rollout the correction pool -------------------------
         corr_dir = round_dir / "correction_rollout"
         rc = _upstream_p4._rollout(
-            ckpt_dir, correction_yaml, corr_dir,
+            ckpt_dir, correction_yaml_rnd, corr_dir,
             seed=seed + rnd * 1000, max_steps=max_steps,
         )
         if rc != 0:
@@ -259,9 +290,10 @@ def run_loop(
             history.append(_round_history_entry(
                 rnd, demo_dir, extras_saved, budget, 0, 0,
                 0, 0, corr_metrics, _llm_failed_post(initial),
+                correction_yaml_rnd,
             ))
             _persist_curve(method_full_label, results_dir, history, budget, target_sr,
-                           demo_dir, ckpt_dir, correction_yaml, heldout_yaml, run_id)
+                           demo_dir, ckpt_dir, run_shared_dir, heldout_yaml, run_id)
             return {"history": history, "stopped_reason": "llm_error"}
 
         rec_path = runner.flatten_recommendations(analysis_dir, label=method_label)
@@ -354,10 +386,11 @@ def run_loop(
             cap_audit["proposed"], cap_audit["capped"],
             n_collected, n_infeasible,
             corr_metrics, post,
+            correction_yaml_rnd,
         ))
         _persist_curve(
             method_full_label, results_dir, history, budget, target_sr,
-            demo_dir, ckpt_dir, correction_yaml, heldout_yaml, run_id,
+            demo_dir, ckpt_dir, run_shared_dir, heldout_yaml, run_id,
         )
         tlog.write_row(
             round_idx=rnd, demos_added_total=extras_saved,
@@ -408,6 +441,7 @@ def _round_history_entry(
     n_prescribed: int, n_capped: int,
     n_collected: int, n_infeasible: int,
     corr_metrics: Dict, post: Dict,
+    correction_yaml_rnd: Path,
 ) -> Dict:
     return {
         "round": int(rnd),
@@ -422,6 +456,7 @@ def _round_history_entry(
         "n_capped_by_budget": int(n_capped),
         "n_corridor_infeasible": int(n_infeasible),
         "n_new_demos": int(n_collected),
+        "correction_yaml": str(correction_yaml_rnd),
     }
 
 
