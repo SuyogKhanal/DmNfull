@@ -1,0 +1,143 @@
+"""Prompt addendum builders for P4 sequential and batch modes.
+
+Both modes reuse upstream's full LLM pipeline (analysis + KAG + RAG +
+prescription + aggregator). We only inject two strings on top:
+
+  1. A *self-awareness* block (always present) — gives the LLM round
+     number, demos added so far this round, demos remaining in the
+     budget, and a one-line failure summary derived from the current
+     correction-pool rollout.
+  2. A *mode directive* — sequential vs batch, "prescribe ONE most-
+     informative layout" vs "prescribe AS MANY layouts as needed to
+     cover all failure modes within remaining budget".
+
+The two strings are concatenated with the existing budget-addendum from
+upstream (`p4_budget._budget_addendum`) so the LLM gets all three pieces
+of context in a single coherent block.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from collections import Counter
+from pathlib import Path
+from typing import Dict, Iterable, Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[5]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from Equivariant_pathway.equivariant_CNN_hybrid.baseline_vs_p4 import (  # noqa: E402
+    p4_budget as _upstream,
+)
+
+
+def self_awareness_block(
+    round_idx: int,
+    demos_added_this_round: int,
+    demos_remaining_in_budget: int,
+    n_failures_observed: int,
+    failure_mode_counts: Optional[Dict[str, int]] = None,
+) -> str:
+    """A human-readable status block prepended to every LLM addendum."""
+    counts = failure_mode_counts or {}
+    if counts:
+        mode_str = ", ".join(f"{k}: {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
+    else:
+        mode_str = "n/a (no per-failure cluster signal available this round)"
+    return (
+        "EXPERIMENT STATE — always-on context for this LLM call:\n"
+        f"  * round number: {int(round_idx)}\n"
+        f"  * demos added so far this round: {int(demos_added_this_round)}\n"
+        f"  * demos remaining in the global budget: {int(demos_remaining_in_budget)}\n"
+        f"  * failures observed in current correction-pool rollout: "
+        f"{int(n_failures_observed)}\n"
+        f"  * failure modes (count per mode): {mode_str}\n"
+    )
+
+
+def mode_directive(mode: str) -> str:
+    """Mode-specific text injected after the self-awareness block."""
+    if mode == "sequential":
+        return (
+            "SEQUENTIAL MODE — prescribe EXACTLY ONE layout this round.\n"
+            "Choose the SINGLE most informative layout: the one whose demo, "
+            "once added and learned, will close the most failure modes in "
+            "the correction pool. The orchestrator will hard-cap your output "
+            "to ONE layout, so do not waste tokens recommending more.\n"
+            "If you have multiple candidate clusters, pick the one whose "
+            "failure pattern is the most repeated and whose prescribed "
+            "pathway is also the most TRANSFERABLE to nearby failures."
+        )
+    if mode == "batch":
+        return (
+            "BATCH MODE — prescribe AS MANY layouts as needed to cover all "
+            "current failure modes, subject to the remaining budget.\n"
+            "Cluster failures into the smallest set of distinct modes, then "
+            "recommend the smallest set of layouts per cluster that fixes "
+            "the missing behaviour. Total layouts must not exceed the "
+            "remaining budget — the orchestrator will hard-cap any excess."
+        )
+    raise ValueError(f"unknown P4 mode: {mode!r}")
+
+
+def reasoning_addendum(
+    mode: str, round_idx: int, demos_added_this_round: int,
+    demos_remaining_in_budget: int, n_failures_observed: int,
+    failure_mode_counts: Optional[Dict[str, int]] = None,
+    budget_total: int = 0, already_used: int = 0,
+) -> str:
+    """The string passed as ``prompt_addendum_reasoning`` (Phase B)."""
+    return "\n\n".join([
+        _upstream.REASONING_ADDENDUM_BASE,
+        self_awareness_block(
+            round_idx, demos_added_this_round, demos_remaining_in_budget,
+            n_failures_observed, failure_mode_counts,
+        ),
+        mode_directive(mode),
+        _upstream._budget_addendum(budget_total, already_used),
+    ])
+
+
+def aggregator_addendum(
+    mode: str, round_idx: int, demos_added_this_round: int,
+    demos_remaining_in_budget: int, n_failures_observed: int,
+    failure_mode_counts: Optional[Dict[str, int]] = None,
+    budget_total: int = 0, already_used: int = 0,
+) -> str:
+    """The string passed as ``prompt_addendum_aggregator`` (Phase C)."""
+    return "\n\n".join([
+        _upstream.AGGREGATOR_ADDENDUM_BASE,
+        self_awareness_block(
+            round_idx, demos_added_this_round, demos_remaining_in_budget,
+            n_failures_observed, failure_mode_counts,
+        ),
+        mode_directive(mode),
+        _upstream._budget_addendum(budget_total, already_used),
+    ])
+
+
+def summarize_failure_modes(failure_records: Iterable[Dict]) -> Dict[str, int]:
+    """Quick clustering of the round's failures into rough mode labels.
+
+    The labels are intentionally coarse — start-quadrant + goal-quadrant.
+    They give the LLM a *count* of how many failures fall into each
+    spatial bucket without pretending we've done the real Phase-C
+    clustering. (Phase C still runs and can override.)
+    """
+    def quadrant(pos) -> str:
+        try:
+            r, c = int(pos[0]), int(pos[1])
+        except (TypeError, ValueError, IndexError):
+            return "?"
+        rb = "top" if r < 2 else ("mid" if r == 2 else "bot")
+        cb = "left" if c < 2 else ("mid" if c == 2 else "right")
+        return f"{rb}-{cb}"
+
+    counter: Counter = Counter()
+    for rec in failure_records:
+        layout = rec.get("layout", {}) if isinstance(rec, dict) else {}
+        sq = quadrant(layout.get("start_pos", [0, 0]))
+        gq = quadrant(layout.get("goal_pos", [0, 0]))
+        counter[f"{sq}->{gq}"] += 1
+    return dict(counter)

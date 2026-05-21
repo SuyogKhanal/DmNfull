@@ -1,0 +1,44 @@
+# baseline_vs_p4_sequential_batch — single source of truth for all knobs.
+# Override individual values at the top of run_all.sh or via env vars.
+
+# ---- run-level ----
+n_runs: 10
+budget: 15                  # extra demos per run on top of initial_demos
+target_sr: 0.90
+max_rounds: 50
+max_steps: 60
+heldout_n: 200
+initial_demos: 20
+initial_epochs: 500          # only used if the global bootstrap checkpoint is missing
+correction_n: 50             # was 40 upstream; bumped for this suite
+seed: 0                      # base seed; per-run seed = seed + run_id
+
+# ---- methods ----
+methods: ["baseline", "p4_sequential", "p4_batch"]
+
+# ---- replay-buffer fine-tuner ----
+trainer:
+  finetune_epochs: 20        # vs 100 in upstream cold-start retrain
+  lr: 5.0e-5                 # ~6x lower than upstream default
+  batch_size: 64
+  weight_decay: 1.0e-4
+  replay_mix: 0.5            # 0.5 = half of each batch sampled from replay buffer (old demos)
+  replay_mix_floor: 0.2      # do not let replay weight drop below this even when |D_old| is small
+  val_frac: 0.1
+
+# ---- P4 ----
+p4:
+  # Model is auto-discovered from upstream pipeline config; set here to override.
+  # null = inherit from p4_vlm_reasoning_kag_cross_plain_llm.yaml.
+  model: null
+  sequential:
+    demos_per_round: 1       # exactly one prescription per round
+  batch:
+    demos_per_round: null    # let LLM decide, hard-capped to remaining budget
+
+# ---- corridor blocking ----
+corridor_blocking: true      # when true, prescribed pathway forces A* down that exact path
+
+# ---- logging ----
+logging:
+  prescription_overlap_runs: 3   # only first N runs save full LLM reasoning to JSON

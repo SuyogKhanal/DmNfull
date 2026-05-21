@@ -278,7 +278,10 @@ def _count_demos(demo_dir: Path) -> int:
 
 
 def _retrain(demo_dir: Path, ckpt_dir: Path, seed: int, epochs: int,
-             train_from_scratch: bool) -> int:
+             train_from_scratch: bool,
+             lr: Optional[float] = None,
+             batch_size: Optional[int] = None,
+             weight_decay: Optional[float] = None) -> int:
     cmd = [
         sys.executable, "-u", "-m",
         "Equivariant_pathway.equivariant_CNN_hybrid.train",
@@ -287,6 +290,12 @@ def _retrain(demo_dir: Path, ckpt_dir: Path, seed: int, epochs: int,
         "--epochs", str(epochs),
         "--seed", str(seed),
     ]
+    if lr is not None:
+        cmd += ["--lr", str(lr)]
+    if batch_size is not None:
+        cmd += ["--batch_size", str(batch_size)]
+    if weight_decay is not None:
+        cmd += ["--weight_decay", str(weight_decay)]
     if not train_from_scratch:
         cmd.append("--resume")
     _info("$ " + " ".join(cmd))
@@ -344,11 +353,23 @@ def run_baseline_budget(
     max_steps: int,
     seed: int,
     train_from_scratch: bool,
+    demos_per_round: Optional[int] = None,
+    lr: Optional[float] = None,
+    batch_size: Optional[int] = None,
+    weight_decay: Optional[float] = None,
 ) -> Dict:
     """Run the budget-constrained baseline DAgger loop and persist a
     standard learning_curve.json. ``bo_root`` is the isolated root for
     this method+run; ``shared_demo_dir`` / ``shared_ckpt_dir`` hold the
     initial 20 BFS demos + initial trained model that p4 will also use.
+
+    ``demos_per_round`` controls how many corrective demos a round may
+    add. ``None`` (default) is the legacy behavior: take the top
+    ``min(remaining, n_failures)`` loss-ranked failures and attempt a
+    save on each once. An int ``K`` selects incremental DAgger: walk the
+    loss-ranked failures and save the first ``min(K, remaining)`` that
+    successfully produce a demo (so a rare unsavable top failure does not
+    stall the round).
     """
     demo_dir    = bo_root / "demos"
     ckpt_dir    = bo_root / "checkpoints"
@@ -428,7 +449,7 @@ def run_baseline_budget(
 
         # ----------------------------------------------------------------- #
         # Pass 2: rank failures by (loss desc, steps desc, deterministic    #
-        # random tiebreak), keep top ``remaining`` and only those.          #
+        # random tiebreak).                                                  #
         # ----------------------------------------------------------------- #
         rng = random.Random(0xBADF00D + 1009 * (run_index + 1) + rnd)
         decorated = []
@@ -441,12 +462,60 @@ def run_baseline_budget(
                 rec,
             ))
         decorated.sort()
-        n_take = min(remaining, len(decorated))
-        picked = [d[3] for d in decorated[:n_take]]
-        # Mirror the ranking decisions in the curve metadata so reruns
-        # can audit exactly which layouts were selected.
+
         round_dir = results_dir / f"round_{rnd:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
+        round_demo_dir = demo_dir / f"round_{rnd:03d}"
+        round_demo_dir.mkdir(parents=True, exist_ok=True)
+
+        def _emit_demo(rec) -> bool:
+            """Save one corrective demo for ``rec`` (original Pass-3 body
+            verbatim). True iff a demo file was written."""
+            dev = _find_deviation_step(rec["layout"], rec["actions"],
+                                       rec["trajectory"])
+            if dev < 0:
+                # Can't pinpoint the deviation: save a from-start BFS demo
+                # on the failing layout so the slot isn't wasted.
+                dev = 0
+            out = _save_corrective_demo(
+                rec["layout"], dev, rec["ep_seed"], rec["actions"],
+                demo_dir=round_demo_dir,
+                layout_name=rec["layout"].get("name", f"ep{rec['ep_idx']}"),
+                suffix=f"correct_r{rnd}_ep{rec['ep_idx']}_dev{dev}",
+            )
+            if out is None:
+                _info(f"round {rnd}: skip ep{rec['ep_idx']} "
+                      f"(no BFS path from deviation)")
+            return out is not None
+
+        # ----------------------------------------------------------------- #
+        # Pass 3: emit corrective demos.                                     #
+        #   demos_per_round is None -> LEGACY: top min(remaining,n) failures #
+        #     attempted once each (byte-identical to the original loop).     #
+        #   demos_per_round = K     -> INCREMENTAL: walk the ranked failures #
+        #     and save the first min(K, remaining) that succeed.             #
+        # ----------------------------------------------------------------- #
+        saved = 0
+        if demos_per_round is None:
+            n_take = min(remaining, len(decorated))
+            for d in decorated[:n_take]:
+                if _emit_demo(d[3]):
+                    saved += 1
+            picked_ranks = set(range(n_take))
+            n_picked = n_take
+        else:
+            target_saves = min(int(demos_per_round), remaining)
+            picked_ranks = set()
+            for i, d in enumerate(decorated):
+                if saved >= target_saves:
+                    break
+                if _emit_demo(d[3]):
+                    picked_ranks.add(i)
+                    saved += 1
+            n_picked = saved
+
+        # Mirror the ranking + per-failure outcome so reruns can audit
+        # exactly which layouts were selected this round.
         with open(round_dir / "ranking.json", "w") as f:
             json.dump([
                 {
@@ -457,35 +526,12 @@ def run_baseline_budget(
                     "n_steps": d[3]["n_steps"],
                     "jitter": d[2],
                     "layout_name": d[3]["layout"].get("name"),
-                    "picked": (i < n_take),
+                    "picked": (i in picked_ranks),
                 } for i, d in enumerate(decorated)
             ], f, indent=2)
 
-        # ----------------------------------------------------------------- #
-        # Pass 3: emit corrective demos for the picked failures only.       #
-        # ----------------------------------------------------------------- #
-        round_demo_dir = demo_dir / f"round_{rnd:03d}"
-        round_demo_dir.mkdir(parents=True, exist_ok=True)
-        saved = 0
-        for rec in picked:
-            dev = _find_deviation_step(rec["layout"], rec["actions"], rec["trajectory"])
-            if dev < 0:
-                # If we can't pinpoint the deviation, save a from-start
-                # BFS demo (still on the failing layout) so the slot
-                # isn't wasted.
-                dev = 0
-            out = _save_corrective_demo(
-                rec["layout"], dev, rec["ep_seed"], rec["actions"],
-                demo_dir=round_demo_dir,
-                layout_name=rec["layout"].get("name", f"ep{rec['ep_idx']}"),
-                suffix=f"correct_r{rnd}_ep{rec['ep_idx']}_dev{dev}",
-            )
-            if out is not None:
-                saved += 1
-            else:
-                _info(f"round {rnd}: skip ep{rec['ep_idx']} (no BFS path from deviation)")
         extras_saved += saved
-        _info(f"round {rnd}: picked={len(picked)} saved={saved} "
+        _info(f"round {rnd}: picked={n_picked} saved={saved} "
               f"cum_extras={extras_saved}/{budget}")
 
         # ----------------------------------------------------------------- #
@@ -493,7 +539,9 @@ def run_baseline_budget(
         # ----------------------------------------------------------------- #
         if saved > 0:
             rc = _retrain(demo_dir, ckpt_dir, seed=seed, epochs=round_epochs,
-                          train_from_scratch=train_from_scratch)
+                          train_from_scratch=train_from_scratch,
+                          lr=lr, batch_size=batch_size,
+                          weight_decay=weight_decay)
             if rc != 0:
                 _info(f"round {rnd}: retrain rc={rc} (continuing)")
         post = _eval_heldout(ckpt_dir, heldout_yaml, results_dir,
@@ -509,7 +557,7 @@ def run_baseline_budget(
             "heldout_n_episodes": post["n_episodes"],
             "correction_sr": correction_sr,
             "n_failures_in_pool": len(failures),
-            "n_picked": len(picked),
+            "n_picked": n_picked,
             "n_new_demos": saved,
         })
         _persist_curve(results_dir, history, budget, target_sr, demo_dir, ckpt_dir,
