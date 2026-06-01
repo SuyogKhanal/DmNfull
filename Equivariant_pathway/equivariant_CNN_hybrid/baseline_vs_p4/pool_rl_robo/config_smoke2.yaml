@@ -1,0 +1,47 @@
+# Smoke-2 config: P4-LLM ON, ONE env, SHORT. Validates the live full
+# prescribe-and-load path on the diffusion backbone (render -> VLM analysis ->
+# prescription -> strict loadable+solvable check -> expert demo). Short budget +
+# light diffusion (not meant to fully train — just exercise the live pipeline).
+
+seed: 42
+budget: 2
+n_seed_demos: 5
+initial_epochs: 100
+round_epochs: 60
+n_eval_episodes: 5
+n_rollout_episodes: 1
+max_steps: 1000
+max_consecutive_empty: 8
+hidden: 256
+lr: 0.0003
+batch_size: 256
+weight_decay: 0.0001
+
+methods: ["p4_llm"]
+
+diffusion:
+  r3m_model: resnet18
+  T: 50
+  hidden: 512
+  lr: 0.0001
+  batch_size: 128
+  weight_decay: 0.000001
+  n_uncertainty_samples: 4
+  n_seed_demos: 8
+  initial_epochs: 200
+  round_epochs: 100
+
+p4:
+  model_name: qwen3-32b
+  vlm_model_name: qwen3-vl-32b
+  kag_dir: null
+  n_failure_rollouts: 3
+  top_k_failures: 3
+  temperature: 0.0
+
+baselines:
+  safe:     {tau: 0.5}
+  dropout:  {N: 8, dropout_d: 0.1, tau: 0.5, p: 0.5}
+  ensemble: {M: 3, tau: 0.5, sigma: 0.02}
+  thrifty:  {M: 3, alpha_h: 0.10, gamma: 0.98, q_epochs: 30, q_lr: 0.001}
+  stagger:  {}

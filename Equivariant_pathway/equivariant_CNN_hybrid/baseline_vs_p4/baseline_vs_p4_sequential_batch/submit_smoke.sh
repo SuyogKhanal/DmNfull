@@ -18,7 +18,17 @@
 
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve this suite's directory. This script is a launcher (it queues
+# sbatch jobs); the intended invocation is ``bash submit_smoke.sh`` from
+# the login node. If someone runs ``sbatch submit_smoke.sh`` instead,
+# SLURM copies the script into a spool dir before executing it, so
+# ${BASH_SOURCE[0]} would resolve there. Prefer $SLURM_SUBMIT_DIR (the
+# dir sbatch was invoked from) when present.
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    SCRIPT_DIR="${SLURM_SUBMIT_DIR}"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 cd "${SCRIPT_DIR}"
 
 SUBMIT_SCRIPT="${SUBMIT_SCRIPT:-submit_one.sh}"
@@ -37,7 +47,11 @@ METHODS="${METHODS:-baseline,p4_sequential,p4_batch}"
 mkdir -p slurm_logs logs
 
 EXPORT_BASE="ALL,CONFIG=${CONFIG}"
-EXPORT_BASE="${EXPORT_BASE},METHODS=${METHODS}"
+# sbatch --export uses comma as the variable separator, so a multi-method
+# METHODS value (e.g. "p4_sequential,p4_batch") gets truncated to its
+# first entry. Encode commas as '+' here; the receiving submit_one*.sh
+# decodes them back before passing --methods.
+EXPORT_BASE="${EXPORT_BASE},METHODS=${METHODS//,/+}"
 EXPORT_BASE="${EXPORT_BASE},BUDGET=${BUDGET}"
 EXPORT_BASE="${EXPORT_BASE},MAX_ROUNDS=${MAX_ROUNDS}"
 EXPORT_BASE="${EXPORT_BASE},CORRECTION_N=${CORRECTION_N}"

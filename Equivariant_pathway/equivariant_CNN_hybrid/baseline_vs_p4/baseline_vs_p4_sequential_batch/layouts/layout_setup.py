@@ -300,7 +300,7 @@ if __name__ == "__main__":
     p.add_argument("--run_id", type=int, required=True)
     p.add_argument("--initial_demos", type=int, default=20)
     p.add_argument("--heldout_n", type=int, default=200)
-    p.add_argument("--correction_n", type=int, default=50)
+    p.add_argument("--correction_n", type=int, default=20)
     args = p.parse_args()
 
     shared = ensure_shared_layouts(args.initial_demos, args.heldout_n)

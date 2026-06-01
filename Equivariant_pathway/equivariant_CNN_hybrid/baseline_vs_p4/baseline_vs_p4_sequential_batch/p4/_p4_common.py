@@ -219,6 +219,15 @@ def run_loop(
 
     extras_saved = 0
     training_rounds_total = 0
+    # Running memo of corridor prescriptions the feasibility checker
+    # rejected, fed back into later rounds' LLM prompts so it stops
+    # repeating infeasible pathways.
+    infeasible_memo: List[Dict] = []
+    # A round that collects 0 demos no longer ends the run (the next round
+    # samples a FRESH correction pool). Guard against an LLM stuck emitting
+    # only infeasible/empty rounds: stop after this many in a row.
+    consecutive_empty = 0
+    max_consecutive_empty = int(config.get("max_consecutive_empty", 8))
 
     for rnd in range(1, max_rounds + 1):
         remaining = budget - extras_saved
@@ -255,6 +264,7 @@ def run_loop(
 
         # ---- Phase B+C: LLM analysis with our addendums -------------------
         analysis_dir = round_dir / "p4_analysis"
+        infeasible_fb = prompts.infeasible_feedback_block(infeasible_memo)
         reasoning_add = prompts.reasoning_addendum(
             mode=mode, round_idx=rnd,
             demos_added_this_round=0,
@@ -262,6 +272,7 @@ def run_loop(
             n_failures_observed=n_failures,
             failure_mode_counts=failure_mode_counts,
             budget_total=budget, already_used=extras_saved,
+            infeasible_feedback=infeasible_fb,
         )
         aggregator_add = prompts.aggregator_addendum(
             mode=mode, round_idx=rnd,
@@ -270,6 +281,7 @@ def run_loop(
             n_failures_observed=n_failures,
             failure_mode_counts=failure_mode_counts,
             budget_total=budget, already_used=extras_saved,
+            infeasible_feedback=infeasible_fb,
         )
         try:
             runner.run_analysis(
@@ -318,6 +330,18 @@ def run_loop(
         n_collected = coll_result.n_saved if coll_result else 0
         n_infeasible = coll_result.n_infeasible if coll_result else 0
         extras_saved += n_collected
+        # Record this round's rejected corridors so the next round's prompt
+        # can tell the LLM not to repeat them.
+        if coll_result is not None:
+            for d in coll_result.infeasible:
+                infeasible_memo.append({
+                    "round": rnd,
+                    "start_pos": d.start_pos,
+                    "goal_pos": d.goal_pos,
+                    "fire_positions": d.fire_positions,
+                    "steps": d.steps_str,
+                    "reason": d.reason,
+                })
         _info(method_tag, (
             f"round {rnd}: prescribed={cap_audit['proposed']} "
             f"kept={cap_audit['kept']} "
@@ -403,10 +427,23 @@ def run_loop(
 
         if post["success_rate"] >= target_sr:
             return {"history": history, "stopped_reason": "target_hit"}
-        if n_collected == 0:
-            return {"history": history, "stopped_reason": "no_new_demos"}
         if extras_saved >= budget:
             return {"history": history, "stopped_reason": "budget_exhausted"}
+        # A 0-demo round does NOT stop the run: budget remains and target
+        # isn't hit, so continue — the next round samples a fresh correction
+        # pool (different failures) and the prompt now carries feedback on
+        # any infeasible corridors prescribed so far. Only bail if the LLM
+        # produces no usable demo for several consecutive rounds.
+        if n_collected == 0:
+            consecutive_empty += 1
+            if consecutive_empty >= max_consecutive_empty:
+                _info(method_tag, (
+                    f"round {rnd}: {consecutive_empty} consecutive rounds with "
+                    f"no new demos (budget {extras_saved}/{budget} unused); stop"
+                ))
+                return {"history": history, "stopped_reason": "no_progress"}
+        else:
+            consecutive_empty = 0
 
     return {"history": history, "stopped_reason": "max_rounds"}
 

@@ -1,0 +1,54 @@
+# variants_fixed_vs_p4top3 — single source of truth for all knobs.
+# Override individual values via env vars / CLI flags.
+#
+# This suite compares three demonstration-acquisition variants on ONE
+# FIXED correction pool (sampled once per run, shared by all methods):
+#   baseline_fixed  : DAgger, fixed 30-pool, highest-loss selection
+#   baseline_random : DAgger, fixed 30-pool, random failure selection
+#   p4_top3         : P4, fixed 30-pool, LLM sees top-3 loss failures,
+#                     prescribes EXACTLY ONE layout/round
+
+# ---- run-level ----
+n_runs: 10
+budget: 15                  # extra demos per run on top of initial_demos
+target_sr: 0.90
+max_rounds: 50
+max_steps: 60
+heldout_n: 200
+initial_demos: 20
+initial_epochs: 500          # only used if the global bootstrap checkpoint is missing
+correction_n: 30             # FIXED pool size (sampled once per run, reused
+                             # every round). p4_top3 only feeds the top-3 of
+                             # these to the LLM, so the aggregator prompt
+                             # stays well within Qwen3's 40960 ctx.
+seed: 0                      # base seed; per-run seed = seed + run_id
+
+# ---- methods ----
+methods: ["baseline_fixed", "baseline_random", "p4_top3"]
+
+# ---- replay-buffer fine-tuner ----
+trainer:
+  finetune_epochs: 20        # vs 100 in upstream cold-start retrain
+  lr: 5.0e-5                 # ~6x lower than upstream default
+  batch_size: 64
+  weight_decay: 1.0e-4
+  replay_mix: 0.5            # 0.5 = half of each batch sampled from replay buffer (old demos)
+  replay_mix_floor: 0.2      # do not let replay weight drop below this even when |D_old| is small
+  val_frac: 0.1
+
+# ---- P4 ----
+p4:
+  # Model is auto-discovered from upstream pipeline config; set here to override.
+  # null = inherit from p4_vlm_reasoning_kag_cross_plain_llm.yaml.
+  model: null
+  sequential:
+    demos_per_round: 1       # exactly one prescription per round
+  batch:
+    demos_per_round: null    # let LLM decide, hard-capped to remaining budget
+
+# ---- corridor blocking ----
+corridor_blocking: true      # when true, prescribed pathway forces A* down that exact path
+
+# ---- logging ----
+logging:
+  prescription_overlap_runs: 3   # only first N runs save full LLM reasoning to JSON

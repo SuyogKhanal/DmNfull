@@ -1,0 +1,60 @@
+# pool_rl_robo — config for the P4-LLM method (run_one.py).
+# Continuous-control port of pool_x_selector/config.yaml. P4-LLM selects, each
+# round, the single novice-visited state to request an expert demonstration for;
+# 1 query/round so reward-vs-#queries is comparable to the 5 IIL baselines.
+
+# ---- run-level ----
+seed: 42
+budget: 15                 # rounds = expert queries (the comparison x-axis)
+n_seed_demos: 5            # expert demos used to BC the round-0 novice
+initial_epochs: 300        # BC epochs at round 0
+round_epochs: 150          # warm-started BC epochs per subsequent round
+n_eval_episodes: 20        # greedy eval episodes per round (reward-curve point)
+n_rollout_episodes: 1      # novice rollouts per round -> candidate pool
+max_steps: 1000            # per-episode cap (MuJoCo default; Fetch truncates at 50)
+max_consecutive_empty: 8
+hidden: 256
+lr: 0.0003
+batch_size: 256
+weight_decay: 0.0001
+
+# ---- the 5 environments (one SLURM array task per env) ----
+envs: ["HalfCheetah-v4", "Hopper-v4", "Walker2d-v4",
+       "FetchReach-v4", "FetchPickAndPlace-v4"]
+
+# ---- methods run by run_one.py ----
+methods: ["p4_llm"]
+
+# ---- P4-LLM ----
+p4:
+  model_name: qwen3-32b
+  vlm_model_name: qwen3-vl-32b
+  max_candidates: 30        # (locomotion state-selection proxy: states shown to the LLM)
+  n_failure_rollouts: 6     # (Fetch full P4: novice rollouts/round -> >= top_k failures)
+  top_k_failures: 3         # (Fetch full P4: failures compressed into ONE prescribed config)
+  temperature: 0.0
+  kag_dir: null             # per-env KAG .md docs; null = package default p4/kag/
+
+# ---- Diffusion backbone (Fetch envs): R3M-image DDPM novice ----
+diffusion:
+  r3m_model: resnet18         # 512-d frozen R3M embedding (+ 3-d goal)
+  T: 100                      # DDPM denoise steps
+  hidden: 512
+  lr: 0.0001
+  batch_size: 256
+  weight_decay: 0.000001
+  n_uncertainty_samples: 8    # denoise draws -> sample-variance uncertainty (Dropout/Ensemble/Thrifty)
+  # diffusion+R3M is far more data/epoch-hungry than the locomotion MLP (Smoke-1
+  # finding) -> its own heavier seed-demo/epoch schedule (overrides the globals on Fetch):
+  n_seed_demos: 30
+  initial_epochs: 1500
+  round_epochs: 400
+
+# ---- IIL decision-rule knobs (present so run_dagger can read them uniformly;
+#      P4 itself does not use them). tau/sigma are raw-action L2 distances. ----
+baselines:
+  safe:     {tau: 0.5}
+  dropout:  {N: 16, dropout_d: 0.1, tau: 0.5, p: 0.5}
+  ensemble: {M: 5, tau: 0.5, sigma: 0.02}
+  thrifty:  {M: 5, alpha_h: 0.10, gamma: 0.98, q_epochs: 50, q_lr: 0.001}
+  stagger:  {}

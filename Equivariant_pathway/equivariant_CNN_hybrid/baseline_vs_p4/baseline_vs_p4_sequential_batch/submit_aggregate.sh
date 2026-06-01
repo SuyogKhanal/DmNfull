@@ -3,10 +3,14 @@
 #SBATCH --partition=gpu
 #SBATCH --qos=batch-short
 #SBATCH --gpus=1
-#SBATCH --constraint="gpu-l40s|gpu-v100"
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --time=01:00:00
+# NOTE: no --constraint. Aggregation is CPU-only (reads CSV/JSON, makes
+# matplotlib figures, runs the contamination check — no model inference).
+# The old "gpu-l40s|gpu-v100" constraint was from the OpenAI cluster and
+# is an invalid feature here (this cluster has gpu-a100/gpu-h100/gpu-h200),
+# which caused: sbatch: error: Invalid feature specification.
 #SBATCH --output=slurm_logs/bvp_aggregate_%j.out
 #SBATCH --error=slurm_logs/bvp_aggregate_%j.err
 #

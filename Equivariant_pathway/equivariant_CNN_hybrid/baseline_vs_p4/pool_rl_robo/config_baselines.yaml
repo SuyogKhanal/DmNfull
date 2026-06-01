@@ -1,0 +1,65 @@
+# pool_rl_robo — config for the 5 IIL baselines (run_baselines.py).
+# Continuous-control port of pool_x_selector/config_baselines.yaml. General
+# knobs match config.yaml so the baselines are apples-to-apples with P4-LLM on
+# the same reward-vs-#queries yardstick; the per-baseline decision-rule knobs are
+# the only extra. tau/sigma are raw-action L2 distances (env-scale-dependent —
+# calibrate per env; the 1-query/round + pick_one fallback keeps the comparison
+# running even if a gate is mis-tuned).
+
+# ---- run-level (match config.yaml) ----
+seed: 42
+budget: 15
+n_seed_demos: 5
+initial_epochs: 300
+round_epochs: 150
+n_eval_episodes: 20
+n_rollout_episodes: 1
+max_steps: 1000
+max_consecutive_empty: 8
+hidden: 256
+lr: 0.0003
+batch_size: 256
+weight_decay: 0.0001
+
+# ---- methods ----
+methods: ["safe_dagger", "dropout_dagger", "ensemble_dagger",
+          "thrifty_dagger", "stagger"]
+
+# ---- Diffusion backbone (Fetch envs): R3M-image DDPM novice ----
+diffusion:
+  r3m_model: resnet18
+  T: 100
+  hidden: 512
+  lr: 0.0001
+  batch_size: 256
+  weight_decay: 0.000001
+  n_uncertainty_samples: 8
+  n_seed_demos: 30
+  initial_epochs: 1500
+  round_epochs: 400
+
+# ---- per-baseline decision-rule knobs ----
+baselines:
+  # SafeDAgger* — query when ||a_nov - a_exp||_2 > tau.
+  safe:
+    tau: 0.5
+  # DropoutDAgger — N MC-dropout samples; ball radius tau, probability threshold p.
+  dropout:
+    N: 16
+    dropout_d: 0.1
+    tau: 0.5
+    p: 0.5
+  # EnsembleDAgger — mean discrepancy > tau OR ensemble doubt(variance) > sigma.
+  ensemble:
+    M: 5
+    tau: 0.5
+    sigma: 0.02
+  # ThriftyDAgger — novelty(doubt) OR risk(1-Q); (1-alpha_h)-quantile gates.
+  thrifty:
+    M: 5
+    alpha_h: 0.10
+    gamma: 0.98
+    q_epochs: 50
+    q_lr: 0.001
+  # Stagger — one uniformly-random state per round (the low-information control).
+  stagger: {}

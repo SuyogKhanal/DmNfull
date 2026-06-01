@@ -1,0 +1,17 @@
+[submit_smoke] submit_script=submit_one_qwen.sh
+[submit_smoke] run_ids=99 100  methods=baseline,p4_sequential,p4_batch
+[submit_smoke] budget=2  max_rounds=3  correction_n=10
+[submit_smoke] baseline_epochs=3  p4_epochs=3
+[submit_smoke] run_id=99  sbatch_job_id=90816
+[submit_smoke] run_id=100  sbatch_job_id=90817
+[submit_smoke] submitted 2 smoke jobs: 90816 90817
+
+After both jobs finish, audit with:
+  for m in baseline p4_sequential p4_batch; do
+    awk -F, 'NR==1{next} END{print "$m  training_rounds_total="$3}' \
+      results/run_99/$m/results/training_log.csv
+  done
+
+  ls results/run_99/shared/round_*/correction_layouts.yaml
+  python3 -m Equivariant_pathway.equivariant_CNN_hybrid.baseline_vs_p4.baseline_vs_p4_sequential_batch.aggregation.aggregate --budget 2 --target_sr 0.90
+  cat results/aggregate/contamination_report.json | python3 -m json.tool

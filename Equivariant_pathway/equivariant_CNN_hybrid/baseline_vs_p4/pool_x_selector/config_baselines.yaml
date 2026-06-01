@@ -1,0 +1,76 @@
+# config_baselines.yaml — single source of truth for the 5 IIL baselines.
+#
+# These baselines are compared against the already-run P4-LLM method
+# (p4_top3_rotate, on disk). They are ROTATED-ONLY: each round reuses P4's
+# exact per-round correction pool (results/run_N/shared/round_NNN), seed-bump-
+# filling any round P4 never reached. Per-run seed = seed + run_id, matching
+# P4, so runs 1..10 line up with P4's runs 1..10. Override any value via the
+# submit-script env knobs / CLI flags.
+
+# ---- run-level (match P4's on-disk run: budget=15, target_sr=0.90) ----
+n_runs: 10
+budget: 15                  # extra demos per run on top of initial_demos
+target_sr: 0.90
+max_rounds: 50              # baselines may run more rounds than P4 to reach budget
+max_steps: 60
+heldout_n: 200
+initial_demos: 20
+initial_epochs: 500         # only used if the global bootstrap checkpoint is missing
+correction_n: 20            # pool size per round; matches P4. Do NOT raise.
+seed: 0                     # base seed; per-run seed = seed + run_id
+max_consecutive_empty: 8    # rotate-pool: stop after this many zero-demo rounds
+
+# ---- methods (the 5 IIL baselines) ----
+methods: ["safe_dagger", "dropout_dagger", "ensemble_dagger",
+          "thrifty_dagger", "stagger"]
+
+# ---- replay-buffer fine-tuner (matches BASELINE_ROUND_EPOCHS=90 from P4 run) ----
+trainer:
+  finetune_epochs: 90
+  lr: 5.0e-5
+  batch_size: 64
+  weight_decay: 1.0e-4
+  replay_mix: 0.5
+  replay_mix_floor: 0.2
+  val_frac: 0.1
+
+# ---- per-baseline decision-rule knobs ----
+# Each maps a per-timestep IIL intervention rule onto a per-layout query score
+# (one demo/round). See selection/iil_baselines.py for the exact math.
+baselines:
+  # SafeDAgger* — query when the fraction of off-optimal-action steps > tau.
+  safe:
+    tau: 0.10
+
+  # DropoutDAgger — N MC-dropout forward passes/step (fusion-head dropout d);
+  # a layout is queryable when any step's in-ball sample fraction p_hat < p.
+  # (Faithfulness: only the fusion head has dropout — see the docstring.)
+  dropout:
+    N: 16
+    dropout_d: 0.2
+    p: 0.5
+    tau: 0.5
+
+  # EnsembleDAgger — M independently fine-tuned members; query when mean action
+  # discrepancy > tau OR ensemble action-disagreement (doubt) > sigma; pick by
+  # doubt. eval_mode: 'mean' = ensemble-mean policy is the evaluated novice.
+  ensemble:
+    M: 5
+    tau: 0.10
+    sigma: 0.10
+    eval_mode: mean
+
+  # ThriftyDAgger — novelty (ensemble doubt) OR risk (1 - success-Q), with
+  # (1-alpha_h)-quantile thresholds auto-calibrated over the pool. Shares M
+  # with the ensemble. risk_agg: mean|max over a layout's visited states.
+  thrifty:
+    alpha_h: 0.10
+    gamma: 0.95
+    M: 5
+    risk_agg: mean
+    q_epochs: 50
+    q_lr: 1.0e-3
+
+  # Stagger — one uniformly-random failure per round (no knobs; the faithful
+  # "one sample per round" control, ~ the existing random-rotate baseline).
+  stagger: {}

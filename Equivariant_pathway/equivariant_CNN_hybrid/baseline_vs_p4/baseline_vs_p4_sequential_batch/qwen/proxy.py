@@ -31,8 +31,42 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
-from typing import Set
+from typing import Any, Set
+
+# Qwen3 is a reasoning model: it emits <think>...</think> blocks inline in
+# the response text. The upstream aggregator does a strict json.loads on
+# the model output and the per-episode parser scans for a FINAL_REC block;
+# a leading <think> prefix makes json.loads fail (→ empty prescription →
+# 0 demos prescribed). Strip the think blocks from response text before
+# returning to the pipeline. GPT on the OpenAI cluster never emitted these,
+# which is why this only bites on the Qwen path.
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def _strip_think(text: str) -> str:
+    if not isinstance(text, str) or "<think>" not in text:
+        return text
+    cleaned = _THINK_RE.sub("", text)
+    # Truncated/unclosed <think> (no matching </think>): drop the dangling
+    # opener and everything after it — there is no usable answer there.
+    if "<think>" in cleaned:
+        cleaned = cleaned.split("<think>", 1)[0]
+    return cleaned.lstrip()
+
+
+def _strip_think_recursive(obj: Any) -> Any:
+    # Walk the responses-API envelope and strip think blocks from every
+    # string leaf. Only text/content fields ever carry <think>, so this is
+    # safe; it covers output_text, output[].content[].text, and variants.
+    if isinstance(obj, str):
+        return _strip_think(obj)
+    if isinstance(obj, list):
+        return [_strip_think_recursive(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _strip_think_recursive(v) for k, v in obj.items()}
+    return obj
 
 # Late imports — only required when the proxy is actually run, so the
 # rest of the suite can import this package without pulling in fastapi.
@@ -152,6 +186,134 @@ def make_app(
     async def completions(request: Request):
         # Legacy completions endpoint; route the same way.
         return await chat_completions(request)
+
+    def _patch_responses_payload(payload: dict) -> bytes:
+        # (1) vLLM 0.17.x ships with openai SDK 2.24, whose
+        # ResponseInputImageParam marks `detail` as Required (auto/low/
+        # high). The upstream pipeline runs on openai SDK 2.30 and omits
+        # `detail`. OpenAI's hosted API tolerates the omission; vLLM
+        # pydantic-rejects with 400. Inject `detail: "auto"` on every
+        # input_image item that lacks one before forwarding.
+        inp = payload.get("input")
+        if isinstance(inp, list):
+            for item in inp:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                if isinstance(content, list):
+                    for c in content:
+                        if (
+                            isinstance(c, dict)
+                            and c.get("type") == "input_image"
+                            and "detail" not in c
+                        ):
+                            c["detail"] = "auto"
+        # (2) The pipeline requests max_output_tokens=16384. Qwen3's hard
+        # context ceiling is 40960 (max_position_embeddings), so a big
+        # aggregator input + 16384 output blows past it → 400 "input+output
+        # > context length". Cap output so input always has ~32k of room.
+        # 8192 is ample for a <think> block plus the structured JSON/
+        # FINAL_REC answer these calls produce. Paired with correction_n=20
+        # (fewer failures → smaller aggregator prompt) this fits even an
+        # all-fail round (~28k input + 8192 < 40960).
+        cap = int(os.environ.get("PROXY_MAX_OUTPUT_TOKENS", "8192"))
+        cur = payload.get("max_output_tokens")
+        if not isinstance(cur, int) or cur > cap:
+            payload["max_output_tokens"] = cap
+        return json.dumps(payload).encode()
+
+    @app.post("/v1/responses")
+    async def responses_create(request: Request):
+        # The upstream pipeline (vlm_analyser, reasoning, aggregator,
+        # knowledge_fetcher) uses client.responses.create, which posts
+        # to /v1/responses. Route by body["model"] same as chat.
+        body = await request.body()
+        try:
+            payload = json.loads(body) if body else {}
+        except Exception:
+            payload = {}
+        model = str(payload.get("model", "") or "")
+        target = _route_base_for_model(model)
+        # Rewrite the body to satisfy vLLM's stricter schema validation.
+        forward_body = _patch_responses_payload(payload) if payload else body
+        upstream = await client.send(
+            client.build_request(
+                "POST", f"{target}/v1/responses",
+                headers={
+                    k: v for k, v in request.headers.items()
+                    if k.lower() not in {"host", "content-length", "connection"}
+                },
+                content=forward_body,
+            ),
+            stream=True,
+        )
+        resp_headers = {
+            k: v for k, v in upstream.headers.items()
+            if k.lower() not in {"content-length", "transfer-encoding", "connection"}
+        }
+        print(
+            f"[qwen-proxy] POST /v1/responses  model={model!r}  "
+            f"-> port={target.rsplit(':', 1)[-1]}  status={upstream.status_code}",
+            flush=True,
+        )
+
+        ctype = upstream.headers.get("content-type", "")
+        # Non-streaming JSON response: buffer it, strip <think> blocks from
+        # the text fields, and return clean JSON. The pipeline calls
+        # responses.create without stream=True, so this is the hot path.
+        if "text/event-stream" not in ctype:
+            raw = await upstream.aread()
+            await upstream.aclose()
+            try:
+                data = json.loads(raw)
+                data = _strip_think_recursive(data)
+                out = json.dumps(data).encode()
+            except Exception:
+                out = raw  # not JSON / parse failed — pass through untouched
+            return Response(
+                content=out, status_code=upstream.status_code,
+                headers=resp_headers, media_type="application/json",
+            )
+
+        # Streaming (SSE) fallback — pass through unmodified. The pipeline
+        # doesn't stream these calls, so think-stripping isn't applied here.
+        async def _iter():
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+
+        return StreamingResponse(
+            _iter(), status_code=upstream.status_code, headers=resp_headers,
+        )
+
+    @app.get("/v1/responses/{response_id}")
+    async def responses_get(response_id: str, request: Request):
+        # Read-side of the responses API. No body to inspect for model
+        # routing, so try LLM backend first, fall back to VLM. Used by
+        # SDK polling paths; rare in our workload.
+        for base in (llm_base, vlm_base):
+            try:
+                r = await client.get(
+                    f"{base}/v1/responses/{response_id}",
+                    headers={
+                        k: v for k, v in request.headers.items()
+                        if k.lower() not in {"host", "connection"}
+                    },
+                    timeout=30.0,
+                )
+                if r.status_code != 404:
+                    return Response(
+                        content=r.content, status_code=r.status_code,
+                        headers={
+                            k: v for k, v in r.headers.items()
+                            if k.lower() not in {"content-length", "transfer-encoding", "connection"}
+                        },
+                    )
+            except Exception as exc:
+                print(f"[qwen-proxy] GET /v1/responses/{response_id} {base} failed: {exc!r}", flush=True)
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
 
     @app.get("/v1/models")
     async def models():

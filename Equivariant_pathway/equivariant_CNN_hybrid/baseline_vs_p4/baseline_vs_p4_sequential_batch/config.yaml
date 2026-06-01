@@ -10,7 +10,11 @@ max_steps: 60
 heldout_n: 200
 initial_demos: 20
 initial_epochs: 500          # only used if the global bootstrap checkpoint is missing
-correction_n: 50             # was 40 upstream; bumped for this suite
+correction_n: 20             # per-round pool size. 50 made the aggregator
+                             # prompt exceed Qwen3's 40960 ctx (23 failures
+                             # -> 32769 input tokens); 20 keeps it safe.
+                             # Pool is freshly sampled each round, so 20/round
+                             # still gives broad coverage across the run.
 seed: 0                      # base seed; per-run seed = seed + run_id
 
 # ---- methods ----

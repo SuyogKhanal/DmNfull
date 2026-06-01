@@ -1,0 +1,56 @@
+# pool_x_selector — single source of truth for all knobs.
+# Override individual values via env vars / CLI flags.
+#
+# This suite compares 8 demonstration-acquisition methods on a 2-axis grid:
+#   pool     ∈ {fixed (sampled once per run, reused every round),
+#               rotate (a fresh size-20 sample each round)}
+#   selector ∈ {baseline highest-loss, baseline random,
+#               p4_top3 (LLM sees the 3 highest-loss failures),
+#               p4_all  (LLM sees ALL failures)}
+# Both P4 variants prescribe EXACTLY ONE layout/round (hard cap = 1), so
+# every method adds ≤1 demo/round — apples-to-apples sample-efficiency.
+
+# ---- run-level ----
+n_runs: 10
+budget: 15                  # extra demos per run on top of initial_demos
+target_sr: 0.90
+max_rounds: 50
+max_steps: 60
+heldout_n: 200
+initial_demos: 20
+initial_epochs: 500          # only used if the global bootstrap checkpoint is missing
+correction_n: 20             # pool size (fixed pool AND each rotated round).
+                             # p4_all feeds up to all 20 failures to the
+                             # aggregator; 20 keeps the prompt within Qwen3's
+                             # 40960 ctx (≈28k in + 8192 out cap). Do NOT raise.
+seed: 0                      # base seed; per-run seed = seed + run_id
+
+# ---- methods ----
+methods: ["baseline_highloss_fixed", "baseline_random_fixed",
+          "baseline_highloss_rotate", "baseline_random_rotate",
+          "p4_top3_fixed", "p4_top3_rotate",
+          "p4_all_fixed", "p4_all_rotate"]
+
+# ---- replay-buffer fine-tuner ----
+trainer:
+  finetune_epochs: 20        # vs 100 in upstream cold-start retrain
+  lr: 5.0e-5                 # ~6x lower than upstream default
+  batch_size: 64
+  weight_decay: 1.0e-4
+  replay_mix: 0.5            # 0.5 = half of each batch sampled from replay buffer (old demos)
+  replay_mix_floor: 0.2      # do not let replay weight drop below this even when |D_old| is small
+  val_frac: 0.1
+
+# ---- P4 ----
+p4:
+  # Model is auto-discovered from upstream pipeline config; set here to override.
+  # null = inherit from p4_vlm_reasoning_kag_cross_plain_llm.yaml.
+  # Both p4_top3 and p4_all hard-cap the prescription to 1 layout/round.
+  model: null
+
+# ---- corridor blocking ----
+corridor_blocking: true      # when true, prescribed pathway forces A* down that exact path
+
+# ---- logging ----
+logging:
+  prescription_overlap_runs: 3   # only first N runs save full LLM reasoning to JSON

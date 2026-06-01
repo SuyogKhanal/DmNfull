@@ -85,7 +85,7 @@ def _run_baseline(
         train_yaml=train_yaml,
         heldout_yaml=heldout_yaml,
         run_shared_dir=ws.shared,
-        correction_n=int(cfg.get("correction_n", 50)),
+        correction_n=int(cfg.get("correction_n", 20)),
         budget=int(cfg.get("budget", 15)),
         target_sr=float(cfg.get("target_sr", 0.90)),
         max_rounds=int(cfg.get("max_rounds", 50)),
@@ -135,7 +135,7 @@ def _run_p4(
         train_yaml=train_yaml,
         heldout_yaml=heldout_yaml,
         run_shared_dir=ws.shared,
-        correction_n=int(cfg.get("correction_n", 50)),
+        correction_n=int(cfg.get("correction_n", 20)),
         config=p4_cfg,
     )
 
@@ -293,7 +293,7 @@ def main():
         "correction_yaml_dir": str(ws.shared),
         "heldout_yaml": str(shared["heldout"]),
         "training_yaml": str(shared["train"]),
-        "correction_n": int(cfg.get("correction_n", 50)),
+        "correction_n": int(cfg.get("correction_n", 20)),
         "methods": methods,
         "results": {},
     }

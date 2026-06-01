@@ -82,6 +82,9 @@ REPLAY_MIX="${REPLAY_MIX:-}"
 REPLAY_MIX_FLOOR="${REPLAY_MIX_FLOOR:-}"
 CORRIDOR_BLOCKING="${CORRIDOR_BLOCKING:-}"        # true / false
 METHODS="${METHODS:-}"
+# submit_{smoke,all}.sh encodes commas as '+' to survive sbatch --export
+# (which uses commas as the variable separator). Decode here.
+METHODS="${METHODS//+/,}"
 
 # Build the python CLI flag list — only emit a flag when its env var is set,
 # so unset values fall through to config.yaml.
