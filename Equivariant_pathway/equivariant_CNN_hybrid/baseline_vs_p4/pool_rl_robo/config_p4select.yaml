@@ -1,0 +1,53 @@
+# config_p4select.yaml — P4-LLM SELECTION on top of SafeDAgger (p4_select only).
+#
+# The variant the team requested: keep SafeDAgger's winning detect + on-policy-
+# correct (which beats Diff-DAgger), and add the P4 LLM as the SELECTOR that picks
+# which of the top-3 highest-discrepancy failures to correct each round. Text-only
+# selection → no rendering → robust against the SAPIEN/Vulkan crash. Runs p4_select
+# ONLY (run_901); compared against the already-completed Diff-DAgger curve (run_0).
+#
+# Matched to the research baselines for a fair head-to-head vs Diff-DAgger:
+# nd_retrain=4, initial_demos=20, target 0.90, budget 100 (same as run_0).
+
+n_runs: 1
+initial_demos: 20
+budget: 100
+demos_per_round: 1
+target_sr: 0.90
+max_rounds: 100
+max_steps: 200
+heldout_n: 100
+seed: 42
+
+nd_retrain: 4              # match Diff-DAgger / the research baselines
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10          # same held-out SET (seeds 7777..); 10 = render/eval-safe
+rollout_episodes: 60       # (unused by p4_select; kept for parity)
+
+methods: ["p4_select"]
+
+environments: ["StackCube-v1", "PickCube-v1", "PushT-v1", "PlugCharger-v1"]
+
+# SafeDAgger discrepancy is used only to RANK the round's failures (top-3); the
+# LLM then selects one of the three to correct on-policy.
+p4_select:
+  n_cand: 6                # diffusion-policy rollouts/round → failure candidate pool
+
+baselines:
+  diff_dagger: {alpha: 0.99, patience: 1}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8

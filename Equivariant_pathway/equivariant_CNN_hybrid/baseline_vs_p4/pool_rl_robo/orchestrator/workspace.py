@@ -10,11 +10,15 @@ from typing import Dict, Iterable
 
 from ..envs.env_setup import RESULTS_ROOT, SUITE_ROOT
 
-# The method set: P4-LLM (the method under test) + the 5 IIL baselines.
+# LOCKSTEP method set (7): p4_top3 (ours) + diff_dagger + the 5 IIL baselines.
+# Keep in sync with config.yaml::methods, run_one.py::METHOD_SPEC,
+# aggregation/aggregate.py, and nb_plot.py.
 METHOD_DIR_NAMES = (
-    "p4_llm",
+    "p4_top3",
+    "diff_dagger",
     "safe_dagger", "dropout_dagger", "ensemble_dagger",
     "thrifty_dagger", "stagger",
+    "p4_select",   # industry variant (P4-LLM selection on top of SafeDAgger)
 )
 
 

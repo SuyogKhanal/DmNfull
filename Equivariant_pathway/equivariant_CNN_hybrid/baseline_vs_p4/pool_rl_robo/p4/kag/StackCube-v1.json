@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "maniskill_stackcube_prehensile_manipulation",
+    "description": "Knowledge graph for the ManiSkill StackCube task: a Franka Panda (7 arm joints + parallel gripper) grasps cube A (red, 2cm) and stacks it on cube B (green, 2cm) on a table. Consumed by the P4-LLM SELECTOR to ground which failed rollout is the most informative to correct next. The novice is a diffusion policy; failures are detected by the policy's OWN diffusion loss (high loss = out-of-distribution / uncertain state); the expert is a rule-based panda motion planner that re-plans grasp->lift->align->release from the divergence state. The selector picks the ONE failed candidate whose on-policy correction closes the most impactful failure mode.",
+    "robot": "Franka Panda (panda + parallel gripper)",
+    "control_mode": "pd_joint_pos (policy acts in rel_joint_pos = 7 joint deltas + 1 gripper command)",
+    "action_dim": 8
+  },
+  "nodes": [
+    {"id": "robot", "type": "Robot", "label": "Panda + gripper", "properties": {"arm_joints": 7, "gripper": true, "tcp_link": "panda_hand_tcp", "qpos_dim": 9}},
+    {"id": "cubeA", "type": "Object", "label": "Cube A (red, movable)", "properties": {"half_size_m": 0.02, "role": "the cube to pick up and place on cube B", "controllable_via": "grasp + transport"}},
+    {"id": "cubeB", "type": "Object", "label": "Cube B (green, base)", "properties": {"half_size_m": 0.02, "role": "the stationary base cube; cube A must rest on its top face"}},
+    {"id": "tcp", "type": "EndEffector", "label": "Gripper TCP", "properties": {"role": "grasps cube A; opens to release", "approach_matters": "must grasp cube A on opposing faces with a feasible top-down approach"}},
+    {"id": "obs", "type": "Observation", "label": "state_dict (30-d)", "properties": {"agent_qpos": "7 arm joints + 2 finger joints (rad/m)", "extra_tcp_pose": "TCP position+quaternion", "extra_cubeA_pose": "cube A position+quaternion", "extra_cubeB_pose": "cube B position+quaternion"}},
+    {"id": "ctrl", "type": "Controller", "label": "pd_joint_pos / rel_joint_pos", "properties": {"policy_action": "7 joint deltas + gripper command (rel_joint_pos, dim 8)", "expert_action": "panda motion planner → absolute joint qpos + gripper (recorded as the same 8-dim demo)"}},
+    {"id": "detect", "type": "DetectionSignal", "label": "diffusion loss", "properties": {"signal": "policy.get_action(dagger=True).diffusion_loss", "meaning": "per-step out-of-distribution / uncertainty; peak loss marks the divergence step t*", "shared_with": "diff_dagger uses the IDENTICAL signal"}},
+    {"id": "succ", "type": "SuccessCondition", "label": "A stacked on B, static, released", "properties": {"metric": "cubeA xy within ~cube-half-size of cubeB AND z-offset == 2*half_size AND cubeA static AND gripper not grasping", "info_key": "success"}},
+    {"id": "fm_no_grasp", "type": "FailureMode", "label": "missed_grasp", "properties": {"description": "Gripper closes without securing cube A (off-center approach, fingers slip, or never reaches the cube)."}},
+    {"id": "fm_drop", "type": "FailureMode", "label": "dropped_in_transit", "properties": {"description": "Cube A is grasped then slips/falls during lift or transport before reaching cube B."}},
+    {"id": "fm_misalign", "type": "FailureMode", "label": "misaligned_stack", "properties": {"description": "Cube A is released off-center: xy offset from cube B exceeds tolerance, so it does not rest stably on top."}},
+    {"id": "fm_knock", "type": "FailureMode", "label": "knocked_base", "properties": {"description": "Arm/cube A collides with cube B and displaces it, destroying the target stack location."}},
+    {"id": "fm_not_static", "type": "FailureMode", "label": "not_static", "properties": {"description": "Cube A lands on cube B but topples or keeps moving (released with momentum / unstable contact), so the static check fails."}},
+    {"id": "fm_no_release", "type": "FailureMode", "label": "no_release", "properties": {"description": "Cube A is positioned correctly but the gripper does not open, so is_grasped stays true and success never registers."}},
+    {"id": "fm_timeout", "type": "FailureMode", "label": "timeout", "properties": {"description": "Episode reaches the step horizon without success (hesitation, oscillation, slow approach)."}},
+    {"id": "ph_reach", "type": "Phase", "label": "reach", "properties": {"description": "approach cube A from above"}},
+    {"id": "ph_grasp", "type": "Phase", "label": "grasp", "properties": {"description": "close the gripper on cube A's opposing faces"}},
+    {"id": "ph_lift", "type": "Phase", "label": "lift", "properties": {"description": "raise cube A clear of the table"}},
+    {"id": "ph_align", "type": "Phase", "label": "align", "properties": {"description": "move cube A over cube B's top-center"}},
+    {"id": "ph_release", "type": "Phase", "label": "release", "properties": {"description": "open the gripper and let cube A settle statically"}}
+  ],
+  "edges": [
+    {"source": "robot", "target": "tcp", "relation": "HAS_END_EFFECTOR"},
+    {"source": "tcp", "target": "cubeA", "relation": "GRASPS"},
+    {"source": "cubeA", "target": "cubeB", "relation": "MUST_STACK_ON"},
+    {"source": "robot", "target": "obs", "relation": "OBSERVES"},
+    {"source": "robot", "target": "ctrl", "relation": "CONTROLLED_BY"},
+    {"source": "robot", "target": "detect", "relation": "DETECTS_FAILURE_VIA"},
+    {"source": "cubeA", "target": "succ", "relation": "SUCCEEDS_WHEN"},
+    {"source": "tcp", "target": "fm_no_grasp", "relation": "CAUSES_FAILURE"},
+    {"source": "cubeA", "target": "fm_drop", "relation": "CAUSES_FAILURE"},
+    {"source": "cubeA", "target": "fm_misalign", "relation": "CAUSES_FAILURE"},
+    {"source": "cubeB", "target": "fm_knock", "relation": "CAUSES_FAILURE"},
+    {"source": "cubeA", "target": "fm_not_static", "relation": "CAUSES_FAILURE"},
+    {"source": "tcp", "target": "fm_no_release", "relation": "CAUSES_FAILURE"},
+    {"source": "robot", "target": "fm_timeout", "relation": "CAUSES_FAILURE"}
+  ],
+  "reasoning_implications": {
+    "selection_objective": "Among the top-3 FAILED candidate rollouts (highest peak diffusion loss), pick the ONE whose on-policy expert correction is the most informative demonstration — the failure that, once corrected, closes the most impactful / most frequent failure mode and most improves held-out success.",
+    "missed_grasp": "Earliest-phase failure (reach/grasp). Correcting it teaches reliable grasping, which is a prerequisite for ALL later phases — usually the highest-leverage correction when grasping is the bottleneck.",
+    "dropped_in_transit": "Grasp succeeded but transport failed. Correcting it teaches a stable lift/carry; valuable once grasping is reliable but stacking is not yet reached.",
+    "misaligned_stack": "Late-phase failure: the policy reaches cube B but places off-center. Correcting it teaches fine alignment over cube B's top-center — high value when the policy already grasps and transports.",
+    "not_static": "Release timing/stability failure. Correcting it teaches a gentle release so cube A settles — valuable when placements are close but unstable.",
+    "no_release": "Trivial-to-fix end-phase failure (gripper never opens). Lower priority unless it is the dominant failure mode.",
+    "knocked_base": "Collision that destroys the target; correcting it teaches collision-free approach to cube B.",
+    "diversity": "Prefer a failure whose phase/mode is NOT already well-covered by recent corrections, so each added demonstration expands coverage rather than repeating an already-learned skill.",
+    "peak_loss_tiebreak": "If two candidates target the same failure mode, prefer the higher peak diffusion loss (more out-of-distribution) and the one whose divergence is earlier (more downstream behaviour to teach).",
+    "workspace_constraint": "Both cubes spawn flat on the table within x[-0.10,0.10] y[-0.20,0.20] z=0.02 (cube half-size 0.02), with random z-rotation and a collision-avoidance gap between them; the gripper TCP operates within x[-0.35,0.35] y[-0.35,0.35] z[0.02,0.30]. Any prescribed config (for the p4_top3 prescription arm) MUST keep cubeA/cubeB and the TCP inside these ranges, or the expert cannot solve it and the round is wasted.",
+    "non_emptiness": "A failure is present, so any prescription MUST be a concrete, fully-specified, in-bounds config (non-empty cubeA_xyz, cubeB_xyz). Never emit an empty prescription."
+  }
+}

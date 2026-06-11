@@ -1,207 +1,295 @@
-# claude_context.md — `pool_rl_robo` suite
+# claude_context.md — single-file onboarding for `pool_rl_robo`
 
-A self-contained sibling of `pool_x_selector/` (same depth under
-`baseline_vs_p4/`) that ports the §18 **P4-LLM vs 5 DAgger-family IIL baselines**
-comparison from the 5×5 maze to **continuous-control RL robotics**. Read this
-end-to-end before changing anything.
-
-Motivation (maze §19): the 5×5 maze saturated (~0.90) and demonstration
-*selection* could not separate the methods; the recommended next step was a
-harder, non-saturating environment. These MuJoCo locomotion + Fetch manipulation
-tasks are that regime.
+**Read this top-to-bottom at the start of a session.** It is the complete context for
+the **A\* study: P4-LLM-select vs Diff-DAgger** on ManiSkill manipulation tasks, plus
+the exact recipe to run the comparison on a NEW environment. Fill in the box below and
+tell Claude "run the next experiment per claude_context.md".
 
 ---
 
-## 1. The user / cluster
-- PhD student `s226137394`, repo `/weka/s226137394/DmNfull/` on the Qwen/vLLM
-  cluster. Email `s226137394@deakin.edu.au`. Terse, action-mode; invites
-  disagreement. Reviewer-defensible A* framing.
-- **Conda env: `pool_rl_robo`** — a CLONE of `maze` + the RL stack
-  (stable_baselines3 2.8, sb3_contrib 2.8, gymnasium_robotics 1.4.2,
-  huggingface_sb3, numpy 2.x). `maze` itself is UNTOUCHED.
-- **GOTCHA (load-bearing):** `~/.bashrc` prepends `maze/bin` to `PATH`, so after
-  `conda activate pool_rl_robo` a bare `python`/`pip` STILL resolves to the
-  **maze** env. ALWAYS use the explicit interpreter
-  `/home/s226137394/.conda/envs/pool_rl_robo/bin/python` (the submit scripts set
-  `PYBIN` to it). Installing into the clone with a bare `pip` silently corrupts
-  `maze`.
+## ▶ ACTIVE TASK (next session)
 
-## 2. The experiment in one paragraph
-Compare **6 demonstration-acquisition methods** — **P4-LLM** (an LLM picks which
-novice-visited state to request an expert demo for) vs **SafeDAgger\***,
-**DropoutDAgger**, **EnsembleDAgger**, **ThriftyDAgger**, **Stagger** (the 5 IIL
-rules from `pool_x_selector/baseline_implementations_guide.md`) — on **5
-environments** (HalfCheetah-v4, Hopper-v4, Walker2d-v4, FetchReach-v4,
-FetchPickAndPlace-v4), seeds 42..46. DAgger active loop, **1 expert
-query/round** (budget=15), so the **reward-vs-#queries** curve is the common
-yardstick. The expert is a pretrained SB3/SB3-contrib policy from HuggingFace;
-the novice is a small MLP (BC). Fetch (Dict obs) is flattened
-`observation+achieved_goal+desired_goal` (the "MultiInputPolicy" requirement).
-
-**Run model (NO job arrays — user preference):** one SLURM job = one SEED,
-running all 5 envs **sequentially** under a single Qwen3-32B vLLM
-(`submit_one_seed.sh`). 5 seeds = **5 separate jobs** (`submit_5seeds_5jobs.sh`,
-seeds 42..46 → run_0..run_4), then a chained cross-seed aggregate
-(`aggregate.py`, mean ± std over seeds).
-
-**Reading the metrics:** locomotion (HalfCheetah/Hopper/Walker2d) → **mean
-reward** (forward velocity; positive). Fetch (FetchReach/FetchPickAndPlace) →
-**success_rate** is the real metric; reward is SPARSE (−1/step until success), so
-even a *perfect* expert has a NEGATIVE return (FetchPickAndPlace expert ≈ −17 at
-sr=1.0). Negative reward on Fetch ≠ broken. The numbers in the result tables are
-the NOVICE (post-DAgger), not the expert (experts are verified by the smoke gate:
-all 5 ✓, Fetch sr=1.0).
-
-**Demonstration / eval budget:** 5 seed expert demos (BC the round-0 novice) + 15
-budget (1 expert demonstration/round) = up to 20 expert *trajectories* (each a
-full expert rollout from the chosen state → many (s,a) pairs). Held-out eval =
-20 fresh-seed episodes/round. There is no maze-style layout correction pool — the
-per-round candidate "pool" is the states the novice visits in 1 rollout
-(~1000 for MuJoCo, 50 for Fetch); the selector picks 1.
-
-## 2b. What we're trying to do — intended P4-LLM architecture vs CURRENT build
-
-**Goal.** Show that **P4-LLM** (LLM-guided demonstration *compression/prescription*)
-is more sample-efficient than the 5 interactive-IL (IIL) baselines: instead of
-the expert intervening per a hand-rule, P4 lets failures accumulate, **compresses
-the top-K failures**, and asks an LLM to prescribe **one** corrective
-demonstration that covers them — cutting the extra expert demos the baselines spend.
-
-**The 5 IIL baselines** (from `pool_x_selector/baseline_implementations_guide.md`;
-each = a DAgger query rule, expert provides the correct continuation from the
-queried state): **SafeDAgger\*** (action-discrepancy > τ), **DropoutDAgger**
-(MC-dropout ball/prob test), **EnsembleDAgger** (ensemble doubt OR discrepancy),
-**ThriftyDAgger** (novelty OR success-Q risk, budget-calibrated), **Stagger**
-(one random sample/round). See `selection/iil_baselines.py`.
-
-**Intended full P4-LLM pipeline** (the maze `pool_x_selector` P4_top3 architecture):
-roll out the novice → take the **top-3 failures** → a **VLM** ingests failure
-frames (start / first-mistake / end) + the **trajectories** → a **reasoning
-ANALYSIS pass** → a separate **PRESCRIPTION pass** → a **planner LLM** reads the
-prescription and **prescribes ONE environment configuration** (compressing the 3
-failures into 1) → that config is **loaded into the simulator** → the **expert
-solves it** → that single demonstration is added. Compression: 3 failures → 1
-demo. P4 is compared to the IIL baselines on the shared reward-vs-#queries
-yardstick.
-
-**CURRENT IMPLEMENTATION (honest gap — this is the lightweight version).**
-The P4 here is a **simplified, TEXT-ONLY, SINGLE-PASS selector**. It does NOT
-(yet) implement: the **VLM / image frames** (no vision at all), the **two-pass
-analysis+prescription** split, a **planner that prescribes a NEW env
-configuration loaded into the simulator**, or the explicit **top-3→1
-compression**. What it does: build one text prompt = the env's **KAG** doc
-(`p4/kag/{env}.md`) + a table of the **≤30 highest-discrepancy visited states**
-(numeric summary) → the LLM **selects ONE existing visited state** → the expert is
-rolled out from that state to episode end = the corrective demo. So it tests
-*"LLM-guided state selection,"* a PROXY for the full pipeline (`p4/prompts.py`,
-`p4/selector.py`, `p4/pipeline_p4.py`).
-
-**Open design question to build the full pipeline in continuous control.** In the
-maze the planner prescribes a *layout* (start/goal/fires/corridor). For
-continuous control there is no equivalent discrete "configuration": for **Fetch**
-it could be a prescribed **goal/object placement**; for **MuJoCo locomotion**
-it'd be an **initial state (qpos/qvel)**, which is not a natural thing for an LLM
-to author. Porting the full prescribe-and-load architecture requires settling
-this (and adding a VLM + the two reasoning passes). This is the main TODO if we
-want the *real* P4, not the selection proxy.
-
-## 3. The 6 methods → kinds
-`p4_llm` (LLM selector), `safe_dagger`→safe, `dropout_dagger`→dropout,
-`ensemble_dagger`→ensemble, `thrifty_dagger`→thrifty, `stagger`→stagger. Dispatch
-table: `selection/iil_baselines.py::KIND_OF`. Method dir names:
-`orchestrator/workspace.py::METHOD_DIR_NAMES`. **Keep these in lockstep** with
-`config*.yaml::methods` and the run drivers' defaults.
-
-## 4. Topology (mirrors pool_x_selector)
 ```
-pool_rl_robo/
-├── config.yaml / config_baselines.yaml   knobs (P4 / 5 IIL)
-├── smoke_test.py                          PHASE-1 gate (5 experts load+play)
-├── run_experiment.py                      convenience single-env all-6 driver
-├── model.py                               MLPPolicy (local; no upstream policy to borrow)
-├── envs/   env_setup.py (paths+register+resolve+obs/act/success)  experts.py (EXPERTS+ENV_PROMPTS+load)
-├── selection/  iil_baselines.py (6 rules + pick_one + run_dagger)  rollout.py (env-walk)
-│              uncertainty.py (Ensemble, MC-dropout)  success_q.py (Thrifty risk)  rank.py
-├── p4/   pipeline_p4.py (wrapper)  prompts.py  selector.py  runner.py (QwenClient)
-├── trainer/finetune_replay.py             in-process warm-started BC (train_bc)
-├── logging_ext/  training_log.py  compression_log.py
-├── orchestrator/  workspace.py  bootstrap.py  run_one.py (P4)  run_baselines.py (5 IIL)  _common.py
-├── aggregation/aggregate.py                cross-env summary + combined {ENV}_run{id}.json
-├── qwen/proxy.py                           BORROWED verbatim from pool_x_selector (generic OpenAI shim)
-└── submit_*.sh   PREFERRED (no arrays): submit_one_seed.sh (1 job=1 seed=5 envs seq+vLLM),
-                  submit_5seeds_5jobs.sh (5 jobs, seeds 42-46). submit_smoke.sh (GPU smoke gate),
-                  submit_aggregate.sh. [legacy array variants kept: submit_one_qwen.sh / submit_all.sh
-                  / submit_seed_sweep.sh / submit_baseline*.sh — user prefers the per-seed jobs]
+TARGET ENV:   StackCube-v1
+GOAL:         Enable StackCube, then ONE-RUN (single seed) comparison of
+              diff_dagger vs p4_select(diffusion-loss variant). NOT 5 seeds yet —
+              just confirm the pipeline works end-to-end on StackCube for one run.
+DESIGN:       p4_select uses Diff-DAgger-style DIFFUSION-LOSS detection (NOT action-
+              discrepancy) + LLM selection. See "## NEXT TASK — StackCube one-run".
 ```
-Borrowed/external: `qwen/proxy.py` (copied verbatim). Unlike the maze, the
-domain "expert/model" are NOT upstream modules — the expert is the SB3 library +
-HF checkpoints (`envs/experts.py`) and the novice is the local `model.py`. The
-heavy maze `pipeline/` LLM package is NOT reused: P4 here is text-only
-(`p4/runner.py` calls `/v1/chat/completions`, strips Qwen3 `<think>`, parses
-strict JSON, falls back on failure).
 
-## 5. Expert-repo corrections (Phase-1 smoke surfaced these — do NOT revert)
-`envs/experts.py::EXPERTS`. The originally-specified ids 404'd:
-- MuJoCo: `sb3/tqc-{Env}-v3` (no `-v4` repos exist); run fine on the `-v4` envs.
-- FetchPickAndPlace: `IntelliGrow/FetchPickAndPlace-v4`, file
-  `sac-FetchPickAndPlace-v4.zip` (native v4, SAC).
-- FetchReach: the sb3 v1 TQC is INCOMPATIBLE (17-dim vs gymnasium's 16-dim obs;
-  needs mujoco_py) → use `kuds/fetch-reach-dense-tqc` (TQC on FetchReachDense-v4,
-  same 16-dim space; reaches the goal on the sparse FetchReach-v4 env).
-`load_expert` overrides obs/action spaces via `custom_objects` (old-Gym unpickle),
-blanks `replay_buffer_kwargs` (drops removed HER `online_sampling`), and passes
-`env=` (HER models). numpy 2.x is required for the IntelliGrow zip.
+**Claude, do `## NEXT TASK — StackCube one-run` below, honoring `## INVARIANTS` and the
+general `## HOW TO RUN A NEW ENVIRONMENT` recipe. Smoke before the one run.** Only
+PushT-v1 has run end-to-end; StackCube is a first-time bring-up.
 
-## 6. Protocol details / faithfulness caveats (report; do NOT silently "fix")
-- 1 query/round across all methods → reward-vs-#queries is comparable; the IIL
-  switch rules are applied at the selected-state granularity.
-- Each round aggregates a FULL expert sub-trajectory from the selected state
-  (`rollout.expert_demo_from_state` replays the novice prefix, then rolls the
-  expert to episode end) — meaningful learning signal; budget axis stays = rounds.
-- ThriftyDAgger risk Q: Fetch uses real `info['is_success']`; locomotion uses a
-  survival proxy (`env_setup.episode_success`); HalfCheetah never terminates so
-  its risk saturates to 0 (Thrifty ≈ EnsembleDAgger there).
-- MC-dropout is FULL-network here (fidelity improvement over the maze fusion-head-only).
-- EnsembleDAgger round-1: `pick_one` picks the highest-discrepancy queryable
-  state even at doubt≈0 (do NOT add a `score>0`-only filter — deadlocks).
-- `tau`/`sigma` are raw-action L2 distances (env-scale-dependent) — calibrate per
-  env; the `pick_one` fallback keeps the comparison running if a gate is mis-set.
-- P4-LLM falls back to highest-discrepancy on ANY LLM failure (so jobs never
-  crash on the LLM path).
+---
 
-## 7. How to run  (PREFERRED: per-seed jobs, NO arrays)
+## TL;DR — what this is and where it stands
+
+- **Study:** does an LLM that *selects which failure to correct* (P4-LLM-select, built on
+  SafeDAgger detection + on-policy expert correction) reach a target success rate with
+  **fewer expert demonstrations** than **Diff-DAgger** (native diffusion-loss query)?
+  Shared Diffusion-Policy backbone; only the demo-acquisition rule differs.
+- **DONE — PushT-v1 (n=5 seeds, jobs 98949–98953, all COMPLETED):** both methods reach
+  **100% success**; **P4-LLM-select gets there with ~1.8× fewer demonstrations**
+  (31.0 ± 10.9 vs 55.2 ± 12.4 demos to 100%, **winning all 5/5 seeds**). Demos→90%:
+  12.0 ± 2.9 vs 15.8 ± 5.2. Figure + summary in
+  `results/aggregate/astar/astar_PushT-v1_{p4select_vs_diffdagger.png,summary.json}`.
+- **NEXT:** repeat on StackCube-v1, then other envs (PickCube-v1, PlugCharger-v1).
+- The harness survived **two rounds of adversarial multi-agent audit**; the fairness
+  invariants in `## INVARIANTS` are load-bearing — keep them or the comparison breaks.
+
+---
+
+## HOW TO RUN A NEW ENVIRONMENT  (the recipe)
+
+Everything is driven by the `ENV` shell var; results land in
+`results/<ENV>/run_<seed>/{diff_dagger,p4_select}/`. Aggregation is per-env, so envs
+never contaminate each other.
+
+**0. Use the right interpreter.** Bare `python`/`pip` hit the `maze` env (bashrc PATH).
+Always: `/home/s226137394/.conda/envs/diffdagger/bin/python`. From repo root
+`/weka/s226137394/DmNfull` set `PYTHONPATH=/weka/s226137394/DmNfull`.
+
+**1. (Recommended) Create the KAG for the env** so the LLM selector is grounded.
+`p4/kag/<ENV>.json` (only `PushT-v1.json` exists today). Mirror that file's schema
+(geometry, objects, success condition, failure taxonomy, reasoning implications). If
+missing, the run still works but the selector sees only the one-line `task_description`
+from `envs/env_setup.py::TASKS` (degraded grounding, not a crash).
+
+**2. SMOKE FIRST (mandatory for any non-PushT env — first end-to-end bring-up).**
+Validates the motion-planner expert, shared bootstrap, both arms, `total_expert_calls`
+logging, and `LLM selector ON`. Tiny budget (~15–25 min on a 3-GPU H100 node):
+```bash
+cd .../pool_rl_robo
+ENV="StackCube-v1" METHODS="diff_dagger+p4_select" SEED="1" RUN_ID="950" \
+  CONFIG="$(pwd)/config_astar_smoke.yaml" \
+  sbatch --array=1 --gpus-per-node=3 --constraint=gpu-h100 --time=02:00:00 \
+         --job-name="prr_smoke_${ENV}" run_pool_rl_robo.sh
 ```
-PYBIN=/home/s226137394/.conda/envs/pool_rl_robo/bin/python
-$PYBIN smoke_test.py --predownload            # cache the 5 experts (login node, once)
-# GPU smoke gate — sbatch it, wait, analyze, THEN launch production:
-sbatch submit_smoke.sh                         # experts + live LLM/KAG token-budget + 1-env live pipeline
-# One seed = ONE job = all 5 envs sequential (one Qwen3-32B vLLM serves them):
-sbatch submit_one_seed.sh                      # seed 42 -> run_0
-sbatch --export=ALL,SEED=43,RUN_ID=1 submit_one_seed.sh   # any single seed
-# Full 5 seeds = 5 SEPARATE jobs (seeds 42..46) + chained cross-seed aggregate:
-bash submit_5seeds_5jobs.sh
-# aggregate by hand:  $PYBIN -m <pkg>.aggregation.aggregate   (run from repo root)
+Watch `slurm_logs/pool_rl_<jobid>_1.out` + `logs/<ENV>_run950_<jobid>.log`. PASS =
+bootstrap writes `init_ckpt.pth`; both arms write `learning_curve.json` with non-null
+`total_expert_calls` and a sane `stopped_reason`; log shows `LLM selector ON`; no
+`Traceback`/proxy errors. **If the motion-planner expert errors here, fix that before the
+5-seed launch** (this is the most likely first-run failure for a new task).
+
+**3. Launch the 5 seeds** (one isolated sbatch job per seed; both methods share each
+job's bootstrap):
+```bash
+ENV="StackCube-v1" bash submit_astar_5seeds.sh        # seeds 1–5 → run_1..run_5
 ```
-Each (env,seed) writes `results/{ENV}/run_{seed_idx}/{method}/results/learning_curve.json`
-(+ `training_log.csv`, P4 `compression_log.csv`) and a combined
-`results/{ENV}_run{seed_idx}.json`; `aggregate.py` rolls up `summary.json` with
-**mean ± std over seeds**. `--nodes=1 --gpus-per-node=2`,
-`--constraint=gpu-h100|gpu-h200`. Validation loop (user preference): sbatch the
-GPU smoke → wait → analyze → then launch the per-seed production jobs.
+(Each job uses `config_astar.yaml`, 3 GPUs, H100, 10-day walltime, nd_retrain=1,
+target_sr=1.0, budget=100.)
 
-## 8. Verification green-flags
-1. `bash submit_smoke.sh` → 5/5 ✓ (sane rewards; Fetch success_rate>0).
-2. `results/{ENV}/run_0/{method}/results/learning_curve.json` exists for all 6
-   methods per env; `history` non-empty; reward rises with queries.
-3. P4 used the LLM: `slurm_logs/vllm_*.log` reached startup; the run log shows P4
-   selections without the fallback firing on clean calls.
-4. `aggregation/aggregate.py` → `results/aggregate/summary.json` + per-env
-   `results/{ENV}_run0.json`.
+**4. Monitor & gate.** Each seed ~12–21 h. Watch `stopped_reason`: `target_hit` = reached
+100% (clean). If any **diff_dagger** seed shows `max_episodes` with `<100` demos, the
+episode backstop truncated it → raise `max_episodes_per_arm` in `config_astar.yaml` and
+re-run that seed (PushT didn't need this; harder envs might).
 
-## 9. Never do
-- Never install into the clone with a bare `pip` (PATH gotcha → corrupts maze);
-  use the explicit interpreter.
-- Never `sbatch` the bash launchers (they call sbatch internally).
-- Never use `--gpus=N` (splits across nodes); use `--nodes=1 --gpus-per-node=N`.
-- Never revert the expert-repo corrections (§5) or the load_expert fixes.
-- Never run production from a Claude session without explicit user approval.
+**5. Aggregate** when seeds finish (handles partial data + honest censoring):
+```bash
+PYTHONPATH=/weka/s226137394/DmNfull /home/s226137394/.conda/envs/diffdagger/bin/python \
+  -m Equivariant_pathway.equivariant_CNN_hybrid.baseline_vs_p4.pool_rl_robo.aggregation.aggregate_astar \
+  --env StackCube-v1 --runs 1,2,3,4,5
+# → results/aggregate/astar/astar_StackCube-v1_{p4select_vs_diffdagger.png,summary.json}
+```
+Headline = demos-to-target (final `n_queries`, since both stop at `target_hit`);
+secondary = demos-to-90% and the (disclosed, non-comparable) `total_expert_calls`.
+
+> Expect harder envs may NOT reach 100% — then they run to budget=100 or plateau
+> (`max_episodes`), and the metric becomes demos-to-90% / final-SR-at-budget. The
+> aggregator right-censors non-reachers honestly (reports `n_reached`, `censored_seeds`).
+
+---
+
+## EXPERTS PER TASK — and the motion-planner gap (READ before Stack/Pick/Plug)
+
+**Expert source is paper-faithful** (verified vs arXiv 2410.14868 Table I):
+- **Pushing (PushT)** → trained **PPO** expert (`MultipleExperts`); native per-state
+  `get_action`. **WIRED + VALIDATED** (the only validated task). Paper: "two experts
+  trained using PPO"; our "1 Expert" = single PPO agent.
+- **Stacking / PickCube / Plugging** → ManiSkill **panda motion planners**
+  (`solveStackCube`/`solvePickCube`/`solvePlugCharger`), already vendored at
+  `mani_skill/examples/motionplanning/panda/solutions/` and imported by
+  `MotionPlannerExpert.__init__`. Paper uses a "rule-based RRT motion planner" for
+  stacking/plugging — same thing. So you do NOT need to find/train experts; they exist.
+
+**THE GAP (this is the real work for a non-PushT run):** `envs/experts.py::MotionPlannerExpert`
+implements ONLY `solve()` — an OPEN-LOOP whole-episode planner that `env.reset()`s first.
+The arms also call (and it is MISSING): `move_to_next_goal(...)` (the corrective DEMO, used
+by BOTH methods), `get_action(obs)` (per-state π_exp for p4_select's action-discrepancy),
+and `generate_stationary_action()`. Control mode is **compatible** (planner + policy both
+`pd_joint_pos`) — nothing to fix there; `follow_path` already emits per-step `[qpos,gripper]`.
+
+**DECISION (made 2026-06-08): p4_select on motion-planner tasks uses DIFFUSION-LOSS detection
+(Option 2), NOT action-discrepancy.** Consequence: **NEITHER method needs the expert's per-state
+`get_action`** — the per-state-replan problem is AVOIDED. Both detect via the policy's own
+diffusion loss and need the expert ONLY for the corrective demo (`move_to_next_goal`). Bonus:
+the comparison gets *cleaner* — both arms share the SAME detection signal, differing only in
+WHICH failure is corrected (diff_dagger: first state whose CDF(loss)>α-quantile for K steps;
+p4_select: LLM picks among the top-3 highest-peak-loss FAILED candidate rollouts).
+
+So the ONLY expert-adapter work is **`move_to_next_goal`** (+ a trivial
+`generate_stationary_action`). `get_action` can stay unimplemented for motion-planner tasks.
+
+**HARDEST PART (budget the session here):** `move_to_next_goal` must re-plan from a NON-RESET
+mid-episode state. `solve()` hardwires `env.reset(seed)` first — wrong for a DAgger
+intervention, which must continue from where the policy left off. Refactor to build
+`PandaArmMotionPlanningSolver` against the live env / plan from the current robot qpos without
+reset, capture `follow_path`'s per-step `[qpos,gripper]` actions → demo TensorDict in the
+PushT schema, convert `pd_joint_pos`→`rel_joint_pos`. But it's needed only ONCE per
+intervention (not per step), so it's far cheaper than per-state planning. Everything else
+(control mode — already `pd_joint_pos`-compatible — imports, demo-packing) is mechanical.
+(`experts.py`'s docstring advertises `get_action`/`move_to_next_goal` as if implemented — they
+are NOT; fix the docstring too.)
+
+## NEXT TASK — StackCube one-run (diffusion-loss p4_select)
+
+Goal: enable StackCube and run **ONE seed** comparing `diff_dagger` vs `p4_select`
+(diffusion-loss variant). Confirm it works end-to-end; 5-seed averaging comes later.
+
+**Build (4 pieces):**
+1. **`MotionPlannerExpert.move_to_next_goal(...)`** (envs/experts.py) — re-plan from the
+   LIVE mid-episode state (NOT `solve()`, which resets), capture `follow_path`'s per-step
+   `[qpos,gripper]` actions + obs into the SAME demo TensorDict schema the PushT
+   `MultipleExperts.move_to_next_goal` produces; convert `pd_joint_pos`→`rel_joint_pos`.
+   Also add `generate_stationary_action()` (hold = current qpos+gripper). Fix the
+   misleading docstring. (This is the only real engineering — see EXPERTS section.)
+2. **StackCube env wiring** (envs/env_setup.py / maniskill_env.py) — StackCube-v1 →
+   `expert_kind="motionplanner"`, `control_mode="pd_joint_pos"`, same
+   `VariousActionSpaceWrapper`/obs stack as PushT. Author its Hydra cfg if missing.
+   (Optional) author `p4/kag/StackCube-v1.json` for selector grounding.
+3. **p4_select diffusion-loss detection** (p4/select_arm.py) — swap `_safe_rollout_one`'s
+   per-step signal from expert action-discrepancy (`_expert_delta`/`expert.get_action`) to
+   the policy's OWN diffusion loss via `policy.get_action(dagger=True, return_dict=True)`
+   (the loss/query the diff arm already uses). `t_star` = argmax diffusion-loss step;
+   candidate ranking + top-3 = highest PEAK diffusion loss among FAILED candidates; LLM
+   selects which to correct; correction = replay prefix to `t_star` then
+   `expert.move_to_next_goal` (motion planner). NO `expert.get_action` anywhere. Gate this
+   on `expert_kind=="motionplanner"` (keep PushT's action-discrepancy path intact) OR make
+   diffusion-loss the default for both — your call, but document it.
+4. **Config** (e.g. `config_stack.yaml`) — match the paper's **StackCube** Table IV row
+   (NOT pushing's): `initial_demos: 20`, `budget: 60` (= N_f), `diff_dagger: {alpha: 0.99,
+   patience: 2, batch_multiplier: 32}` (K=2, N_b=512 for StackCube), `nd_retrain: 1`
+   (both arms), `target_sr: 1.0` (StackCube likely won't hit 100% → runs to budget=60;
+   censoring handles it), `p4_select.n_cand: 6`, `methods: ["diff_dagger","p4_select"]`,
+   `eval_num_envs: 10`, `heldout_n: 100`, `max_episodes_per_arm: 5000`.
+
+**Run order:** (a) login-node import/syntax check; (b) **GPU smoke** (tiny budget, both
+methods, ENV=StackCube-v1) — assert the planner yields a non-empty demo from a mid-episode
+state, action shapes match the policy's training tensors, both arms log a curve +
+`total_expert_calls`, `LLM selector ON`; (c) **submit ONE seed** (single sbatch job,
+SEED=1 RUN_ID=1, NOT `submit_astar_5seeds.sh`), 3 GPUs, H100; (d) aggregate with
+`aggregate_astar --env StackCube-v1 --runs 1` (the per-round CSV + per-seed plot + the
+mean/curve all work for one run).
+
+## INVARIANTS — fairness rules that MUST hold (two audits enforced these)
+
+1. **Shared bootstrap:** both arms in a seed load the SAME
+   `run_<seed>/shared_baselines/init_ckpt.pth` (one bootstrap per job).
+2. **`nd_retrain=1` for BOTH** (retrain from scratch every demo); `target_sr=1.0`
+   (stop only at budget=100 OR 100%; 90% is read off the curve, not a stop point).
+3. **Both arms add demos ONLY from genuine failures.** `p4/select_arm.py` selects among
+   FAILED candidates and `if not fails: continue` (skips all-success rounds). The old
+   `fails or cands` fallback let the expert "correct" a SUCCESS from a reset state — an
+   easy demo diff_dagger can't make. **Do not reintroduce it.**
+4. **Episode backstop `max_episodes_per_arm` (5000)** is anti-infinite-loop only; it must
+   never truncate a method before its 100-demo budget. A seed that hits it is a genuine
+   plateau, labeled `stopped_reason=max_episodes` and right-censored in aggregation.
+5. **Identical held-out eval** for both arms (same `heldout_seed_base=7777`,
+   `heldout_n`, frozen-policy protocol). Screening/rollout seeds (0,1,2,…) are disjoint
+   from eval seeds.
+6. **Primary metric = demonstrations added (`n_queries`).** `total_expert_calls` is a
+   SECONDARY, method-specific cost (p4_select screens with ~hundreds of `get_action`
+   calls/demo; diff_dagger's native query ≈1/demo) — report it but label it
+   non-comparable.
+
+---
+
+## HARNESS MAP
+
+- **Engine = the user's Diff-DAgger fork**, read-only at `external/diff_dagger` →
+  `/weka/s226137394/diff-dagger`. Vendors ManiSkill3 (3.0.0b7), the V-objective CNN-UNet
+  diffusion policy, PushT PPO expert + panda motion planners, the Diff-DAgger query rule,
+  the Qwen P4 VLM→reason→prescribe pipeline, the FastAPI proxy, `_bootstrap_shared_init`,
+  `train_policy`, `evaluate_heldout`. **Never edit the fork; import it.**
+  `envs/env_setup.bootstrap_fork_path()` puts it on `sys.path` (and binds fork subpkgs in
+  `sys.modules` to dodge the `DmNfull/model` shadowing).
+- **The two arms under comparison:**
+  - `selection/iil_baselines.py::run_iil_arm` (kind `"diff"` = diff_dagger; also the 5
+    IIL baselines). Native diffusion-loss CDF query at alpha=0.99.
+  - `p4/select_arm.py::run_p4_select_arm` (p4_select): roll `n_cand` candidates, take
+    top-3 highest-discrepancy FAILURES, LLM picks one (`_llm_select`, text-only), expert
+    corrects on-policy from `t_star`.
+- **Orchestration:** `orchestrator/_common.py` (`run_suite`→`run_method` dispatch,
+  `resolve_knobs`, `build_cfg`, the `ExpertCallCounter` proxy). `orchestrator/run_one.py`
+  (`METHOD_SPEC`), `orchestrator/workspace.py` (`METHOD_DIR_NAMES`).
+- **Aggregation:** `aggregation/aggregate_astar.py` (this study) — mean±std curves,
+  queries-to-threshold, censoring, expert-call axis. (`aggregation/aggregate.py` is the
+  older cross-env/7-method one.)
+- **Configs:** `config_astar.yaml` (the 5-seed run — single source of truth),
+  `config_astar_smoke.yaml` (tiny validation). `config.yaml` is the older 7-method config.
+- **Launchers:** `submit_astar_5seeds.sh` (calls `sbatch` 5×, `+`-encoded
+  `METHODS="diff_dagger+p4_select"`), `run_pool_rl_robo.sh` (the SLURM script — decodes
+  `+`→`,`, sets `NEED_LLM=1` for p4_select, boots vLLM+proxy, runs the orchestrator).
+- **Env id map:** `envs/env_setup.py::TASKS`. PushT-v1 → fork `PushT-v2` +
+  `PushT-Start-v0` reposition env + PPO expert. Stack/Pick/Plug → same id, `motionplanner`
+  expert (`envs/experts.py::MotionPlannerExpert` wrapping the panda solutions). Switching
+  env = set `ENV` (the array index in `run_pool_rl_robo.sh::ENVS` is overridden by `ENV`).
+
+## CLUSTER / ENV
+
+- **Conda:** orchestrator `diffdagger` (`/home/s226137394/.conda/envs/diffdagger/bin/python`,
+  sapien 3.0.0b1 / torch 2.4.1+cu121); vLLM servers `vllm_embed`; proxy `maze`.
+- **3 GPUs/node:** GPU0 Qwen3-VL-32B (vision), GPU1 Qwen3-32B (text), GPU2 orchestrator
+  (ManiSkill GPU sim + diffusion). p4_select needs the LLM → 3 GPUs; a diff-only run
+  could use 1 GPU + `--no-llm`.
+- **SLURM:** partition `gpu-large`, `qos=batch-long` (10-day max), always
+  `--nodes=1 --gpus-per-node=N` (never `--gpus=N` — can split across nodes),
+  `--constraint=gpu-h100` (h200 nodes hit SAPIEN Vulkan device-lost on render).
+
+## DIFF-DAGGER PAPER FAITHFULNESS (arXiv 2410.14868, verified)
+
+Our diff_dagger is the paper's own algorithm with matching hyperparameters — it is NOT
+undertrained. Pushing(1-Expert) Table IV: N_i=20, N_f=100, N_d=4, α=0.99, K=1, N_b=512.
+Ours: initial_demos=20 (=N_i), budget=100 (=N_f), α=0.99, patience K=1, native fork query
+rule (`get_action(dagger=True)`, CDF(loss)>α-quantile). batch_multiplier=32 → N_b=16*32=512
+(matches the paper; PushT seeds 98949-53 used bm=8→N_b=128, self-consistent but 4× noisier).
+We differ only in nd_retrain=1 (vs paper N_d=4 — we retrain MORE often, benign) applied to
+BOTH arms. **We are STATE-based**; compare ONLY to the paper's STATE column: Diff-DAgger
+Pushing(1-Expert) **State = 0.96 @ 100 demos** (image=0.87/0.94 is NOT our setting). Our
+diff_dagger reaches 1.0 at ~46–75 demos — consistent with / better than the paper, so the
+p4_select win is over a faithful, well-trained Diff-DAgger. The paper's "ND=40" is its
+Table II *50%-success failure-prediction* count (not a convergence budget); "N_d=4" is the
+per-round intervention cadence — neither is a performance number.
+
+## CAVEATS TO DISCLOSE IN THE PAPER
+
+1. `total_expert_calls` is a method-specific cost (oracle screening for p4_select vs
+   implicit loss-query for diff_dagger), reported as a secondary, non-comparable axis;
+   the comparable budget is demonstrations added. With a human expert the p4_select
+   screening would be a learned safety classifier (à la SafeDAgger), not labeling effort.
+2. Any seed with `stopped_reason=max_episodes` is a plateau backstop (right-censored at
+   its final demo count), not a successful budget exhaustion.
+3. Action discrepancy lives in joint-delta space (`selection/iil_baselines.py`).
+4. The LLM selector falls back to the highest-discrepancy candidate (index 0) on LLM
+   failure; quantify how often this fires from the logs.
+5. PushT used the fork's PPO expert + PushT-v2/PushT-Start-v0 remap; other tasks use panda
+   motion-planner experts (different demo source — note it).
+
+## HISTORY (so you don't repeat killed runs)
+
+- Live/final: jobs **98949–98953** = PushT seeds 1–5, all COMPLETED (the result above).
+- Killed (do NOT use their data): 98921–98925 (audit found episode-cap + aggregation
+  confounds) and 98930–98934 (audit found the reset-state-demo confound). 98928/run_950 =
+  a smoke. run_0/900/901 = older single-seed artifacts (pre-audit; run_901's p4_select may
+  have run LLM-OFF due to a `submit_p4select.sh` export bug — don't trust it).
+- See `FAILURE_ANALYSIS.md` for why the old gym/MuJoCo/Fetch env set was abandoned.
+
+## NEVER DO
+
+- Never edit the fork (`external/diff_dagger`); import/adapt into the suite.
+- Never bare-`pip` into a cloned env (PATH gotcha corrupts `maze`).
+- Never `--gpus=N` (splits across nodes); use `--nodes=1 --gpus-per-node=N`.
+- Never launch the 5-seed run on a new env without a passing smoke first.
+- Never reintroduce the `fails or cands` fallback in `select_arm.py` (invariant #3).

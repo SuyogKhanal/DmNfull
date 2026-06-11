@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "maniskill_pickcube_prehensile_manipulation",
+    "description": "Knowledge graph for the ManiSkill PickCube task: a Franka Panda (7 arm joints + parallel gripper) grasps a red cube (2cm half-size) and lifts/moves it so the cube centre reaches a 3D goal position (a floating target). Consumed by the P4-LLM reasoning + prescription components to ground failure analysis and the prescribed correction config (cube_init_pose + goal_pose) the expert must solve. Workspace coordinates are world-frame metres; prescriptions MUST stay inside the stated ranges or the expert is unreliable and the round is wasted.",
+    "robot": "Franka Panda (panda + parallel gripper)",
+    "control_mode": "pd_joint_pos (policy acts in rel_joint_pos = 7 joint deltas + 1 gripper command)",
+    "action_dim": 8
+  },
+  "nodes": [
+    {"id": "robot", "type": "Robot", "label": "Panda + gripper", "properties": {"arm_joints": 7, "gripper": true, "tcp_link": "panda_hand_tcp", "init_qpos_noise": 0.02}},
+    {"id": "cube", "type": "Object", "label": "Red cube (movable)", "properties": {"half_size_m": 0.02, "role": "the cube to grasp and move to the goal", "controllable_via": "grasp + transport", "init_zrot_only": true}},
+    {"id": "goal", "type": "Goal", "label": "3D goal position", "properties": {"role": "the cube centre must reach within goal_thresh of this point", "goal_thresh_m": 0.025, "is_floating": "goal z can be above the table (a lift target)"}},
+    {"id": "tcp", "type": "EndEffector", "label": "Gripper TCP", "properties": {"role": "grasps the cube on opposing faces; top-down approach", "approach_matters": "must align over the cube and close before lifting"}},
+    {"id": "obs", "type": "Observation", "label": "state_dict", "properties": {"agent_qpos": "7 arm joints + 2 finger joints", "extra_tcp_pose": "TCP position+quaternion", "extra_obj_pose": "cube position+quaternion", "extra_goal_pos": "goal xyz"}},
+    {"id": "ws_cube", "type": "Workspace", "label": "Reliable cube init range", "properties": {"x": [-0.10, 0.10], "y": [-0.10, 0.10], "z": 0.02, "note": "cube spawns flat on the table; only z-rotation varies"}},
+    {"id": "ws_goal", "type": "Workspace", "label": "Reliable goal range", "properties": {"x": [-0.10, 0.10], "y": [-0.10, 0.10], "z": [0.02, 0.32], "note": "goal may be on the table (z=0.02) or lifted up to z=0.32"}},
+    {"id": "ws_tcp", "type": "Workspace", "label": "Reliable tcp range", "properties": {"x": [-0.35, 0.35], "y": [-0.35, 0.35], "z": [0.02, 0.40]}},
+    {"id": "ctrl", "type": "Controller", "label": "pd_joint_pos / rel_joint_pos", "properties": {"policy_action": "7 joint deltas + gripper command (dim 8)", "expert_action": "panda motion planner → grasp/lift/move-to-goal (recorded as the same 8-dim demo)"}},
+    {"id": "succ", "type": "SuccessCondition", "label": "cube at goal, robot static", "properties": {"metric": "||cube_xyz - goal_xyz|| <= 0.025 AND robot is static", "info_key": "success"}},
+    {"id": "fm_no_grasp", "type": "FailureMode", "label": "missed_grasp", "properties": {"description": "Gripper closes without securing the cube (off-centre approach, fingers slip, or never reaches the cube)."}},
+    {"id": "fm_drop", "type": "FailureMode", "label": "dropped", "properties": {"description": "Cube is grasped then slips/falls during lift or transport before reaching the goal."}},
+    {"id": "fm_missed_goal", "type": "FailureMode", "label": "missed_goal", "properties": {"description": "Cube is carried but released/stopped outside goal_thresh of the goal (especially for high/lifted goals)."}},
+    {"id": "fm_not_static", "type": "FailureMode", "label": "not_static", "properties": {"description": "Cube reaches the goal but the arm/cube keeps moving, so the static check fails."}},
+    {"id": "fm_timeout", "type": "FailureMode", "label": "timeout", "properties": {"description": "Episode reaches the step horizon without success (hesitation, oscillation, slow approach)."}},
+    {"id": "ph_reach", "type": "Phase", "label": "reach", "properties": {"description": "approach the cube from above"}},
+    {"id": "ph_grasp", "type": "Phase", "label": "grasp", "properties": {"description": "close the gripper on the cube"}},
+    {"id": "ph_lift", "type": "Phase", "label": "lift", "properties": {"description": "raise the cube off the table"}},
+    {"id": "ph_move", "type": "Phase", "label": "move_to_goal", "properties": {"description": "carry the cube to the 3D goal and hold static"}}
+  ],
+  "edges": [
+    {"source": "robot", "target": "tcp", "relation": "HAS_END_EFFECTOR"},
+    {"source": "tcp", "target": "cube", "relation": "GRASPS"},
+    {"source": "cube", "target": "goal", "relation": "MUST_REACH"},
+    {"source": "robot", "target": "obs", "relation": "OBSERVES"},
+    {"source": "robot", "target": "ctrl", "relation": "CONTROLLED_BY"},
+    {"source": "cube", "target": "ws_cube", "relation": "INIT_WITHIN"},
+    {"source": "goal", "target": "ws_goal", "relation": "INIT_WITHIN"},
+    {"source": "tcp", "target": "ws_tcp", "relation": "INIT_WITHIN"},
+    {"source": "cube", "target": "succ", "relation": "SUCCEEDS_WHEN"},
+    {"source": "tcp", "target": "fm_no_grasp", "relation": "CAUSES_FAILURE"},
+    {"source": "cube", "target": "fm_drop", "relation": "CAUSES_FAILURE"},
+    {"source": "cube", "target": "fm_missed_goal", "relation": "CAUSES_FAILURE"},
+    {"source": "cube", "target": "fm_not_static", "relation": "CAUSES_FAILURE"},
+    {"source": "robot", "target": "fm_timeout", "relation": "CAUSES_FAILURE"}
+  ],
+  "reasoning_implications": {
+    "missed_grasp": "Prescribe a cube_init_pose with a clean top-down approach (well inside ws_cube, away from the workspace edge) so the demo teaches reliable centred grasping — the prerequisite for all later phases.",
+    "dropped": "Prescribe a config with a moderate goal height so the demo teaches a stable lift/carry; avoid extreme goal z until grasping+lifting is reliable.",
+    "missed_goal": "Prescribe a goal closer to the cube (shorter transport) or a lower goal z so the demo teaches a controlled approach that stops within goal_thresh.",
+    "not_static": "Prescribe a config that ends with the cube held at the goal so the demo teaches a settled, static hold (no residual motion at release).",
+    "timeout": "Prescribe a config with cube and goal well inside the reliable workspace and a short, direct grasp-lift-move corridor (no oscillation).",
+    "workspace_constraint": "Every prescribed config MUST keep cube_xyz within x[-0.10,0.10] y[-0.10,0.10] z=0.02 and goal_xyz within x[-0.10,0.10] y[-0.10,0.10] z[0.02,0.32] and tcp within x[-0.35,0.35] y[-0.35,0.35] z[0.02,0.40]; out-of-range poses are infeasible (the expert cannot solve them) and waste the round.",
+    "non_emptiness": "A failure is present, so the prescription MUST be a concrete, fully-specified config (non-empty cube_xyz, cube_zrot, goal_xyz). Never emit an empty prescription."
+  }
+}

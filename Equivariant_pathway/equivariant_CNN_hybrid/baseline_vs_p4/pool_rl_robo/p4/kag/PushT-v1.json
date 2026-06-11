@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "maniskill_pusht_nonprehensile_manipulation",
+    "description": "Knowledge graph for the ManiSkill PushT task: a Franka Panda with a panda_stick end-effector (no gripper, 7 arm joints) pushes a T-shaped block across a table to a fixed goal T-pose. Consumed by the P4-LLM reasoning + configuration components to ground failure analysis and the prescribed correction config. Workspace coordinates are world-frame metres; the PPO expert is reliable only inside the stated tee/tcp ranges.",
+    "robot": "Franka Panda (panda_stick)",
+    "control_mode": "pd_joint_pos (policy acts in rel_joint_pos = 7 joint deltas)",
+    "action_dim": 7
+  },
+  "nodes": [
+    {"id": "robot", "type": "Robot", "label": "Panda panda_stick", "properties": {"arm_joints": 7, "gripper": false, "tcp_link": "panda_hand_tcp"}},
+    {"id": "tee", "type": "Object", "label": "Movable T-block", "properties": {"controllable_via": "non-prehensile pushing only", "init_xyz_world": "[x,y,z]", "init_zrot_rad": "z-rotation of the T"}},
+    {"id": "goal", "type": "Goal", "label": "Fixed goal T-pose", "properties": {"goal_offset": [-0.156, -0.1], "goal_z_rot_rad": 1.5708, "fixed_per_episode": true}},
+    {"id": "tcp", "type": "EndEffector", "label": "Stick TCP", "properties": {"role": "pushes the T; cannot grasp", "approach_matters": "must contact the correct T face to push toward the goal"}},
+    {"id": "obs", "type": "Observation", "label": "state_dict (21-d)", "properties": {"agent_qpos": "7 arm joint angles (rad)", "extra_tcp_pose": "TCP position+quaternion", "extra_obj_pose": "T position+quaternion"}},
+    {"id": "ws_tee", "type": "Workspace", "label": "Reliable tee init range", "properties": {"x": [-0.20, 0.20], "y": [-0.25, 0.05], "z": 0.021}},
+    {"id": "ws_tcp", "type": "Workspace", "label": "Reliable tcp range", "properties": {"x": [-0.35, 0.35], "y": [-0.35, 0.35], "z": [0.02, 0.08]}},
+    {"id": "ctrl", "type": "Controller", "label": "pd_joint_pos / rel_joint_pos", "properties": {"policy_action": "7 joint deltas (rel_joint_pos)", "expert_action": "PPO → joint_delta_pos (same 7-joint space)"}},
+    {"id": "succ", "type": "SuccessCondition", "label": "T overlaps goal", "properties": {"metric": "intersection of movable T and goal T above threshold", "info_key": "success"}},
+    {"id": "fm_wrong_approach", "type": "FailureMode", "label": "wrong_approach", "properties": {"description": "TCP contacts the wrong face/side of the T, pushing it away from the goal."}},
+    {"id": "fm_overshoot", "type": "FailureMode", "label": "overshoot", "properties": {"description": "TCP pushes the T past the goal pose; momentum carries it through."}},
+    {"id": "fm_no_contact", "type": "FailureMode", "label": "no_contact", "properties": {"description": "TCP never establishes contact with the T (approaches the wrong location or stalls)."}},
+    {"id": "fm_wrong_orientation", "type": "FailureMode", "label": "wrong_orientation", "properties": {"description": "T's z-rotation is not aligned with the goal; pushing translates but does not rotate it correctly."}},
+    {"id": "fm_timeout", "type": "FailureMode", "label": "timeout", "properties": {"description": "Episode reaches the step horizon without success (hesitation / oscillation / slow approach)."}},
+    {"id": "ph_pre_contact", "type": "Phase", "label": "pre_contact", "properties": {"description": "approach the T before contact"}},
+    {"id": "ph_contact", "type": "Phase", "label": "contact", "properties": {"description": "establish contact on the correct face"}},
+    {"id": "ph_push", "type": "Phase", "label": "push", "properties": {"description": "translate the T toward the goal"}},
+    {"id": "ph_align", "type": "Phase", "label": "align", "properties": {"description": "fine z-rotation/position alignment with the goal T"}}
+  ],
+  "edges": [
+    {"source": "robot", "target": "tcp", "relation": "HAS_END_EFFECTOR"},
+    {"source": "tcp", "target": "tee", "relation": "PUSHES"},
+    {"source": "tee", "target": "goal", "relation": "MUST_REACH"},
+    {"source": "robot", "target": "obs", "relation": "OBSERVES"},
+    {"source": "robot", "target": "ctrl", "relation": "CONTROLLED_BY"},
+    {"source": "tee", "target": "ws_tee", "relation": "INIT_WITHIN"},
+    {"source": "tcp", "target": "ws_tcp", "relation": "INIT_WITHIN"},
+    {"source": "tee", "target": "succ", "relation": "SUCCEEDS_WHEN"},
+    {"source": "tcp", "target": "fm_wrong_approach", "relation": "CAUSES_FAILURE"},
+    {"source": "tcp", "target": "fm_overshoot", "relation": "CAUSES_FAILURE"},
+    {"source": "tcp", "target": "fm_no_contact", "relation": "CAUSES_FAILURE"},
+    {"source": "tee", "target": "fm_wrong_orientation", "relation": "CAUSES_FAILURE"},
+    {"source": "robot", "target": "fm_timeout", "relation": "CAUSES_FAILURE"}
+  ],
+  "reasoning_implications": {
+    "wrong_approach": "Prescribe a correction config whose tee start pose forces the policy to approach from the correct face: place the T so the demonstrated push direction toward the fixed goal is unambiguous, and set the tcp start on the push side.",
+    "overshoot": "Prescribe a config with the T closer to the goal (shorter push) so the demo teaches a controlled, shorter approach that stops at the goal rather than driving through it.",
+    "no_contact": "Prescribe a config with the tcp start adjacent to the T's push face so the demo emphasises contact establishment before pushing.",
+    "wrong_orientation": "Prescribe a config whose tee z-rotation differs from the goal so the demo teaches the rotate-while-pushing behaviour needed to align orientation.",
+    "timeout": "Prescribe a config that commits to a single direct push corridor toward the goal (no oscillation), with tee/tcp poses well inside the reliable workspace.",
+    "workspace_constraint": "Every prescribed config MUST keep tee_xyz within x[-0.20,0.20] y[-0.25,0.05] z=0.021 and tcp_xyz within x[-0.35,0.35] y[-0.35,0.35] z[0.02,0.08]; out-of-range poses are dropped (the PPO expert is unreliable there) and waste the round.",
+    "non_emptiness": "A failure is present, so the prescription MUST be a concrete, fully-specified config (non-empty tee_xyz, tee_zrot, tcp_xyz). Never emit an empty prescription — that collects zero demos and wastes the round."
+  }
+}

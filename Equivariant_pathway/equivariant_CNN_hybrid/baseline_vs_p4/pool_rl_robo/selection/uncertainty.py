@@ -1,76 +1,66 @@
-"""Uncertainty machinery for the IIL baselines (continuous-control port of
-pool_x_selector's ``selection/uncertainty.py``).
+"""Uncertainty draws for the IIL baselines on the diffusion backbone.
 
-* ``Ensemble`` — M independently-initialised MLP members (EnsembleDAgger +
-  ThriftyDAgger novelty). Diversity from a distinct init seed per member (so
-  doubt > 0 from round 1, unlike the maze ensemble that started identical) plus
-  a distinct shuffle seed each ``train_all``.
-* ``mc_dropout_samples`` — N stochastic forward passes (dropout active) for the
-  DropoutDAgger ball/probability test. Here dropout is full-network (a fidelity
-  improvement over the maze fusion-head-only dropout).
+A diffusion policy is already a stochastic predictor: each ``get_action`` draws a
+fresh Gaussian prior and denoises it, so N calls yield N distinct action samples.
+That inherent sampling stochasticity is the natural Bayesian-uncertainty signal
+for a diffusion policy — we use it for DropoutDAgger's N-sample ball test instead
+of MC-dropout on the UNet (the fork ships a dropout layer but disables it in
+forward and we never edit the fork). EnsembleDAgger / ThriftyDAgger use M
+independently-retrained policies (true ensemble variance over denoised actions).
 
-Action discrepancy ``‖a_nov − a_exp‖₂`` is computed in raw action units by the
-caller (cleaner than the discrete maze optimal-mask fraction).
+All draws are reduced to the first executed joint-delta step (rel_joint_pos),
+matching how SafeDAgger's discrepancy is computed in selection/iil_baselines.py.
+
+FAITHFULNESS CAVEAT: DropoutDAgger's "MC-dropout" is realised as diffusion-sampling
+stochasticity (cleaner + runnable on the shared frozen backbone than monkeypatching
+the disabled UNet dropout). EnsembleDAgger/ThriftyDAgger variance is true M-policy
+ensemble variance over denoised actions.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List
 
-import numpy as np
 import torch
 
-from ..model import MLPPolicy, set_dropout_active
-from ..trainer.finetune_replay import train_bc
+
+def seed_all(s: int) -> None:
+    import random
+    import numpy as np
+    random.seed(s)
+    np.random.seed(s)
+    torch.manual_seed(s)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(s)
+
+
+def _first_delta(action_seq: torch.Tensor, policy, num_joints: int) -> torch.Tensor:
+    """First executed step's joint delta (rel_joint_pos), shape (num_joints,)."""
+    idx = policy.obs_horizon - 1
+    return action_seq[:, idx, :num_joints].reshape(-1).detach()
 
 
 @torch.no_grad()
-def mc_dropout_samples(model: MLPPolicy, obs_flat: np.ndarray, N: int,
-                       device: torch.device) -> np.ndarray:
-    """N stochastic forward passes with dropout ACTIVE -> (N, act_dim)."""
-    model.eval()
-    set_dropout_active(model, True)
-    x = torch.from_numpy(np.asarray(obs_flat, np.float32)).unsqueeze(0).to(device)
-    out = np.stack([model.forward(x).squeeze(0).cpu().numpy().astype(np.float32)
-                    for _ in range(int(N))])
-    set_dropout_active(model, False)
-    return out
+def _one_action_seq(policy, obs_seq: Dict[str, Any]) -> torch.Tensor:
+    out = policy.get_action(obs_seq, dagger=False, return_dict=False)
+    return out["action"] if isinstance(out, dict) else out
 
 
-class Ensemble:
-    def __init__(self, M: int, obs_dim: int, act_dim: int, hidden: int = 256,
-                 n_hidden: int = 2, dropout: float = 0.0,
-                 act_low: Optional[np.ndarray] = None,
-                 act_high: Optional[np.ndarray] = None,
-                 base_seed: int = 0, device: Optional[torch.device] = None):
-        self.M = int(M)
-        self.device = device or torch.device("cpu")
-        self.members: List[MLPPolicy] = []
-        for m in range(self.M):
-            torch.manual_seed(int(base_seed) + 101 * m)
-            self.members.append(
-                MLPPolicy(obs_dim, act_dim, hidden=hidden, n_hidden=n_hidden,
-                          dropout=dropout, act_low=act_low, act_high=act_high).to(self.device))
+@torch.no_grad()
+def action_sample_deltas(policy, obs_seq: Dict[str, Any], n: int,
+                         num_joints: int) -> torch.Tensor:
+    """N stochastic diffusion draws → (N, num_joints) of first-step joint deltas."""
+    draws = [_first_delta(_one_action_seq(policy, obs_seq), policy, num_joints)
+             for _ in range(max(1, int(n)))]
+    return torch.stack(draws, dim=0)
 
-    def train_all(self, X: np.ndarray, Y: np.ndarray, *, base_seed: int,
-                  epochs: int, lr: float, batch_size: int, weight_decay: float) -> List[float]:
-        return [train_bc(model, X, Y, epochs=epochs, lr=lr, batch_size=batch_size,
-                         weight_decay=weight_decay, device=self.device,
-                         seed=int(base_seed) + 101 * m)
-                for m, model in enumerate(self.members)]
 
-    @torch.no_grad()
-    def member_actions(self, obs_flat: np.ndarray, device: torch.device) -> np.ndarray:
-        x = torch.from_numpy(np.asarray(obs_flat, np.float32)).unsqueeze(0).to(device)
-        acts = []
-        for model in self.members:
-            model.eval()
-            set_dropout_active(model, False)
-            acts.append(model.forward(x).squeeze(0).cpu().numpy().astype(np.float32))
-        return np.stack(acts)
+# DropoutDAgger uses diffusion-sampling stochasticity (see module docstring).
+mc_dropout_deltas = action_sample_deltas
 
-    def mean_action(self, obs_flat: np.ndarray, device: torch.device) -> np.ndarray:
-        return self.member_actions(obs_flat, device).mean(axis=0).astype(np.float32)
 
-    def doubt(self, obs_flat: np.ndarray, device: torch.device) -> float:
-        ma = self.member_actions(obs_flat, device)
-        return float(ma.var(axis=0).mean())
+@torch.no_grad()
+def member_deltas(members: List[Any], obs_seq: Dict[str, Any],
+                  num_joints: int) -> torch.Tensor:
+    """Each ensemble member's first-step joint delta → (M, num_joints)."""
+    out = [_first_delta(_one_action_seq(m, obs_seq), m, num_joints) for m in members]
+    return torch.stack(out, dim=0)

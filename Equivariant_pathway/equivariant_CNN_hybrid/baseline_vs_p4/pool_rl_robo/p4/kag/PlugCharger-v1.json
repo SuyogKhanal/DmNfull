@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "maniskill_plugcharger_precision_insertion",
+    "description": "Knowledge graph for the ManiSkill PlugCharger task: a Franka Panda (panda_wristcam, 7 arm joints + parallel gripper, base at world [-0.615,0,0]) grasps a small charger (two pegs) and plugs it into a wall receptacle. A high-precision insertion task. Consumed by the P4-LLM reasoning + prescription components to ground failure analysis and the prescribed correction config (charger_pose + receptacle_pose) the expert must solve. World-frame metres; prescriptions MUST stay inside the stated ranges or the expert cannot solve them and the round is wasted.",
+    "robot": "Franka Panda (panda_wristcam + parallel gripper)",
+    "control_mode": "pd_joint_pos (policy acts in rel_joint_pos = 7 joint deltas + 1 gripper command)",
+    "action_dim": 8
+  },
+  "nodes": [
+    {"id": "robot", "type": "Robot", "label": "Panda + gripper", "properties": {"arm_joints": 7, "gripper": true, "tcp_link": "panda_hand_tcp", "base_pose_world": [-0.615, 0.0, 0.0], "init_qpos_noise": 0.02}},
+    {"id": "charger", "type": "Object", "label": "Charger (movable, two pegs)", "properties": {"base_half_size_m": [0.02, 0.015, 0.012], "peg_half_size_m": [0.008, 0.00075, 0.0032], "peg_gap_m": 0.007, "role": "grasp it and insert its pegs into the receptacle", "controllable_via": "grasp + precise insertion"}},
+    {"id": "receptacle", "type": "Goal", "label": "Wall receptacle (fixed)", "properties": {"half_size_m": [0.01, 0.05, 0.05], "role": "the charger pegs must be inserted into its two holes; defines the goal pose", "kinematic": true}},
+    {"id": "tcp", "type": "EndEffector", "label": "Gripper TCP", "properties": {"role": "grasps the charger; aligns it to the receptacle for insertion", "approach_matters": "insertion needs sub-cm alignment of peg to hole"}},
+    {"id": "obs", "type": "Observation", "label": "state_dict", "properties": {"agent_qpos": "7 arm joints + 2 finger joints", "extra_tcp_pose": "TCP position+quaternion", "extra_charger_pose": "charger position+quaternion", "extra_receptacle_pose": "receptacle position+quaternion", "extra_goal_pose": "target charger pose at full insertion"}},
+    {"id": "ws_charger", "type": "Workspace", "label": "Reliable charger init range", "properties": {"x": [-0.10, -0.026], "y": [-0.20, 0.20], "z": 0.012, "zrot_rad": [-1.0472, 1.0472], "note": "charger spawns flat on the table, z-rotation in +/- pi/3"}},
+    {"id": "ws_receptacle", "type": "Workspace", "label": "Reliable receptacle range", "properties": {"x": [0.01, 0.10], "y": [-0.10, 0.10], "z": 0.10, "zrot_rad": [2.7489, 3.5343], "note": "receptacle mounted upright, z-rotation around pi +/- pi/8"}},
+    {"id": "ws_tcp", "type": "Workspace", "label": "Reliable tcp range", "properties": {"x": [-0.35, 0.35], "y": [-0.35, 0.35], "z": [0.02, 0.30]}},
+    {"id": "ctrl", "type": "Controller", "label": "pd_joint_pos / rel_joint_pos", "properties": {"policy_action": "7 joint deltas + gripper command (dim 8)", "expert_action": "panda motion planner → grasp/align/insert (recorded as the same 8-dim demo)"}},
+    {"id": "succ", "type": "SuccessCondition", "label": "charger fully inserted, aligned", "properties": {"metric": "charger pose matches the goal (peg fully in receptacle) within position+orientation thresholds AND robot static", "info_key": "success"}},
+    {"id": "fm_no_grasp", "type": "FailureMode", "label": "missed_grasp", "properties": {"description": "Gripper fails to secure the small charger (off-centre or slips)."}},
+    {"id": "fm_misalign", "type": "FailureMode", "label": "misaligned_insert", "properties": {"description": "Charger is grasped and brought to the receptacle but the peg is not aligned with the hole; insertion fails (the dominant, high-precision failure)."}},
+    {"id": "fm_partial", "type": "FailureMode", "label": "partial_insert", "properties": {"description": "Peg enters the hole but is not pushed to full depth / correct orientation, so the goal-pose match fails."}},
+    {"id": "fm_collide", "type": "FailureMode", "label": "collision", "properties": {"description": "Charger/arm collides with the receptacle face or wall, displacing the charger or jamming."}},
+    {"id": "fm_timeout", "type": "FailureMode", "label": "timeout", "properties": {"description": "Episode reaches the step horizon without success (hesitation, repeated alignment attempts)."}},
+    {"id": "ph_reach", "type": "Phase", "label": "reach", "properties": {"description": "approach and grasp the charger"}},
+    {"id": "ph_transport", "type": "Phase", "label": "transport", "properties": {"description": "carry the charger toward the receptacle"}},
+    {"id": "ph_align", "type": "Phase", "label": "align", "properties": {"description": "align the peg with the receptacle hole (high precision)"}},
+    {"id": "ph_insert", "type": "Phase", "label": "insert", "properties": {"description": "push the peg to full depth and hold static"}}
+  ],
+  "edges": [
+    {"source": "robot", "target": "tcp", "relation": "HAS_END_EFFECTOR"},
+    {"source": "tcp", "target": "charger", "relation": "GRASPS"},
+    {"source": "charger", "target": "receptacle", "relation": "MUST_INSERT_INTO"},
+    {"source": "robot", "target": "obs", "relation": "OBSERVES"},
+    {"source": "robot", "target": "ctrl", "relation": "CONTROLLED_BY"},
+    {"source": "charger", "target": "ws_charger", "relation": "INIT_WITHIN"},
+    {"source": "receptacle", "target": "ws_receptacle", "relation": "INIT_WITHIN"},
+    {"source": "tcp", "target": "ws_tcp", "relation": "INIT_WITHIN"},
+    {"source": "charger", "target": "succ", "relation": "SUCCEEDS_WHEN"},
+    {"source": "tcp", "target": "fm_no_grasp", "relation": "CAUSES_FAILURE"},
+    {"source": "charger", "target": "fm_misalign", "relation": "CAUSES_FAILURE"},
+    {"source": "charger", "target": "fm_partial", "relation": "CAUSES_FAILURE"},
+    {"source": "receptacle", "target": "fm_collide", "relation": "CAUSES_FAILURE"},
+    {"source": "robot", "target": "fm_timeout", "relation": "CAUSES_FAILURE"}
+  ],
+  "reasoning_implications": {
+    "missed_grasp": "Prescribe a charger_pose with a clean, well-inside-bounds grasp approach so the demo teaches secure grasping of the small charger first.",
+    "misaligned_insert": "Prescribe a config where the charger starts closer to / better oriented toward the receptacle (smaller required re-orientation) so the demo emphasises the peg-to-hole alignment that is the dominant failure.",
+    "partial_insert": "Prescribe a config that ends in full insertion so the demo teaches pushing the peg to full depth with the correct orientation, not a shallow stop.",
+    "collision": "Prescribe charger/receptacle poses that leave a collision-free approach corridor so the demo teaches insertion without striking the receptacle face.",
+    "timeout": "Prescribe poses well inside the reliable ranges with a direct grasp-transport-align-insert path (no repeated alignment oscillation).",
+    "workspace_constraint": "Every prescribed config MUST keep charger_xyz within x[-0.10,-0.026] y[-0.20,0.20] z=0.012 (zrot in +/- 1.047 rad) and receptacle_xyz within x[0.01,0.10] y[-0.10,0.10] z=0.10 (zrot in [2.749,3.534] rad) and tcp within x[-0.35,0.35] y[-0.35,0.35] z[0.02,0.30]; out-of-range poses are infeasible and waste the round.",
+    "non_emptiness": "A failure is present, so the prescription MUST be a concrete, fully-specified config (non-empty charger_xyz, charger_zrot, receptacle_xyz). Never emit an empty prescription."
+  }
+}

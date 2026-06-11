@@ -1,0 +1,59 @@
+# config_stack.yaml — A* study (P4-LLM-select vs Diff-DAgger) on StackCube-v1.
+#
+# ONE-SEED end-to-end bring-up (NOT the 5-seed averaging yet). Both methods run
+# in ONE job → share the SAME bootstrap; nd_retrain=1 for both; stop on budget OR
+# 100% (target_sr=1.0). p4_select uses Diff-DAgger-style DIFFUSION-LOSS detection
+# (gated on motion-planner expert_kind) + LLM selection — identical detector to
+# diff_dagger, differing only in WHICH failure is corrected.
+#
+# Hyperparameters = the Diff-DAgger paper's StackCube row (Table IV):
+#   N_i=20 (initial_demos), N_f=60 (budget), alpha=0.99, K=2 (patience),
+#   N_b=512 (batch_multiplier=32 → 16*32). StackCube is hard → likely runs to
+#   budget=60 rather than 100% (censoring handles non-reachers).
+
+n_runs: 1
+initial_demos: 20
+budget: 60                 # = N_f for StackCube
+demos_per_round: 1
+target_sr: 1.0            # stop only at 100% (or budget); 90% read off the curve
+max_rounds: 100
+max_steps: 100
+heldout_n: 100
+seed: 1                   # overridden per-job by the launcher
+
+nd_retrain: 1             # BOTH methods retrain from scratch after every demo
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10         # heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60
+# Episode backstop (anti-infinite-loop only). High enough to never truncate an
+# arm before it spends its budget; a seed that hits it has genuinely plateaued
+# (reported as stop=max_episodes and right-censored in aggregation).
+max_episodes_per_arm: 5000
+
+methods: ["diff_dagger", "p4_select"]
+
+environments: ["StackCube-v1"]
+
+p4_select:
+  n_cand: 6
+
+baselines:
+  # batch_multiplier=32 → diffusion-loss estimate uses T_d(16)*32 = 512 = the
+  # paper's N_b=512 (Table IV, StackCube). alpha/K match the paper.
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 32}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8

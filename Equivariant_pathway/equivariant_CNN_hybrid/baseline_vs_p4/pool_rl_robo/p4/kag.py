@@ -1,49 +1,91 @@
-"""KAG (knowledge-augmented generation) loader for P4-LLM.
+"""KAG (Knowledge-Augmented Generation) for P4-LLM — per-ManiSkill-task.
 
-Each environment has a structured Markdown knowledge document at
-``p4/kag/{env_id}.md`` holding environment facts as key-value pairs (task,
-observation/action semantics, reward, success criterion, what a good
-demonstration looks like, novice failure modes). The P4 prompt injects the
-matching env's KAG so the LLM reasons with concrete, environment-specific
-knowledge rather than a vague generic description.
+Each task has a structured knowledge GRAPH at ``p4/kag/{suite_env}.json`` (the
+paper-facing KAG: nodes/edges/reasoning_implications, mirroring the maze
+``kag_maze_knowledge.json`` schema) describing the robot, objects, controller,
+observation layout, success condition, and failure taxonomy. ``format_kag_context``
+renders it to the prompt text the fresh P4 components inject.
 
-Modular + configurable: the KAG directory defaults to this package's ``kag/``
-but can be overridden via ``set_kag_dir`` (wired from ``config.yaml::p4.kag_dir``
-by ``p4/pipeline_p4.py``).
+The fork's tested P4 engine (used for the first PushT submission) reads a TEXT KAG
+doc via ``analyzer.kag_path``. ``kag_text_path`` returns one:
+  * PushT-v1 → the fork's complete, tested ``kag_document.txt`` (reused as-is).
+  * other tasks → the rendered text of this package's structured JSON graph.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Optional, Set
+from typing import Dict, Optional
 
-_DEFAULT_KAG_DIR = Path(__file__).resolve().parent / "kag"
-_KAG_DIR = _DEFAULT_KAG_DIR
-_WARNED: Set[str] = set()
+from ..envs import env_setup as E
 
-
-def set_kag_dir(d: Optional[str]) -> None:
-    global _KAG_DIR
-    _KAG_DIR = Path(d) if d else _DEFAULT_KAG_DIR
+_KAG_DIR = Path(__file__).resolve().parent / "kag"
+_FORK_PUSHT_KAG = (E.FORK_ROOT / "diffdagger" / "main_analysis" / "kag_document.txt")
 
 
-def kag_dir() -> Path:
-    return _KAG_DIR
+def kag_json_path(suite_env: str) -> Path:
+    return _KAG_DIR / f"{suite_env}.json"
 
 
-def kag_path(env_id: str) -> Path:
-    return _KAG_DIR / f"{env_id}.md"
+def load_kag_graph(suite_env: str) -> Dict:
+    p = kag_json_path(suite_env)
+    if p.is_file():
+        return json.loads(p.read_text())
+    print(f"[p4-kag] WARNING: no KAG graph at {p}")
+    return {}
 
 
-def load_kag(env_id: str, resolved_env_id: Optional[str] = None) -> str:
-    """Return the KAG markdown for ``env_id`` (trying the resolved id as a
-    fallback). Empty string + a one-time warning if no doc exists."""
-    for eid in (env_id, resolved_env_id):
-        if not eid:
-            continue
-        p = _KAG_DIR / f"{eid}.md"
-        if p.exists():
-            return p.read_text(encoding="utf-8")
-    if env_id not in _WARNED:
-        print(f"[p4-kag] WARNING: no KAG document for {env_id!r} in {_KAG_DIR}", flush=True)
-        _WARNED.add(env_id)
-    return ""
+def format_kag_context(kag: Dict) -> str:
+    """Render a structured KAG graph into prompt text (nodes by type, relations,
+    reasoning implications). Same rendering contract as the maze KAG."""
+    if not kag:
+        return ""
+    meta = kag.get("meta", {})
+    nodes = kag.get("nodes", [])
+    edges = kag.get("edges", [])
+    impl = kag.get("reasoning_implications", {})
+    nl = {n["id"]: n for n in nodes}
+    lines = ["=== KAG — TASK KNOWLEDGE GRAPH ===",
+             f"Domain: {meta.get('domain', '')}",
+             f"Description: {meta.get('description', '')}", ""]
+    by_type: Dict[str, list] = {}
+    for n in nodes:
+        by_type.setdefault(n.get("type", "Node"), []).append(n)
+    for t, ns in by_type.items():
+        lines.append(f"[{t}]")
+        for n in ns:
+            props = ", ".join(f"{kk}={vv}" for kk, vv in n.get("properties", {}).items())
+            lines.append(f"  - {n.get('label', n['id'])} (id={n['id']}): {props}")
+        lines.append("")
+    if edges:
+        lines.append("[RELATIONS]")
+        for e in edges:
+            src = nl.get(e.get("source"), {}).get("label", e.get("source"))
+            tgt = nl.get(e.get("target"), {}).get("label", e.get("target"))
+            lines.append(f"  {src} --[{e.get('relation', 'RELATED_TO')}]--> {tgt}")
+        lines.append("")
+    if impl:
+        lines.append("[REASONING IMPLICATIONS]")
+        for kk, vv in impl.items():
+            lines.append(f"  * {kk}: {vv}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def load_kag_text(suite_env: str) -> str:
+    return format_kag_context(load_kag_graph(suite_env))
+
+
+def kag_text_path(suite_env: str) -> Optional[str]:
+    """Path to a TEXT KAG doc the fork P4 engine reads (analyzer.kag_path). EVERY env
+    (incl. PushT-v1) renders ITS OWN structured graph at p4/kag/{suite_env}.json — which
+    carries the task's object spawn box + arm/TCP bounds — to a cached .kag.txt. (The
+    fork's generic kag_document.txt is NO LONGER used for PushT: it lacks the per-task
+    bounds, which is why prescriptions weren't grounded.) Returns None if no graph exists."""
+    txt = load_kag_text(suite_env)
+    if not txt:
+        print(f"[p4-kag] WARNING: no KAG for {suite_env}; LLM gets task_description only")
+        return None
+    out = _KAG_DIR / f"{suite_env}.kag.txt"
+    out.write_text(txt)
+    return str(out)

@@ -1,41 +1,28 @@
-"""Goal-conditioned success-Q for ThriftyDAgger risk estimation (continuous).
+"""Goal-conditioned success-Q for ThriftyDAgger risk (continuous, diffusion backbone).
 
-Port of maze ``selection/success_q.py``. ThriftyDAgger gates queries on **task
-risk** = ``1 − Q(s, a)`` where Q predicts ``P(reach goal | s, a)``. We fit a
-small MLP on a **Monte-Carlo success-to-go** target
+Risk = 1 − Q(s, a) where Q predicts P(reach goal | s, a). We fit a small MLP on a
+Monte-Carlo success-to-go target y_t = 1[success]·gamma^(T−1−t) over the aggregated
+demonstration dataset. Because only SUCCESSFUL expert demos enter the dataset, every
+stored episode has success=1, so y_t = gamma^(steps-to-end).
 
-    y_t = 1[success] · gamma^(n−1−t)
-
-over (a) the expert demonstration trajectories (success=1) and (b) this round's
-novice rollouts (measured success). Unlike the maze version we already hold the
-flat observation vectors from the rollout, so no env replay is needed: the net
-input is ``concat(flatten(obs), action_vector)``.
-
-The Q is heuristic (not Bellman-fitted) — it is only used to *rank* candidate
-states, so absolute calibration does not matter, only the relative risk order.
-For locomotion envs ``success`` is the survival proxy (see ``envs.episode_success``);
-on HalfCheetah it is always 1, so risk saturates to 0 there (documented caveat).
+This is BEST-EFFORT on the fork's TensorDictReplayBuffer: if the buffer can't be
+read into (obs, action, y) transitions, ``train_success_q_from_dataset`` returns
+None and ThriftyDAgger degrades to a novelty-only switch rule (documented caveat).
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class SuccessQNet(nn.Module):
     def __init__(self, obs_dim: int, act_dim: int, hidden: int = 128):
         super().__init__()
-        self.obs_dim = int(obs_dim)
-        self.act_dim = int(act_dim)
         self.net = nn.Sequential(
-            nn.Linear(self.obs_dim + self.act_dim, hidden),
-            nn.GELU(),
-            nn.Linear(hidden, hidden),
-            nn.GELU(),
+            nn.Linear(obs_dim + act_dim, hidden), nn.GELU(),
+            nn.Linear(hidden, hidden), nn.GELU(),
             nn.Linear(hidden, 1),
         )
 
@@ -43,84 +30,71 @@ class SuccessQNet(nn.Module):
         return self.net(torch.cat([obs, act], dim=-1)).squeeze(-1)
 
 
-def build_transitions(
-    demo_trajs: Sequence[Dict],
-    round_episodes: Sequence[Dict],
-    gamma: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Assemble (X_obs, X_act, y) with MC success-to-go targets from expert
-    demos (success=1) + this round's novice rollouts (measured success).
-    Each trajectory dict carries ``obs`` (n,obs_dim), ``act`` (n,act_dim),
-    ``success`` (bool)."""
-    Xo: List[np.ndarray] = []
-    Xa: List[np.ndarray] = []
-    ys: List[float] = []
-
-    def _add(traj: Dict) -> None:
-        obs_raw = traj.get("feat", traj.get("obs"))      # policy features (or legacy obs)
-        act_raw = traj.get("act", traj.get("actions"))   # demos use 'act', rollouts 'actions'
-        if obs_raw is None or act_raw is None:
-            return
-        obs = np.asarray(obs_raw, np.float32)
-        act = np.asarray(act_raw, np.float32)
-        if obs.ndim != 2 or act.ndim != 2 or obs.shape[0] == 0 or act.shape[0] != obs.shape[0]:
-            return
-        n = obs.shape[0]
-        succ = 1.0 if traj.get("success") else 0.0
-        for t in range(n):
-            Xo.append(obs[t])
-            Xa.append(act[t])
-            ys.append(succ * float(gamma) ** (n - 1 - t))
-
-    for tr in demo_trajs:
-        _add(tr)
-    for ep in round_episodes:
-        _add(ep)
-
-    if not Xo:
-        return (np.zeros((0, 0), np.float32), np.zeros((0, 0), np.float32), np.zeros((0,), np.float32))
-    return np.stack(Xo).astype(np.float32), np.stack(Xa).astype(np.float32), np.asarray(ys, np.float32)
-
-
-def train_success_q(qnet: SuccessQNet, demo_trajs: Sequence[Dict],
-                    round_episodes: Sequence[Dict], *, gamma: float, epochs: int,
-                    lr: float, batch_size: int, device: torch.device,
-                    seed: int = 0) -> Optional[SuccessQNet]:
-    """Warm-started BCE fit of the success-Q in place. Returns the net, or
-    ``None`` if there were no transitions."""
-    Xo, Xa, y = build_transitions(demo_trajs, round_episodes, gamma)
-    if Xo.shape[0] == 0:
-        return None
-    torch.manual_seed(int(seed))
-    Xot = torch.from_numpy(Xo).to(device)
-    Xat = torch.from_numpy(Xa).to(device)
-    yt = torch.from_numpy(y).to(device)
-    n = Xot.shape[0]
-    bs = max(1, int(batch_size))
-    opt = torch.optim.AdamW(qnet.parameters(), lr=float(lr), weight_decay=1e-4)
-    qnet.train()
-    for _ep in range(int(epochs)):
-        perm = torch.randperm(n, device=device)
-        for s in range(0, n, bs):
-            idx = perm[s:s + bs]
-            logit = qnet(Xot[idx], Xat[idx])
-            loss = F.binary_cross_entropy_with_logits(logit, yt[idx])
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-    qnet.eval()
-    return qnet
+def flat_obs(full_obs: dict, obs_keys: Sequence[str]) -> torch.Tensor:
+    """Concatenate the expert's obs keys into a flat (D,) vector (batch row 0)."""
+    parts = [full_obs[k] for k in sorted(obs_keys)]
+    vec = torch.cat([p.reshape(p.shape[0], -1) for p in parts], dim=-1)
+    return vec[0].float().detach()
 
 
 @torch.no_grad()
-def q_values(qnet: SuccessQNet, obs_arr: np.ndarray, act_arr: np.ndarray,
-             device: torch.device) -> List[float]:
-    """P(success) in [0,1] for each (obs, action) row."""
-    obs_arr = np.asarray(obs_arr, np.float32)
-    act_arr = np.asarray(act_arr, np.float32)
-    if obs_arr.shape[0] == 0:
-        return []
-    Xo = torch.from_numpy(obs_arr).to(device)
-    Xa = torch.from_numpy(act_arr).to(device)
-    probs = torch.sigmoid(qnet(Xo, Xa)).cpu().numpy().reshape(-1)
-    return [float(x) for x in probs]
+def q_value(qnet: SuccessQNet, obs_vec: torch.Tensor, act_vec: torch.Tensor) -> float:
+    dev = next(qnet.parameters()).device
+    o = obs_vec.reshape(1, -1).to(dev)
+    a = act_vec.reshape(1, -1).to(dev)
+    return float(torch.sigmoid(qnet(o, a)).reshape(-1)[0].item())
+
+
+def _read_all(dataset) -> Optional[Any]:
+    """Try to pull the whole replay buffer as one TensorDict; None on failure."""
+    rb = dataset.rb
+    for getter in (lambda: rb[: len(rb)], lambda: rb[:],
+                   lambda: rb.storage._storage):
+        try:
+            td = getter()
+            if td is not None and len(td) > 0:
+                return td
+        except Exception:
+            continue
+    return None
+
+
+def train_success_q_from_dataset(dataset, obs_keys: Sequence[str], *,
+                                  num_joints: int, gamma: float = 0.99,
+                                  epochs: int = 50, lr: float = 1e-3,
+                                  device: str = "cuda") -> Optional[SuccessQNet]:
+    try:
+        td = _read_all(dataset)
+        if td is None:
+            return None
+        keys = sorted(obs_keys)
+        obs = torch.cat([td[k].reshape(len(td[k]), -1).float() for k in keys], dim=-1)
+        act = td["action_joint_delta_pos"][:, :num_joints].float()
+        ep = td["episode"].reshape(-1).long()
+        # success-to-go: per episode, gamma^(steps-to-end). All demos succeed.
+        y = torch.zeros(len(ep), dtype=torch.float32)
+        for e in torch.unique(ep):
+            idx = (ep == e).nonzero(as_tuple=True)[0]
+            n = len(idx)
+            for j, t in enumerate(idx.tolist()):
+                y[t] = gamma ** (n - 1 - j)
+        dev = torch.device(device if torch.cuda.is_available() else "cpu")
+        qnet = SuccessQNet(obs.shape[1], act.shape[1]).to(dev)
+        obs, act, y = obs.to(dev), act.to(dev), y.to(dev)
+        opt = torch.optim.AdamW(qnet.parameters(), lr=lr, weight_decay=1e-4)
+        loss_fn = nn.BCEWithLogitsLoss()
+        n = obs.shape[0]
+        bs = min(256, n)
+        for _ in range(int(epochs)):
+            perm = torch.randperm(n, device=dev)
+            for i in range(0, n, bs):
+                b = perm[i:i + bs]
+                opt.zero_grad()
+                loss = loss_fn(qnet(obs[b], act[b]), y[b])
+                loss.backward()
+                opt.step()
+        qnet.eval()
+        return qnet
+    except Exception as exc:  # pragma: no cover - GPU/buffer-shape dependent
+        print(f"[success_q] best-effort train skipped: {type(exc).__name__}: {exc}")
+        return None

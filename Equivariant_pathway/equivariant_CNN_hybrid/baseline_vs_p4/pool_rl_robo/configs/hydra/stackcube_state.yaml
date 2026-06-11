@@ -1,0 +1,150 @@
+# stackcube_state.yaml — SUITE-LOCAL fork-style Hydra config for StackCube-v1.
+#
+# Authored for the A* study (P4-LLM-select vs Diff-DAgger) StackCube bring-up.
+# Mirrors the fork's pusht_state.yaml structure (so make_policy / make_dataset /
+# the diffusion stack line up) but for the panda gripper task:
+#   * control_mode = pd_joint_pos (motion-planner-compatible; policy acts in
+#     rel_joint_pos via VariousActionSpaceWrapper).
+#   * action_dim = 8 = 7 arm joints + 1 gripper command (TimeSeriesDataset's
+#     rel_joint_pos path subtracts agent_qpos[:7] from action_joint_pos and keeps
+#     the gripper dim absolute).
+#   * proprio_dim = 30 = agent_qpos(9) + extra_tcp_pose(7) + extra_cubeA_pose(7)
+#     + extra_cubeB_pose(7). It sets the UNet global_cond_dim (latent_dim=0), so
+#     it MUST equal the summed obs-key dims (verified by the normalizer-gen step).
+#   * normalizers_path is SUITE-local (generated from motion-planner demos);
+#     build_cfg()._abs prefers SUITE_ROOT then FORK_ROOT.
+#   * expert block carries only action_space + max_episode_steps — load_expert
+#     returns MotionPlannerExpert for motionplanner tasks (never instantiates it).
+
+env_id: StackCube-v1
+obs_mode: state_dict
+control_mode: pd_joint_pos
+render_mode: rgb_array
+max_episode_steps: 200     # motion-planner demos run ~155-185 control steps (incl.
+                           # settle); the policy needs a horizon that fits a full stack
+num_init_ep: 20
+
+obs_keys: [agent_qpos, extra_tcp_pose, extra_cubeA_pose, extra_cubeB_pose]
+proprio_dim: 30
+latent_dim: 0
+action_space: rel_joint_pos
+action_dim: 8
+device: cuda
+obs_horizon: 1            # canonical DP uses 2; the fork hardwires global_cond_dim=
+                          # proprio_dim (not *obs_horizon), so 2 needs a fork edit → keep 1
+pred_horizon: 16
+action_horizon: 8
+prediction_type: epsilon  # canonical low-dim DP (was v_prediction — too weak with few
+                          # train timesteps for StackCube's multimodal demos)
+
+dataset_dir: assets/stackcube
+normalizers_path: assets/normalizers/StackCube-v1_normalizers.pth
+save_file_dir: assets/stackcube/results
+
+max_train_steps: 30000
+epoch: 300
+train_freq: 4
+wait_timestep: 0
+chkpt_dir: ${save_file_dir}
+
+dataset:
+    _target_: dataset.datasets.TimeSeriesDataset
+    dataset_path: []
+    load_count: 0
+    obs_keys: ${obs_keys}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    validation_ratio: 0.0
+    device: ${device}
+
+env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 1
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.02
+
+eval_env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 100
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.0
+
+# Motion-planner expert: load_expert() returns MotionPlannerExpert (no instantiate).
+# Only action_space + max_episode_steps are read by the arms / demo bookkeeping.
+expert:
+    action_space: joint_pos
+    max_episode_steps: 300
+    success_mode: true
+    device: ${device}
+
+policy:
+    _target_: agents.diffusion_policy.DiffDAggerPolicy
+
+    model:
+        _target_: model.unet1d.ConditionalUnet1D
+        input_dim: ${action_dim}
+        global_cond_dim: null
+        diffusion_step_embed_dim: 256
+        down_dims: [256, 512, 1024]
+        kernel_size: 5
+        n_groups: 8
+
+    obs_keys: ${obs_keys}
+    proprio_dim: ${proprio_dim}
+    latent_dim: ${latent_dim}
+    action_dim: ${action_dim}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    vision_model: r3m
+    frozen_encoder: false
+    obs_encoder_group_norm: true
+    spatial_softmax: true
+
+    num_inference_steps: 16          # DDIM subsamples the 100-step train chain (≤ train)
+    noise_scheduler:
+        _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+        num_train_timesteps: 100     # canonical DP (was 16 — a too-coarse noise chain);
+                                     # DDIM inference still 16 steps, so eval cost unchanged
+        beta_start: 0.0001
+        beta_end: 0.02
+        beta_schedule: squaredcos_cap_v2
+        prediction_type: ${prediction_type}
+    optim:
+        _target_: torch.optim.AdamW
+        lr: 0.0001                   # canonical (was 3e-4)
+        weight_decay: 0.000001       # canonical 1e-6 (was 0.01 — 10000x over-regularized)
+        betas: [0.95, 0.999]         # canonical (was [0.9, 0.99])
+        fused: true
+    scheduler:
+        _target_: diffusers.optimization.get_scheduler
+        name: cosine
+        num_warmup_steps: 500
+
+    ### DAgger
+    alpha: 0.99
+    batch_multiplier: 5     # N_b = num_train_timesteps(100) * 5 = 500 ≈ paper's 512;
+                            # rebalanced down from 32 so the per-step diffusion-loss
+                            # query cost stays constant despite 16→100 train timesteps
+    num_per_batch: 1
+    patience: 2
+    patience_window: ${policy.patience}
+
+train:
+    accelerator: "auto"
+    devices: 1
+    train_steps: null      # set at runtime by sim_bridge.train_policy (epoch*len//bs, capped)
+    train_bs: 256          # canonical low-dim DP (was 64) — lower-variance gradients

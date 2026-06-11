@@ -1,0 +1,50 @@
+# config_astar_p4top3.yaml — P4-Top3 standalone on PushT-v1, EXACT equal-to-equal
+# vs the existing diff_dagger runs (jobs 98949-98953 = seeds 1..5) produced by
+# config_astar.yaml. Every shared knob below is IDENTICAL to config_astar.yaml so
+# the only difference between arms is the demo-acquisition rule (LLM prescription
+# vs diffusion-loss CDF). The bootstrap is NOT rebuilt: the launcher exports
+# P4_REUSE_INIT_CKPT=results/PushT-v1/run_<seed>/shared_baselines/init_ckpt.pth so
+# this arm LOADS the diff_dagger arm's exact initial policy (rebuild is GPU-
+# nondeterministic and would NOT byte-match).
+#
+# methods=["p4_top3"] → orchestrator shared_dir = run_<seed>/shared_p4 (its own
+# dir; never touched by the reuse path, which reads the explicit env-var file).
+# results land in results/PushT-v1/run_<seed>/p4_top3/.
+
+n_runs: 1
+initial_demos: 20
+budget: 100
+demos_per_round: 1
+target_sr: 1.0            # stop only at 100% (or budget); 90% is read off the curve
+max_rounds: 100
+max_steps: 200
+heldout_n: 100
+seed: 1                   # overridden per-job by the launcher (seeds 1..5)
+
+nd_retrain: 1             # retrain from scratch after every demo (matches diff_dagger)
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10         # render-safe; heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60      # low-noise rollout-SR so target early-stop doesn't false-fire
+max_episodes_per_arm: 5000
+
+methods: ["p4_top3"]
+
+environments: ["PushT-v1"]
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8     # p4's per-step diffusion-loss N_b (matches config_astar.yaml)
+  # In-round retry caps (P4-top3): on empty prescription, re-prescribe (don't skip);
+  # on infeasible config (PPO expert can't solve it), re-prescribe a different config.
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  # Per-env prompt files folder (e.g. "p4/prompts"). null ⇒ use the fork's hardcoded
+  # prompts (zero behavioural change). Set to "p4/prompts" to source per-env prompts.
+  prompts_dir: null

@@ -1,0 +1,65 @@
+# config_astar.yaml — A* comparative study: P4-LLM-select vs Diff-DAgger.
+#
+# Per the supervisor's spec for a publishable comparison:
+#   * BOTH methods run in ONE job per seed → they share the SAME bootstrap
+#     (identical initial policy) — fixes the separate-job bootstrap mismatch.
+#   * nd_retrain = 1 for BOTH (retrain from scratch after every single demo).
+#   * Stop on budget exhausted OR 100% success (target_sr=1.0) — do NOT stop at
+#     90%. The curve logs success at every demo, so queries-to-90% is recovered
+#     from the curve; we continue past 90% to exhaust the budget / chase 100%.
+#   * 5 seeds, each its own isolated sbatch job (submit_astar_5seeds.sh).
+#
+# Aggregate over run_1..run_5 (one per seed) for mean ± std curves.
+
+n_runs: 1
+initial_demos: 20
+budget: 100
+demos_per_round: 1
+target_sr: 1.0            # ← stop only at 100% (or budget); 90% is read off the curve
+max_rounds: 100
+max_steps: 200
+heldout_n: 100
+seed: 1                   # overridden per-job by the launcher (seeds 1..5)
+
+nd_retrain: 1             # ← BOTH methods retrain after every demo
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10
+rollout_episodes: 60
+# Episode backstop (anti-infinite-loop only). Set HIGH so it never truncates a
+# method before it spends its 100-demo budget: p4_select reaches budget in ~600
+# rollouts (6/round x 100), while diff_dagger's NATIVE loss-query fires rarely once
+# the policy is good, so it may roll thousands of episodes to spend 100 demos. A low
+# cap would stop diff_dagger early (stop=max_episodes) with < budget demos and a
+# truncated tail, unfairly favoring p4_select. 5000 lets both finish; a seed that
+# still hits it has genuinely plateaued (reported honestly as stop=max_episodes).
+max_episodes_per_arm: 5000
+
+methods: ["diff_dagger", "p4_select"]
+
+environments: ["StackCube-v1", "PickCube-v1", "PushT-v1", "PlugCharger-v1"]
+
+p4_select:
+  n_cand: 6
+
+baselines:
+  # batch_multiplier=32 → diffusion-loss estimate uses T_d(16)*32 = 512 samples = the
+  # Diff-DAgger paper's N_b=512 (Table IV, Pushing). alpha/K also match the paper exactly.
+  # (PushT seeds 98949-53 used bm=8 → N_b=128, a 4x-noisier but self-consistent estimate;
+  #  diff_dagger still reached 1.0, but 32 matches the paper — use it going forward.)
+  diff_dagger: {alpha: 0.99, patience: 1, batch_multiplier: 32}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8

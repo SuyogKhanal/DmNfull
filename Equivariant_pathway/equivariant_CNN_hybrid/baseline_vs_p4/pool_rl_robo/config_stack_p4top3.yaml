@@ -1,0 +1,57 @@
+# config_stack_p4top3.yaml — head-to-head Diff-DAgger vs p4_top3 on StackCube-v1,
+# 5 seeds → mean±std SR-vs-demos-added.
+#
+# WARM-START design (per the bootstrap sweep): the canonical-DP backbone reaches
+# ~51% held-out SR from ~200 motion-planner demos, so both arms share a 200-demo
+# bootstrap (off the floor, with headroom for DAgger to differentiate). From there
+# each arm adds up to `budget` corrective demos (diff_dagger: native diffusion-loss
+# query; p4_top3: VLM→reason→prescribe cube layout→StackCube-Start-v0→motion-planner
+# solve). nd_retrain=1 BOTH; stop at budget OR 100%.
+#
+# Backbone (canonical Diffusion Policy, set in configs/hydra/stackcube_state.yaml):
+# num_train_timesteps=100, epsilon, wd=1e-6, lr=1e-4, bs=256. batch_multiplier=5 keeps
+# N_b = 100*5 = 500 ≈ paper 512 at constant per-query cost.
+
+n_runs: 5
+initial_demos: 200         # warm-start bootstrap → ~51% shared start
+budget: 60                 # corrective-demo budget from the warm start
+demos_per_round: 1
+target_sr: 1.0             # stop at budget OR 100%; read demos-to-X% off the curve
+max_rounds: 100
+max_steps: 200
+heldout_n: 100
+seed: 1                    # overridden per-job by submit_stack_p4top3_5seeds.sh
+
+nd_retrain: 1              # BOTH arms retrain from scratch after every demo
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10          # heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60
+max_episodes_per_arm: 5000
+
+methods: ["diff_dagger", "p4_top3"]
+
+environments: ["StackCube-v1"]
+
+p4_select:
+  n_cand: 6                # candidate rollouts/round (also p4_top3's)
+
+baselines:
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 5}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5

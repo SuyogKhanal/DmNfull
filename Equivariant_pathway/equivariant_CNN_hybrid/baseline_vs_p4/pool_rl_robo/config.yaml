@@ -1,60 +1,93 @@
-# pool_rl_robo — config for the P4-LLM method (run_one.py).
-# Continuous-control port of pool_x_selector/config.yaml. P4-LLM selects, each
-# round, the single novice-visited state to request an expert demonstration for;
-# 1 query/round so reward-vs-#queries is comparable to the 5 IIL baselines.
+# pool_rl_robo — single source of truth for all knobs.
+#
+# Continuous-action-space comparison: P4-LLM (p4_top3, ours) vs 6 baselines
+# (diff_dagger + 5 IIL methods) on ManiSkill robotic manipulation, sharing ONE
+# Diffusion-Policy backbone (from external/diff_dagger). Only the demonstration-
+# acquisition rule differs between methods.
+#
+# NO fixed/rotate pool axis (continuous action space — no pre-sampled pool).
+# NO correction_n (pool_x_selector concept; does not exist here).
+# Every method adds EXACTLY 1 demo per round — apples-to-apples.
 
 # ---- run-level ----
-seed: 42
-budget: 15                 # rounds = expert queries (the comparison x-axis)
-n_seed_demos: 5            # expert demos used to BC the round-0 novice
-initial_epochs: 300        # BC epochs at round 0
-round_epochs: 150          # warm-started BC epochs per subsequent round
-n_eval_episodes: 20        # greedy eval episodes per round (reward-curve point)
-n_rollout_episodes: 1      # novice rollouts per round -> candidate pool
-max_steps: 1000            # per-episode cap (MuJoCo default; Fetch truncates at 50)
-max_consecutive_empty: 8
-hidden: 256
-lr: 0.0003
-batch_size: 256
-weight_decay: 0.0001
+n_runs: 10
+initial_demos: 20          # BC warm-start (shared initial diffusion policy).
+                           # 50 saturated PushT (round-0 SR 0.87 ≈ target). The
+                           # fork documents raw BC on ~20 demos → SR 0.4-0.7, so
+                           # 20 leaves real headroom for the budget=100 climb and
+                           # lets demonstration SELECTION separate the methods.
+budget: 100                # Phase 2: additional expert demos per method
+demos_per_round: 1         # hard cap — all methods add exactly 1 demo/round
+target_sr: 0.90            # stop early if a method hits 90% SR; record query count
+max_rounds: 100            # hard cap on Phase 2 rounds
+max_steps: 200             # episode horizon
+heldout_n: 100             # held-out eval episodes per checkpoint
+seed: 0
 
-# ---- the 5 environments (one SLURM array task per env) ----
-envs: ["HalfCheetah-v4", "Hopper-v4", "Walker2d-v4",
-       "FetchReach-v4", "FetchPickAndPlace-v4"]
+# ---- training cadence (diffusion backbone; fork from-scratch retrain) ----
+# The continuous protocol caps demos_per_round=1; the diffusion policy retrains
+# FROM SCRATCH every nd_retrain demos (Diff-DAgger paper §III-C2), shared by all
+# methods so the comparison stays apples-to-apples.
+nd_retrain: 4
+initial_epochs: 300        # shared bootstrap (one initial model for all arms)
+round_epochs: 200          # per-Nd-retrain epochs
+max_train_steps: 30000     # global gradient-step cap (all stages)
+eval_num_envs: 20          # vectorized held-out eval envs (heldout_n multiple of this).
+                           # 100 starved the orchestrator GPU so p4's per-step
+                           # env.render() (VLM frames) hung on episode 0 of the
+                           # failure rollout (baselines don't render → unaffected).
+                           # 20 frees GPU memory so rendering has room.
+rollout_episodes: 60       # p4 failure-discovery rollout episodes/round. Drives
+                           # BOTH failure discovery AND the fork's target early-stop
+                           # (stops when this rollout SR ≥ target_sr). 30 was too
+                           # noisy → false target_hit at true SR 0.68; 60 makes the
+                           # stop fire at the real ~90% (and still much cheaper than
+                           # the 100 that caused the render-time blowup).
 
-# ---- methods run by run_one.py ----
-methods: ["p4_llm"]
+methods: ["p4_top3",
+          "diff_dagger",
+          "safe_dagger", "dropout_dagger",
+          "ensemble_dagger", "thrifty_dagger", "stagger"]
 
-# ---- P4-LLM ----
-p4:
-  model_name: qwen3-32b
-  vlm_model_name: qwen3-vl-32b
-  max_candidates: 30        # (locomotion state-selection proxy: states shown to the LLM)
-  n_failure_rollouts: 6     # (Fetch full P4: novice rollouts/round -> >= top_k failures)
-  top_k_failures: 3         # (Fetch full P4: failures compressed into ONE prescribed config)
-  temperature: 0.0
-  kag_dir: null             # per-env KAG .md docs; null = package default p4/kag/
+environments: ["StackCube-v1", "PickCube-v1", "PushT-v1", "PlugCharger-v1"]
 
-# ---- Diffusion backbone (Fetch envs): R3M-image DDPM novice ----
-diffusion:
-  r3m_model: resnet18         # 512-d frozen R3M embedding (+ 3-d goal)
-  T: 100                      # DDPM denoise steps
-  hidden: 512
-  lr: 0.0001
-  batch_size: 256
-  weight_decay: 0.000001
-  n_uncertainty_samples: 8    # denoise draws -> sample-variance uncertainty (Dropout/Ensemble/Thrifty)
-  # diffusion+R3M is far more data/epoch-hungry than the locomotion MLP (Smoke-1
-  # finding) -> its own heavier seed-demo/epoch schedule (overrides the globals on Fetch):
-  n_seed_demos: 30
-  initial_epochs: 1500
-  round_epochs: 400
-
-# ---- IIL decision-rule knobs (present so run_dagger can read them uniformly;
-#      P4 itself does not use them). tau/sigma are raw-action L2 distances. ----
+# ---- baseline-specific decision-rule knobs ----
+# (see baseline_implementations_continuous_guide.md). diff_dagger uses the fork's
+# native diffusion-loss CDF query (alpha quantile, K consecutive steps).
 baselines:
-  safe:     {tau: 0.5}
-  dropout:  {N: 16, dropout_d: 0.1, tau: 0.5, p: 0.5}
-  ensemble: {M: 5, tau: 0.5, sigma: 0.02}
-  thrifty:  {M: 5, alpha_h: 0.10, gamma: 0.98, q_epochs: 50, q_lr: 0.001}
-  stagger:  {}
+  diff_dagger:
+    alpha: 0.99            # diffusion-loss query quantile (paper PushT)
+    patience: 1            # K consecutive over-threshold steps
+
+  safe_dagger:
+    tau: 0.1               # action discrepancy threshold (L2, joint-delta space)
+
+  dropout_dagger:
+    tau: 0.1               # ball radius around expert action
+    p: 0.9                 # probability threshold
+    N: 10                  # stochastic diffusion draws per timestep
+    d: 0.1                 # (dropout prob; see uncertainty.py faithfulness note)
+
+  ensemble_dagger:
+    M: 5                   # number of independent diffusion policy instances
+    tau: 0.1               # discrepancy threshold
+    chi: 0.05              # ensemble variance (doubt) threshold
+
+  thrifty_dagger:
+    alpha_h: 0.1           # target intervention fraction of timesteps
+    gamma: 0.99            # Q-function discount factor
+    M: 5                   # ensemble size for novelty (shares the ensemble design)
+    q_epochs: 50           # success-Q training epochs
+
+  stagger:
+    # No hyperparameters. 1 sample/round, uniform state selection.
+
+p4:
+  model: null              # inherit from upstream pipeline / submit-script env
+  vlm: null                # VLM model tag (inherit; routed to qwen3-vl-32b)
+  reasoning_llm: null      # reasoning LLM tag (inherit; qwen3-32b)
+  config_llm: null         # configuration LLM tag (inherit; qwen3-32b)
+  high_loss_percentile: 95 # VLM high-loss-frame timestep percentile (t*)
+  phase_b_workers: 8       # parallel per-failure LLM fan-out
+  batch_multiplier: 8      # diffusion-loss oversampling/step in the rollout (was
+                           # 32; 8 is 4x faster per step, fine for t* detection)
