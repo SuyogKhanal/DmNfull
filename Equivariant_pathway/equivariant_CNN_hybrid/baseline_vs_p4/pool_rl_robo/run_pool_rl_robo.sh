@@ -35,8 +35,8 @@ ENVS=(StackCube-v1 PushT-v1 PickCube-v1 PlugCharger-v1)
 ENV="${ENV:-${ENVS[${SLURM_ARRAY_TASK_ID:-1}]}}"
 # Methods may arrive '+'-encoded (sbatch --export truncates comma values, C5).
 METHODS="${METHODS:-all}"; METHODS="${METHODS//+/,}"
-# Any LLM method needs vLLM + the proxy: p4_top3 (prescribe) or p4_select (select).
-if [ "${METHODS}" = "all" ] || echo ",${METHODS}," | grep -qE ",p4_top3,|,p4_select,"; then
+# Any LLM method needs vLLM + the proxy: p4_top3 / p4_subtask (prescribe) or p4_select.
+if [ "${METHODS}" = "all" ] || echo ",${METHODS}," | grep -qE ",p4_top3,|,p4_select,|,p4_subtask,"; then
     NEED_LLM=1
 else
     NEED_LLM=0
@@ -76,9 +76,14 @@ echo "[run] env=${ENV} methods=${METHODS} need_llm=${NEED_LLM} gpus=${NUM_LOCAL_
 
 NO_LLM_FLAG=""
 if [ "${NEED_LLM}" = "1" ]; then
-    # ── p4 needs 3 GPUs: GPU0 VLM, GPU1 text, GPU2 orchestrator ───────────
-    if [ "${NUM_LOCAL_GPUS}" -lt 3 ]; then
-        echo "[run] ERROR: p4_top3 needs 3 GPUs (VLM+text+orch); have ${NUM_LOCAL_GPUS}. Use --gpus-per-node=3." >&2
+    # GPU layout: default GPU0 VLM, GPU1 text(LLM), GPU2 orchestrator (3 GPUs).
+    # SKIP_VLM=1 (text-only methods, e.g. the StackCube hybrid which never renders
+    # for the VLM): GPU0 LLM, GPU1 orchestrator (2 GPUs); the proxy's vlm_port is
+    # pointed at the LLM so /healthz stays green without a VLM server.
+    _need_gpus=3; _llm_gpu=1; _orch_gpu_default=2
+    if [ "${SKIP_VLM:-0}" = "1" ]; then _need_gpus=2; _llm_gpu=0; _orch_gpu_default=1; fi
+    if [ "${NUM_LOCAL_GPUS}" -lt "${_need_gpus}" ]; then
+        echo "[run] ERROR: p4 needs ${_need_gpus} GPUs (have ${NUM_LOCAL_GPUS}); use --gpus-per-node=${_need_gpus}." >&2
         exit 5
     fi
     VLLM_PYTHON="${VLLM_PYTHON:-/home/s226137394/.conda/envs/vllm_embed/bin/python}"
@@ -110,24 +115,30 @@ if [ "${NEED_LLM}" = "1" ]; then
     VLM_LOG="${SUITE_DIR}/slurm_logs/vllm_vlm_${SLURM_JOB_ID:-local}.log"
     PROXY_LOG="${SUITE_DIR}/slurm_logs/proxy_${SLURM_JOB_ID:-local}.log"
 
-    CUDA_VISIBLE_DEVICES=1 "${VLLM_PYTHON}" -m vllm.entrypoints.openai.api_server \
+    CUDA_VISIBLE_DEVICES=${_llm_gpu} "${VLLM_PYTHON}" -m vllm.entrypoints.openai.api_server \
         --model "${LLM_MODEL_PATH}" --served-model-name "${LLM_MODEL_NAME}" \
         --quantization "${VLLM_QUANTIZATION}" --load-format "${VLLM_LOAD_FORMAT}" \
         --dtype "${VLLM_DTYPE}" --max-model-len "${VLLM_MAX_MODEL_LEN}" \
         --gpu-memory-utilization "${VLLM_GPU_MEM_UTIL}" --port "${VLLM_LLM_PORT}" \
         --host 127.0.0.1 ${VLLM_EXTRA_FLAGS} > "${LLM_LOG}" 2>&1 &
     LLM_PID=$!
-    CUDA_VISIBLE_DEVICES=0 "${VLLM_PYTHON}" -m vllm.entrypoints.openai.api_server \
-        --model "${VLM_MODEL_PATH}" --served-model-name "${VLM_MODEL_NAME}" \
-        --quantization "${VLLM_QUANTIZATION}" --load-format "${VLLM_LOAD_FORMAT}" \
-        --dtype "${VLLM_DTYPE}" --max-model-len "${VLLM_MAX_MODEL_LEN}" \
-        --gpu-memory-utilization "${VLLM_GPU_MEM_UTIL}" --port "${VLLM_VLM_PORT}" \
-        --host 127.0.0.1 ${VLLM_EXTRA_FLAGS} > "${VLM_LOG}" 2>&1 &
-    VLM_PID=$!
+    _eff_vlm_port="${VLLM_VLM_PORT}"
+    if [ "${SKIP_VLM:-0}" = "1" ]; then
+        _eff_vlm_port="${VLLM_LLM_PORT}"   # proxy health-checks the LLM in place of the VLM
+        echo "[run] SKIP_VLM=1: no VLM server (text-only); proxy vlm_port→LLM (${_eff_vlm_port})."
+    else
+        CUDA_VISIBLE_DEVICES=0 "${VLLM_PYTHON}" -m vllm.entrypoints.openai.api_server \
+            --model "${VLM_MODEL_PATH}" --served-model-name "${VLM_MODEL_NAME}" \
+            --quantization "${VLLM_QUANTIZATION}" --load-format "${VLLM_LOAD_FORMAT}" \
+            --dtype "${VLLM_DTYPE}" --max-model-len "${VLLM_MAX_MODEL_LEN}" \
+            --gpu-memory-utilization "${VLLM_GPU_MEM_UTIL}" --port "${VLLM_VLM_PORT}" \
+            --host 127.0.0.1 ${VLLM_EXTRA_FLAGS} > "${VLM_LOG}" 2>&1 &
+        VLM_PID=$!
+    fi
     VLM_MODEL_NAME="${VLM_MODEL_NAME}" PROXY_MAX_OUTPUT_TOKENS="${PROXY_MAX_OUTPUT_TOKENS}" \
         "${PROXY_PYTHON}" -u "${FORK_ROOT}/diffdagger/qwen/proxy.py" \
         --port "${PROXY_PORT}" --llm_port "${VLLM_LLM_PORT}" \
-        --vlm_port "${VLLM_VLM_PORT}" --vlm_model "${VLM_MODEL_NAME}" > "${PROXY_LOG}" 2>&1 &
+        --vlm_port "${_eff_vlm_port}" --vlm_model "${VLM_MODEL_NAME}" > "${PROXY_LOG}" 2>&1 &
     PROXY_PID=$!
 
     cleanup() {
@@ -150,12 +161,12 @@ if [ "${NEED_LLM}" = "1" ]; then
         echo "[run] ERROR: ${what} not up within ${VLLM_READY_TIMEOUT_SEC}s (${url})" >&2; return 1
     }
     wait_for_url "http://127.0.0.1:${VLLM_LLM_PORT}/v1/models" "vLLM text"
-    wait_for_url "http://127.0.0.1:${VLLM_VLM_PORT}/v1/models" "vLLM vision"
+    [ "${SKIP_VLM:-0}" = "1" ] || wait_for_url "http://127.0.0.1:${VLLM_VLM_PORT}/v1/models" "vLLM vision"
     wait_for_url "http://127.0.0.1:${PROXY_PORT}/healthz"      "proxy"
 
     export OPENAI_BASE_URL="http://127.0.0.1:${PROXY_PORT}/v1"
     export OPENAI_API_KEY="${OPENAI_API_KEY:-local-qwen}"
-    export CUDA_VISIBLE_DEVICES="${ORCH_GPU:-2}"   # orchestrator on GPU 2
+    export CUDA_VISIBLE_DEVICES="${ORCH_GPU:-${_orch_gpu_default}}"   # orchestrator GPU
     echo "[run] OPENAI_BASE_URL=${OPENAI_BASE_URL}; orchestrator on GPU ${CUDA_VISIBLE_DEVICES}"
 else
     # ── baselines: NO LLM. 1 GPU for the orchestrator (ManiSkill + diffusion).

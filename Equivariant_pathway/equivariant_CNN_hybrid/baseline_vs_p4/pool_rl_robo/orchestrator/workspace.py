@@ -15,6 +15,7 @@ from ..envs.env_setup import RESULTS_ROOT, SUITE_ROOT
 # aggregation/aggregate.py, and nb_plot.py.
 METHOD_DIR_NAMES = (
     "p4_top3",
+    "p4_subtask",  # improved P4-LLM: cluster-anchored sub-task-entry prescription
     "diff_dagger",
     "safe_dagger", "dropout_dagger", "ensemble_dagger",
     "thrifty_dagger", "stagger",

@@ -165,6 +165,10 @@ def register_envs() -> None:
     except Exception as exc:  # pragma: no cover - only PushT needs it
         print(f"[env_setup] note: PushT-Start-v0 not registered ({exc})")
     try:
+        from ..p4_subtask import envs as _subtask_envs  # noqa: F401  registers PushT-Subtask-v0
+    except Exception as exc:  # pragma: no cover - only p4_subtask needs it
+        print(f"[env_setup] note: PushT-Subtask-v0 not registered ({exc})")
+    try:
         from . import stackcube_start  # noqa: F401  registers StackCube-Start-v0
     except Exception as exc:  # pragma: no cover
         print(f"[env_setup] note: StackCube-Start-v0 not registered ({exc})")

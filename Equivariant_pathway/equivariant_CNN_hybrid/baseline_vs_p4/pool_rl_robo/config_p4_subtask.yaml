@@ -1,0 +1,82 @@
+# config_p4_subtask.yaml — improved P4-LLM (cluster-anchored sub-task entry) on
+# PushT-v1, EXACT equal-to-equal vs the existing diff_dagger runs
+# (jobs 98949/98950 = seeds 1/2). Every shared knob below is IDENTICAL to
+# config_astar_p4top3.yaml so the ONLY difference between arms is the
+# demo-acquisition rule. The bootstrap is NOT rebuilt: the launcher exports
+# P4_REUSE_INIT_CKPT=results/PushT-v1/run_<seed>/shared_baselines/init_ckpt.pth so
+# this arm LOADS the diff_dagger arm's exact initial policy.
+#
+# methods=["p4_subtask"] → orchestrator shared_dir = run_<seed>/shared_p4_subtask
+# (its own dir; never touches shared_baselines / diff_dagger). Results land in
+# results/PushT-v1/run_<seed>/p4_subtask/ ; exhaustive telemetry in
+# results/PushT-v1/run_<seed>/p4_subtask/results/telemetry/.
+
+n_runs: 1
+initial_demos: 20
+budget: 100
+demos_per_round: 1
+target_sr: 1.0            # stop only at 100% (or budget); 90% is read off the curve
+max_rounds: 100
+max_steps: 200
+heldout_n: 100
+seed: 1                   # overridden per-job by the launcher (seeds 1, 2)
+
+nd_retrain: 1             # retrain from scratch after every demo (matches diff_dagger)
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10         # render-safe; heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60      # low-noise rollout-SR so target early-stop doesn't false-fire
+max_episodes_per_arm: 5000
+
+methods: ["p4_subtask"]
+
+environments: ["PushT-v1"]
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8     # p4's per-step diffusion-loss N_b (matches config_astar.yaml)
+  # In-round retry caps: on empty prescription, re-prescribe (don't skip); on
+  # infeasible config (PPO expert can't solve it), re-prescribe — and the planner
+  # ESCALATES perturbed → exact-anchor → fresh-tee across these retries.
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  # null ⇒ fork's hardcoded prompts. All sub-task guidance reaches the LLM via the
+  # always-effective per-round addendum (fork hook B), so keep this null.
+  prompts_dir: null
+
+  # ── p4_subtask block ─────────────────────────────────────────────────────
+  # v2 (DAgger-faithful): demos are ON-POLICY expert corrections at REAL
+  # recorded failures — re-roll the chosen failure's scene seed with the current
+  # policy, expert takes over from the visited divergence state (p4_select's
+  # winning mechanism, which beat diff_dagger 5/5). The LLM selects WHICH
+  # failure mode/scene gets corrected (cluster + VLM + KAG + memory grounded);
+  # its pose output is snapped to the nearest recorded failure. NO synthetic
+  # states ever enter the dataset.
+  subtask:
+    enabled: true
+    # THIS FILE = the v2 (pure on-policy select) arm — live jobs 100252/100253
+    # read it with collect: onpolicy. The v3 hybrid arm lives in
+    # config_p4_hybrid.yaml (collect: hybrid). Do not flip this mid-run.
+    collect: onpolicy      # "hybrid" (v3) | "onpolicy" (v2) | "teleport" (v1)
+    signal: diffusion      # re-roll detector = policy's own diffusion loss
+                           # (identical to diff_dagger's query signal)
+    snap_eps: 0.02         # untagged pose within 2 cm of a member ⇒ treat as SELECT
+    bridge_max_xy: 0.10    # m — bridge pose must stay within this of nearest cited member
+    bridge_max_theta: 0.6  # rad — same for orientation
+    confirm_target_with_heldout: true  # rollout-SR target hit must be confirmed
+                                       # by the frozen held-out eval (fixes the
+                                       # 60/60-fluke premature stop seen in v1)
+    max_clusters: 6        # silhouette-chosen k upper bound when >3 failures/round
+    diversity: true        # farthest-point candidate selection for VLM analysis
+    memory_gamma: 0.6      # cross-round recency decay (coverage rotation)
+    memory_sigma: 0.06     # m — recency penalty Gaussian width
+    # v1 teleport-mode knobs (ignored when collect: onpolicy):
+    perturb_max_xy: 0.06
+    perturb_max_theta: 0.4
+    exact_anchor_fallback: true

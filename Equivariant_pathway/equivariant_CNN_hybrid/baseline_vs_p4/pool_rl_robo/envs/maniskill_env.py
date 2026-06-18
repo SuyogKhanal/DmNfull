@@ -69,25 +69,40 @@ def make_policy_env(cfg) -> Any:
 
 
 def make_eval_env(cfg, num_envs: Optional[int] = None) -> Any:
-    """The frozen vectorized held-out evaluator (eval_env block)."""
+    """The frozen vectorized held-out evaluator (eval_env block).
+
+    The eval env is pure forward-pass SR (it never calls render), so we force it
+    HEADLESS (render_mode=None). This drops its (num_envs-many) SAPIEN/Vulkan render
+    contexts — the contention that hangs the p4_top3 VLM rendering of failures (the
+    render test passes with only the policy+reposition render contexts; the live
+    10-env render-enabled eval pushed it over the edge). render_mode does not affect
+    physics/obs/success, so held-out SR is unchanged."""
     from hydra.utils import instantiate
+    from omegaconf import open_dict
     from diffdagger.util.maniskill_env import wrap_env
 
     if num_envs is not None:
         cfg.eval_env.num_envs = int(num_envs)
+    with open_dict(cfg.eval_env):
+        cfg.eval_env.render_mode = None
     eval_env = instantiate(cfg.eval_env)
     return wrap_env(eval_env, cfg.obs_keys, cfg.action_space)
 
 
-def make_reposition_env(cfg, suite_env_id: str) -> Optional[Any]:
+def make_reposition_env(cfg, suite_env_id: str, *, prefer_subtask: bool = False) -> Optional[Any]:
     """The env that honours an LLM-prescribed config. PushT → PushT-Start-v0
     (mutates _tee_init_xyz/_tee_init_zrot then reset). Returns None for tasks
-    without a reposition env wired yet."""
+    without a reposition env wired yet.
+
+    prefer_subtask=True (p4_subtask) swaps PushT-Start-v0 → PushT-Subtask-v0, a
+    strict superset that ALSO honours _agent_init_qpos (None ⇒ identical), so the
+    expert can start mid-task at the failure sub-task."""
     from diffdagger.util.maniskill_env import wrap_env
 
     spec = E.task_spec(suite_env_id)
     if spec.reposition_env_id is None:
         return None
+    repo_env_id = spec.reposition_env_id
     kw = dict(
         num_envs=1,
         obs_mode=cfg.obs_mode,
@@ -101,9 +116,13 @@ def make_reposition_env(cfg, suite_env_id: str) -> Optional[Any]:
     # PushT-Start-v0 takes tee_init_* kwargs; StackCube-Start-v0 takes the prescribed
     # cube poses via set_prescription() AFTER make (defaults to random), so pass no
     # task-specific init kwargs here.
-    if spec.reposition_env_id == "PushT-Start-v0":
+    if repo_env_id == "PushT-Start-v0":
         kw.update(tee_init_xyz=None, tee_init_zrot=None)
-    repo = gym.make(spec.reposition_env_id, **kw)
+        if prefer_subtask:
+            from ..p4_subtask import envs as _subtask_envs  # noqa: F401  registers PushT-Subtask-v0
+            repo_env_id = "PushT-Subtask-v0"
+            kw.update(agent_init_qpos=None)
+    repo = gym.make(repo_env_id, **kw)
     return wrap_env(repo, cfg.obs_keys, cfg.action_space)
 
 

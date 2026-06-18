@@ -491,6 +491,69 @@ def _collect_prescribed_demo(reposition_env, expert, cfg, pres, seed):
     return ep_tds, success, total, applied
 
 
+def _stackcube_descriptor(env, cfg, cand):
+    """V3-hybrid: replay a failed candidate's recorded actions to its t* and
+    snapshot the cube/grasp state (the clustering descriptor). Mirrors the prefix
+    replay in ``_correct_onpolicy_from``; reads cubeA/cubeB pose from the live env
+    (the select_arm engine has no meta.json). Returns None on any failure."""
+    from .stackcube_hybrid import StackCubeFailureDescriptor, yaw_from_quat_wxyz
+    try:
+        env.reset(seed=int(cand["seed"]))
+        env.set_action_space(cfg.action_space)
+        t_star = min(int(cand["t_star"]), len(cand["exec_actions"]))
+        for i in range(t_star):
+            env.step({"action": cand["exec_actions"][i]})
+        base = env.unwrapped
+        aP = base.cubeA.pose.p.reshape(-1)[:3].detach().cpu().numpy().tolist()
+        aQ = base.cubeA.pose.q.reshape(-1)[:4].detach().cpu().numpy().tolist()
+        bP = base.cubeB.pose.p.reshape(-1)[:3].detach().cpu().numpy().tolist()
+        bQ = base.cubeB.pose.q.reshape(-1)[:4].detach().cpu().numpy().tolist()
+        try:
+            g = base.agent.is_grasping(base.cubeA)
+            grasp = 1.0 if float(torch.as_tensor(g).reshape(-1)[0].item()) > 0.5 else 0.0
+        except Exception:
+            grasp = 0.0
+        return StackCubeFailureDescriptor(
+            episode_id=int(cand["seed"]), seed=int(cand["seed"]),
+            peak_loss=float(cand.get("peak_disc", 0.0)),
+            t_star=int(cand["t_star"]), T=max(1, int(cand.get("n_steps", 1))),
+            cubeA_xyz=[float(v) for v in aP], cubeA_zrot=yaw_from_quat_wxyz(aQ),
+            cubeB_xyz=[float(v) for v in bP], cubeB_zrot=yaw_from_quat_wxyz(bQ),
+            grasp=grasp, cand=cand)
+    except Exception as exc:
+        print(f"[p4_top3|hybrid] descriptor build failed "
+              f"({type(exc).__name__}: {exc})", flush=True)
+        return None
+
+
+def _hybrid_text_analysis(planner, cand):
+    """Text-only failure analysis for the StackCube hybrid — NO env.render(). The
+    suite policy env is built headless (no render camera), so VLM frame rendering
+    (_render_failure_frames → env.render()) DEADLOCKS on StackCube (SAPIEN/Vulkan).
+    p4_select avoids rendering for exactly this reason. The hybrid's actual decision
+    is driven by the cube cluster geometry + the prescriber decision context, so the
+    VLM analysis is only qualitative seasoning — derive a coarse root_cause/phase
+    from the cube + grasp state at t* instead."""
+    from .stackcube_hybrid import StackCubeHybridPlanner
+    d = planner._member_by_episode_id(int(cand.get("seed", -1))) if planner else None
+    prog = int(cand.get("t_star", 0)) / max(1, int(cand.get("n_steps", 1)))
+    if d is None:
+        return {"root_cause": "approach_failure", "phase": "pre_grasp",
+                "rationale": "text-only (no descriptor)"}
+    if d.grasp > 0.5:
+        rc, ph = "placement_error", "placement"
+    elif not StackCubeHybridPlanner._select_feasible(d):
+        rc, ph = "contact_instability", "transport"
+    elif prog < 0.5:
+        rc, ph = "grasp_failure", "grasp"
+    else:
+        rc, ph = "approach_failure", "pre_grasp"
+    return {"root_cause": rc, "phase": ph,
+            "rationale": (f"text-only: grasp={'yes' if d.grasp > 0.5 else 'no'}, "
+                          f"cubeA=({round(d.cubeA_xyz[0], 2)},{round(d.cubeA_xyz[1], 2)}), "
+                          f"progress={round(prog, 2)}")}
+
+
 def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
                     make_policy, make_dataset, init_ckpt: str, init_sr: float,
                     work_dir: str, budget: int, nd_retrain: int, target_sr: float,
@@ -517,6 +580,22 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
     represcribe_attempts = int(hp.get("represcribe_attempts", 5))
     infeasible_attempts = int(hp.get("infeasible_attempts", 5))
     rng = random.Random(0xC0FFEE + seed)
+
+    # V3 HYBRID (StackCube): when p4.subtask.collect == "hybrid", the LLM DECIDES
+    # per round between SELECT (on-policy correct a real failure) and BRIDGE
+    # (prescribe a middle-ground cube layout). Absent ⇒ planner is None ⇒ p4_top3
+    # stays byte-identical (pure prescription), preserving the apples-to-apples bar.
+    subtask_cfg = dict(hp.get("subtask", {}) or {})
+    hybrid_planner = None
+    # VLM frame rendering deadlocks on the headless StackCube policy env, so the
+    # hybrid defaults to TEXT-ONLY failure analysis (p4_select's robust approach).
+    # Set p4.subtask.use_vlm: true to opt back into rendering (only if a render
+    # camera is wired). Plain p4_top3 (planner None) keeps its original behaviour.
+    use_vlm = True
+    if str(subtask_cfg.get("collect", "")).lower() == "hybrid":
+        from .stackcube_hybrid import StackCubeHybridPlanner
+        hybrid_planner = StackCubeHybridPlanner(work_dir=work_dir, cfg=subtask_cfg)
+        use_vlm = bool(subtask_cfg.get("use_vlm", False))
     spec = E.task_spec(suite_env_id)
     task_desc = spec.task_description
     kag_text = KAG.load_kag_text(suite_env_id)
@@ -598,31 +677,45 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
     last_trained = 0
     ep_seed = 0
     episodes = 0
+    rnd_idx = 0                       # hybrid: round index for cluster/coverage memory
     max_episodes = int(hp.get("max_episodes", 1000))
     stopped = "max_rounds"
 
     def _prescribe_and_collect():
         """Render+VLM+reason the top-3 failures, then LLM-prescribe ONE cube layout
-        and have the motion planner solve it; re-prescribe (banking infeasible
-        layouts) until a demo is kept or infeasible_attempts is exhausted. Returns
-        (ep_tds|None, applied|None)."""
+        and collect a demo; re-prescribe (banking infeasible layouts) until a demo
+        is kept or infeasible_attempts is exhausted. Returns (ep_tds|None,
+        applied|None).
+
+        V3-HYBRID: when ``hybrid_planner`` is set, a decision-context block is
+        appended to the prescriber prompt and the prescriber's rationale carries a
+        SELECT/BRIDGE tag. SELECT → on-policy correction of the cited REAL failure
+        (``_correct_onpolicy_from``); BRIDGE → motion-planner solve of the
+        prescribed middle-ground layout (``_collect_prescribed_demo``). Each retry
+        escalates to SELECT (safety floor). Plain p4_top3 (planner None) is
+        unchanged."""
         # render + VLM analyze + reason each of the top-3
         analyses, fsum = [], []
         for ci, cand in enumerate(top):
-            try:
-                frames = _render_failure_frames(env, cfg, cand, render_dir,
-                                                ep_id=ep_seed * 10 + ci)
-                vr = VLM.analyze_failure(client, task_desc, frames, int(cand["t_star"]))
-                an = analyzer.run(vr)
-            except Exception as exc:
-                print(f"[p4_top3] analyze failed ({type(exc).__name__}: {exc})", flush=True)
-                an = {"root_cause": "approach_failure", "phase": "pre_grasp", "rationale": ""}
+            an = None
+            if use_vlm and client is not None:
+                try:
+                    frames = _render_failure_frames(env, cfg, cand, render_dir,
+                                                    ep_id=ep_seed * 10 + ci)
+                    vr = VLM.analyze_failure(client, task_desc, frames, int(cand["t_star"]))
+                    an = analyzer.run(vr)
+                except Exception as exc:
+                    print(f"[p4_top3] analyze failed ({type(exc).__name__}: {exc})", flush=True)
+                    an = None
+            if an is None:   # text-only (no render) — default for the StackCube hybrid
+                an = _hybrid_text_analysis(hybrid_planner, cand)
             analyses.append(an)
             fsum.append({"t_star": int(cand["t_star"]),
                          "peak_loss": round(float(cand["peak_disc"]), 4),
                          "final_dist": None, "steps": int(cand["n_steps"]),
                          "root_cause": an.get("root_cause"), "phase": an.get("phase")})
         analysis_json = json.dumps(analyses)
+        decision_block = hybrid_planner.decision_addendum() if hybrid_planner else ""
         infeasible_history: List[Dict] = []
         for attempt in range(max(1, infeasible_attempts)):
             demo_seed = 90000 + interventions * 100 + attempt
@@ -630,13 +723,36 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
                 pres = None    # env-sampled (random) corrective config
             else:
                 try:
-                    pres = prescriber.prescribe(
-                        analysis_json, fsum,
-                        extra_addendum=_infeasible_addendum(infeasible_history))
+                    add = _infeasible_addendum(infeasible_history)
+                    if decision_block:
+                        add = (add + "\n\n" + decision_block) if add else decision_block
+                    pres = prescriber.prescribe(analysis_json, fsum, extra_addendum=add)
                 except PrescriptionEmptyError as exc:
                     print(f"[p4_top3] empty prescription ({exc}); "
                           f"falling back to random config", flush=True)
                     pres = None
+
+            if hybrid_planner is not None:
+                spec = hybrid_planner.decide(pres, attempt=attempt)
+                if spec.mode == "onpolicy_correction":
+                    ep_tds, ok, esteps = _correct_onpolicy_from(
+                        env, expert, policy, cfg, spec.cand)
+                    applied = {"mode": "select", "choice": spec.choice,
+                               "seed": spec.seed, "episode_id": spec.episode_id}
+                else:  # bridge → prescribed middle-ground cube layout
+                    ep_tds, ok, esteps, layout = _collect_prescribed_demo(
+                        reposition_env, expert, cfg, spec.layout, demo_seed)
+                    applied = {"mode": "bridge", "choice": spec.choice,
+                               "cited": spec.cited, **(layout or {})}
+                hybrid_planner.note_collect(
+                    spec, {"success": ok, "episode_length": esteps, "applied": applied},
+                    attempt=attempt)
+                if ok and ep_tds:
+                    return ep_tds, applied
+                infeasible_history.append({**(applied or {}),
+                                           "reason": f"unsolved in {esteps} steps"})
+                continue
+
             ep_tds, ok, esteps, applied = _collect_prescribed_demo(
                 reposition_env, expert, cfg, pres, demo_seed)
             if ok and ep_tds:
@@ -657,6 +773,11 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
         fails = [c for c in cands if not c["success"]]
         if not fails:
             continue
+        if hybrid_planner is not None:
+            descs = [d for d in (_stackcube_descriptor(env, cfg, c) for c in fails)
+                     if d is not None]
+            hybrid_planner.set_round(rnd_idx, descs)
+            rnd_idx += 1
         top = sorted(fails, key=lambda c: -c["peak_disc"])[:3]
         ep_tds, applied = _prescribe_and_collect()
         added = 0

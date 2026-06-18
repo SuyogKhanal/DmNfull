@@ -1,0 +1,57 @@
+# config_stack_hybrid_smoke.yaml — FAST validation of the StackCube V3 hybrid.
+#
+# NOT a result: a low-budget / few-epoch smoke to confirm the new hybrid code path
+# runs end-to-end on the real env + LLM with no errors — descriptor build (replay a
+# failed candidate → read cubeA/cubeB pose), the LLM SELECT/BRIDGE decision through
+# the cube prescriber, and BOTH dispatch primitives (SELECT → _correct_onpolicy_from,
+# BRIDGE → _collect_prescribed_demo). A SMALL 20-demo bootstrap (~0% init) guarantees
+# every round has failures so the hybrid actually fires; budget=4 lets the LLM make
+# several decisions (expect a SELECT/BRIDGE mix in telemetry). Few epochs keep it ~15min.
+#
+# Launch (3 GPUs + vLLM):
+#   ENV=StackCube-v1 METHODS=p4_top3 SEED=1 RUN_ID=990 \
+#     CONFIG=$(pwd)/config_stack_hybrid_smoke.yaml \
+#     sbatch --array=1 --gpus-per-node=3 --time=04:00:00 run_pool_rl_robo.sh
+
+n_runs: 1
+initial_demos: 20          # tiny ~0% bootstrap → plentiful failures → hybrid fires
+budget: 4                  # a few corrective demos → several SELECT/BRIDGE decisions
+demos_per_round: 1
+target_sr: 1.0
+max_rounds: 8
+max_steps: 200
+heldout_n: 10
+seed: 1
+
+nd_retrain: 1
+initial_epochs: 3          # FAST (not a real bootstrap)
+round_epochs: 3
+max_train_steps: 400
+eval_num_envs: 10
+rollout_episodes: 10
+max_episodes_per_arm: 200
+
+methods: ["p4_top3"]
+
+environments: ["StackCube-v1"]
+
+p4_select:
+  n_cand: 6
+
+baselines:
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 5}
+
+p4:
+  high_loss_percentile: 95
+  phase_b_workers: 1
+  batch_multiplier: 8
+  represcribe_attempts: 3
+  infeasible_attempts: 3
+  subtask:
+    collect: hybrid
+    signal: diffusion
+    use_vlm: true            # validate the VLM render+analyze path (3-GPU, h100)
+    max_clusters: 4
+    snap_eps: 0.03
+    memory_gamma: 0.6
+    memory_sigma: 0.05

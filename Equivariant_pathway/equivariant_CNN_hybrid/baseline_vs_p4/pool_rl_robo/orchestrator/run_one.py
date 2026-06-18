@@ -25,6 +25,9 @@ DEFAULT_CONFIG = SUITE_ROOT / "config.yaml"
 # p4_top3 is the LLM method with top-k=3 failure analysis.
 METHOD_SPEC = {
     "p4_top3":         ("p4",       3),
+    # Improved P4-LLM: cluster-anchored sub-task-entry prescription (replaces
+    # the losing p4_top3). Run via config_p4_subtask.yaml.
+    "p4_subtask":      ("p4_subtask", 3),
     "diff_dagger":     ("baseline", "diff_dagger"),
     "safe_dagger":     ("baseline", "safe_dagger"),
     "dropout_dagger":  ("baseline", "dropout_dagger"),

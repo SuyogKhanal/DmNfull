@@ -1,0 +1,77 @@
+# config_stack_hybrid.yaml — Diff-DAgger vs P4-LLM **V3 HYBRID** on StackCube-v1.
+#
+# The apples-to-apples comparison: BOTH arms share a 200-demo warm-start bootstrap
+# (held-out SR ~0.51 — off the floor, with headroom; see the bootstrap sweep
+# `tools/sweep_stackcube_bootstrap.py`), retrain from scratch after every demo
+# (nd_retrain=1), and are scored on the SAME frozen held-out set (seed 7777, 100
+# eps). StackCube very likely won't reach 100% in budget=60, so target_sr=1.0 means
+# both arms run to budget and we compare SR-vs-demos curves + demos-to-threshold.
+#
+# Arms (only the demo-acquisition rule differs):
+#   diff_dagger — native diffusion-loss CDF query; corrects the first uncertain run.
+#   p4_top3     — with `p4.subtask.collect: hybrid` this becomes the V3 HYBRID:
+#                 the LLM DECIDES per round between SELECT (on-policy correct one
+#                 cited REAL failure) and BRIDGE (prescribe a middle-ground cube
+#                 layout solved by the motion-planner expert). Plain p4_top3 (pure
+#                 prescription) is recovered by removing the `subtask` block.
+#
+# Run order (de-risked): run diff_dagger FIRST per seed (1 GPU, no LLM) → it builds
+# run_<seed>/shared_baselines/init_ckpt.pth; then the hybrid (3 GPUs + LLM) reuses
+# that EXACT bootstrap via P4_REUSE_INIT_CKPT (byte-identical shared start).
+
+n_runs: 2
+initial_demos: 200         # warm-start bootstrap → ~51% shared start
+budget: 60                 # corrective-demo budget from the warm start
+demos_per_round: 1
+target_sr: 1.0             # stop at budget OR 100%; read demos-to-X% off the curve
+max_rounds: 100
+max_steps: 200
+heldout_n: 100
+seed: 1                    # overridden per-job by the launcher
+
+nd_retrain: 1              # BOTH arms retrain from scratch after every demo
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10          # heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60
+max_episodes_per_arm: 5000
+
+methods: ["diff_dagger", "p4_top3"]
+
+environments: ["StackCube-v1"]
+
+p4_select:
+  n_cand: 6                # candidate rollouts/round (also p4_top3's)
+
+baselines:
+  # batch_multiplier=5 → N_b = num_train_timesteps(100)*5 = 500 ≈ paper 512.
+  # The hybrid's detector is forced IDENTICAL to this (orchestrator copies
+  # alpha/patience/batch_multiplier onto the p4 detector) so the only difference
+  # between the arms is WHICH failure is corrected — apples-to-apples.
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 5}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  # ── V3 HYBRID knobs (read inside run_p4_top3_arm via hp["subtask"]) ──
+  subtask:
+    collect: hybrid          # hybrid ⇒ LLM decides SELECT vs BRIDGE each round
+    signal: diffusion        # detection signal (same as diff_dagger)
+    use_vlm: true            # full P4 pipeline (VLM analyzes rendered failures), as PushT
+    max_clusters: 4          # silhouette k-sweep ceiling over the round's failures
+    snap_eps: 0.03           # prescribed cubeA within this (m) of a member ⇒ SELECT it
+    memory_gamma: 0.6        # cross-round coverage-rotation recency decay
+    memory_sigma: 0.05       # coverage-rotation Gaussian width (m)

@@ -66,6 +66,8 @@ def resolve_knobs(scfg: Dict[str, Any], args) -> Dict[str, Any]:
         "p4_represcribe_attempts": int(scfg.get("p4", {}).get("represcribe_attempts", 5)),
         "p4_infeasible_attempts": int(scfg.get("p4", {}).get("infeasible_attempts", 5)),
         "p4_prompts_dir": scfg.get("p4", {}).get("prompts_dir"),
+        # p4_subtask: cluster-anchored sub-task-entry knobs (absent ⇒ inert).
+        "p4_subtask": dict(scfg.get("p4", {}).get("subtask", {}) or {}),
         "p4_select_n_cand": int(scfg.get("p4_select", {}).get("n_cand", 6)),
         # cap on episodes/arm — raise it when nd=1 + run-to-budget so an arm can
         # actually spend the full demo budget (diff_dagger needs many rollouts to
@@ -210,7 +212,10 @@ def run_method(*, method: str, spec, cfg, env, eval_env, reposition_env, expert,
                   "n_cand": int(k.get("p4_select_n_cand", 6)),
                   "max_episodes": int(k["max_episodes_per_arm"]),
                   "represcribe_attempts": int(k.get("p4_represcribe_attempts", 5)),
-                  "infeasible_attempts": int(k.get("p4_infeasible_attempts", 5))}
+                  "infeasible_attempts": int(k.get("p4_infeasible_attempts", 5)),
+                  # V3 hybrid (StackCube): p4.subtask.collect=="hybrid" turns this
+                  # arm into the SELECT/BRIDGE hybrid; absent ⇒ plain p4_top3.
+                  "subtask": dict(k.get("p4_subtask", {}) or {})}
             return PS.run_p4_top3_arm(
                 method=method, env=env, eval_env=eval_env, reposition_env=reposition_env,
                 expert=expert, cfg=cfg, make_policy=make_policy, make_dataset=make_dataset,
@@ -222,6 +227,18 @@ def run_method(*, method: str, spec, cfg, env, eval_env, reposition_env, expert,
                 suite_env_id=env_id, llm_client_on=llm_client_on)
         from ..p4 import pipeline as P4
         return P4.run_p4_arm(
+            method=method, top_k=int(sel), cfg=cfg, env=env, eval_env=eval_env,
+            reposition_env=reposition_env, expert=expert, make_policy=make_policy,
+            make_dataset=make_dataset, init_ckpt=init_ckpt, init_sr=init_sr,
+            work_dir=str(results_dir), k=k, suite_env_id=env_id,
+            llm_client_on=llm_client_on)
+
+    if method == "p4_subtask":
+        # Improved P4-LLM (PushT only): same fork engine as p4_top3 + an injected
+        # SubtaskPlanner (cluster → dominant cluster → coverage centroid → anchor)
+        # that starts the expert MID-TASK at the reconstructed failure sub-task.
+        from ..p4_subtask import pipeline as P4S
+        return P4S.run_p4_subtask_arm(
             method=method, top_k=int(sel), cfg=cfg, env=env, eval_env=eval_env,
             reposition_env=reposition_env, expert=expert, make_policy=make_policy,
             make_dataset=make_dataset, init_ckpt=init_ckpt, init_sr=init_sr,
@@ -338,6 +355,12 @@ def run_suite(args, method_spec: Dict[str, Any], config_path: Path,
         tag = "p4_select"
         shared_dir = ws.root / "shared_p4_select"
         summary_filename = "run_summary_p4_select.json"
+    elif methods == ["p4_subtask"]:
+        # Own shared dir + summary so a p4_subtask job never clobbers the
+        # baselines'/diff_dagger's shared_baselines or run_summary_baselines.json.
+        tag = "p4_subtask"
+        shared_dir = ws.root / "shared_p4_subtask"
+        summary_filename = "run_summary_p4_subtask.json"
     elif "p4_top3" not in methods:
         tag = "baselines"
         shared_dir = ws.root / "shared_baselines"
@@ -355,13 +378,18 @@ def run_suite(args, method_spec: Dict[str, Any], config_path: Path,
 
     env = MS.make_policy_env(cfg)
     eval_env = MS.make_eval_env(cfg, num_envs=k["eval_num_envs"])
-    need_repo = any(m == "p4_top3" for m in methods)   # only prescribe-and-load
-    reposition_env = MS.make_reposition_env(cfg, args.env) if need_repo else None
+    # prescribe-and-load methods need a reposition env; p4_subtask needs the
+    # superset PushT-Subtask-v0 (honours _agent_init_qpos for the sub-task entry).
+    need_subtask = any(m == "p4_subtask" for m in methods)
+    need_repo = any(m in ("p4_top3", "p4_subtask") for m in methods)
+    reposition_env = (MS.make_reposition_env(cfg, args.env, prefer_subtask=need_subtask)
+                      if need_repo else None)
     expert = ExpertCallCounter(X.load_expert(cfg, args.env))  # secondary cost axis
     make_policy = PF.policy_factory(cfg)
     make_dataset = PF.dataset_factory(cfg)
-    # Any LLM method enables the client: p4_top3 (prescribe) or p4_select (select).
-    llm_client_on = (not args.no_llm) and any(m in ("p4_top3", "p4_select") for m in methods)
+    # Any LLM method enables the client: p4_top3 / p4_subtask (prescribe) or p4_select.
+    llm_client_on = (not args.no_llm) and any(
+        m in ("p4_top3", "p4_select", "p4_subtask") for m in methods)
 
     # ── shared bootstrap: ONE initial diffusion policy for all arms ──
     _seed_everything(k["seed"])
