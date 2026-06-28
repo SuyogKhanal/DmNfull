@@ -1,0 +1,63 @@
+# config_plug_hybrid_smoke.yaml — FAST smoke of the PlugCharger V3-hybrid code path.
+#
+# NOT a learning run — tiny everything. Validates end-to-end on GPU that:
+#   * the orchestrator dispatches PlugCharger-v1 (motionplanner) → run_p4_top3_arm,
+#   * the bootstrap collects PlugCharger demos (strengthened planner) + trains,
+#   * _plugcharger_descriptor builds from the live env (charger/receptacle/grasp),
+#   * the LLM decides SELECT vs BRIDGE and it parses,
+#   * SELECT (_correct_onpolicy_from) and BRIDGE (PlugCharger-Start-v0 set_prescription
+#     + motion-planner solve) both fire and collect a demo,
+#   * no render hang (text-only), no shape/dim errors (ee_pose_6d dim 10).
+# Run via submit_plug_smoke.sh (RUN_ID=991, 2 GPUs text-only, no bootstrap reuse).
+
+n_runs: 1
+initial_demos: 8           # tiny warm-start (weak policy ⇒ plenty of failures to cluster)
+budget: 4                  # 4 hybrid rounds (enough to see SELECT and BRIDGE)
+demos_per_round: 1
+target_sr: 1.0
+max_rounds: 8
+max_steps: 550
+heldout_n: 20              # tiny eval (20 % eval_num_envs(10) == 0)
+seed: 991
+
+nd_retrain: 1              # retrain+eval every round (exercise the full loop fast)
+initial_epochs: 20
+round_epochs: 10
+max_train_steps: 2000
+eval_num_envs: 10
+rollout_episodes: 6
+max_episodes_per_arm: 300
+
+methods: ["p4_top3"]
+
+environments: ["PlugCharger-v1"]
+
+p4_select:
+  n_cand: 4
+
+baselines:
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 8}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  subtask:
+    collect: hybrid
+    signal: diffusion
+    use_vlm: true            # FULL P4 (VLM+LLM+orch, 3-GPU) — smoke the VLM render path
+    max_clusters: 3
+    snap_eps: 0.02
+    memory_gamma: 0.6
+    memory_sigma: 0.03

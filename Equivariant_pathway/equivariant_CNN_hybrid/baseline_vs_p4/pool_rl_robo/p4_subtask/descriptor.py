@@ -16,7 +16,8 @@ for PushT, which uses a scalar z-rotation).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
@@ -51,6 +52,38 @@ def _peak_frame(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _frame_paths(ep_dir: str, meta: Dict[str, Any]) -> Dict[str, str]:
+    """Absolute paths to a failure's rendered key-frames for visual embedding:
+    start_frame.png, the PEAK high-loss frame (high_loss/<file>), end_frame.png.
+    Files that don't exist are dropped; peak falls back to start when there is no
+    high-loss frame. Returns {} when nothing renders (planner → geometric)."""
+    out: Dict[str, str] = {}
+    start = meta.get("start_frame_filename") or "start_frame.png"
+    end = meta.get("end_frame_filename") or "end_frame.png"
+    sp = os.path.join(ep_dir, start)
+    ep = os.path.join(ep_dir, end)
+    if os.path.exists(sp):
+        out["start"] = sp
+    # peak = highest-loss buffered frame (lives in the high_loss/ subdir)
+    best, best_loss, best_name = None, -1.0, None
+    for fr in (meta.get("high_loss_frames") or []):
+        fn = fr.get("filename")
+        if not fn:
+            continue
+        dl = fr.get("diffusion_loss")
+        dl = float(dl) if isinstance(dl, (int, float)) else -1.0
+        if best is None or dl > best_loss:
+            best, best_loss, best_name = fr, dl, fn
+    if best_name:
+        pp = os.path.join(ep_dir, "high_loss", best_name)
+        if os.path.exists(pp):
+            out["peak"] = pp
+    out.setdefault("peak", out.get("start", sp))
+    if os.path.exists(ep):
+        out["end"] = ep
+    return out
+
+
 @dataclass
 class FailureDescriptor:
     ep_dir: str
@@ -66,6 +99,11 @@ class FailureDescriptor:
     arm_qpos: List[float]    # 7 arm joints
     full_qpos: List[float]   # 9 (arm + gripper) — what robot.set_qpos wants
     tcp_xyz: List[float]     # [x, y, z]
+    # IMAGE-based runs only: absolute paths to the rendered key-frames
+    # (start / peak-loss t* / end) and the round-reduced R3M trajectory
+    # embedding. visual_embedding stays None for state-based / geometric runs.
+    frame_paths: Dict[str, str] = field(default_factory=dict)
+    visual_embedding: Optional[List[float]] = None
 
     def feature(self) -> List[float]:
         """6-d clustering feature: tee position, tee orientation (sin/cos),
@@ -78,6 +116,15 @@ class FailureDescriptor:
         return [self.tee_xyz[0], self.tee_xyz[1],
                 math.sin(self.tee_theta), math.cos(self.tee_theta),
                 float(progress), float(tcp_to_tee)]
+
+    def cluster_feature(self) -> List[float]:
+        """The vector clustering + diversity operate on. Visual (R3M) embedding
+        for image-based runs when one was attached this round, else the 6-D
+        geometric feature. Prescription/reset NEVER use this — they use the raw
+        tee/qpos geometry — so the swap is confined to mode discovery."""
+        if self.visual_embedding is not None:
+            return list(self.visual_embedding)
+        return self.feature()
 
     def digest(self) -> Dict[str, Any]:
         return {
@@ -123,4 +170,5 @@ def load_failure_descriptor(ep_dir: str, meta: Dict[str, Any]) -> Optional[Failu
         t_star=t_star, T=max(1, T),
         tee_xyz=tee_xyz, tee_theta=float(theta),
         arm_qpos=arm, full_qpos=full, tcp_xyz=tcp_xyz,
+        frame_paths=_frame_paths(str(ep_dir), meta),
     )

@@ -134,7 +134,11 @@ def _choose_k(n: int, max_k: int) -> int:
 def cluster_failures(descs: List[FailureDescriptor], *, max_k: int = 6) -> ClusterResult:
     """Cluster failures; return clusters + the dominant pick."""
     n = len(descs)
-    feats = np.asarray([d.feature() for d in descs], dtype=float)
+    # cluster_feature() == the R3M visual embedding for image-based runs (when one
+    # was attached this round), else the 6-D geometric feature. The cluster
+    # GEOMETRY below (centroid_xyz/theta from raw tee pose) is unchanged either
+    # way, so prescription/reset stay geometric regardless of the feature space.
+    feats = np.asarray([d.cluster_feature() for d in descs], dtype=float)
 
     if n == 0:
         return ClusterResult([], [], "empty", None)

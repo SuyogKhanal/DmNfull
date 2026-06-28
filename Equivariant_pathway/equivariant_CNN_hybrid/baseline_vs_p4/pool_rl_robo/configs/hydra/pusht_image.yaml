@@ -1,0 +1,166 @@
+# pusht_image.yaml — IMAGE-based PushT-v1 Hydra config (suite-local; the fork is
+# never edited). A near-clone of the fork's pusht_state.yaml with ONE change of
+# substance: the diffusion policy observes a CAMERA IMAGE instead of the
+# privileged tee pose. This is the image-based comparison from the Diff-DAgger
+# paper (Table III, Pushing 1-Expert Image), run apples-to-apples for BOTH arms
+# (diff_dagger and p4_subtask) — selected via $SUITE_HYDRA_CFG in the launchers.
+#
+# What changed vs pusht_state.yaml:
+#   obs_mode  state_dict → rgb              (PushT-v2 base_camera, 256x256)
+#   obs_keys  drop privileged extra_obj_pose; ADD sensor_data_base_camera_rgb
+#             → the POLICY must read the T's pose from the image (proprio = robot
+#               joints + stick TCP only). The EXPERT keeps full privileged state
+#               (it reads the raw env, not cfg.obs_keys), so demos are unaffected.
+#   proprio_dim 21 → 14                     (agent_qpos[7] + extra_tcp_pose[7])
+#   vision encoder: R3M(ResNet18) FINETUNED end-to-end with spatial-softmax +
+#     group-norm — the paper's exact image recipe (Table III/IV), targeting the
+#     ~0.87 image SR. Frozen R3M (global 512-d) plateaued ~0.30 on this tight-
+#     alignment task because it loses spatial localization; spatial-softmax +
+#     finetuning restores it. Applied IDENTICALLY to both arms → fair.
+#   obs_dim (auto) = 512*(1+spatial_softmax)*n_views + proprio_dim = 512*2*1 + 14 = 1038
+# Everything else (PPO expert, rel_joint_pos action, DDIM scheduler, horizons,
+# train budget) is byte-identical to pusht_state.yaml so the ONLY axis that moves
+# between the state and image studies is the observation.
+
+env_id: PushT-v2
+obs_mode: rgb
+control_mode: pd_joint_pos
+render_mode: rgb_array
+max_episode_steps: 250
+num_init_ep: 20
+
+# obs_keys = the ENV-FILTER set. It INCLUDES the privileged extra_obj_pose (tee
+# pose) because the p4 arm's failure-state extractor (fork high_loss_image_saver.
+# _extract_env_state) reads obs["agent_qpos"/"extra_tcp_pose"/"extra_obj_pose"] to
+# build the geometric descriptor/reset — privileged info, like the expert. The
+# POLICY does NOT see it: policy.obs_keys (below) is image-only, so the diffusion
+# policy must still read the T from the image. (sensor_data_base_camera_rgb is the
+# flattened ManiSkill key for PushT-v2 base_camera under obs_mode=rgb.)
+obs_keys: [agent_qpos, extra_tcp_pose, extra_obj_pose, sensor_data_base_camera_rgb]
+proprio_dim: 14   # policy proprio = agent_qpos(7) + extra_tcp_pose(7); obj_pose is NOT a policy input
+latent_dim: 0
+action_space: rel_joint_pos #ee_pose_6d joint_pos
+action_dim: ${if:"'joint_pos' in '${action_space}'", 7, 9}
+device: cuda
+obs_horizon: 1
+pred_horizon: 32
+action_horizon: 2
+prediction_type: v_prediction #epsilon sample v_prediction
+
+dataset_dir: /weka/s226137394/diff-dagger/PushTEnv
+normalizers_path: diffdagger/assets/normalizers/normalizers.pth
+save_file_dir: ${dataset_dir}/results/image_${prediction_type}_${action_space}_tf_${train_freq}_${policy.patience}_temp
+
+max_train_steps: 30000
+epoch: 300
+train_freq: 4
+wait_timestep: 10
+chkpt_dir: ${save_file_dir}
+
+dataset:
+    _target_: dataset.datasets.TimeSeriesDataset
+    dataset_path: []
+    load_count: 0
+    obs_keys: ${obs_keys}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    validation_ratio: 0.0
+    device: ${device}
+
+env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 1
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.01
+
+eval_env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 100
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.00
+
+expert:
+    _target_: agents.RL_agent.MultipleExperts
+    model:
+        _target_: model.RL.PPO
+        obs_dim: 29
+        action_dim: 7
+    ckpts:
+    - diffdagger/assets/expert/PushTHard_98_cw_202503033128.pth
+    obs_keys: [agent_qpos, agent_qvel, extra_tcp_pose, extra_obj_pose, extra_inter_area]
+    action_space: joint_pos
+    max_episode_steps: 120
+    success_mode: true
+    device: ${device}
+
+policy:
+    _target_: agents.diffusion_policy.DiffDAggerPolicy
+
+    model:
+        _target_: model.unet1d.ConditionalUnet1D
+        input_dim: ${action_dim}
+        global_cond_dim: null
+        diffusion_step_embed_dim: 256
+        down_dims: [256, 512, 1024]
+        kernel_size: 5
+        n_groups: 8
+
+    # POLICY input = IMAGE-ONLY (drops the privileged extra_obj_pose that the
+    # env-filter obs_keys exposes for _extract_env_state). The policy reads the T
+    # from the camera, never the ground-truth pose → true image-based comparison.
+    obs_keys: [agent_qpos, extra_tcp_pose, sensor_data_base_camera_rgb]
+    proprio_dim: ${proprio_dim}
+    latent_dim: ${latent_dim}
+    action_dim: ${action_dim}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    vision_model: r3m
+    frozen_encoder: false           # FINETUNE R3M end-to-end (paper recipe, targets ~0.87)
+    obs_encoder_group_norm: true    # paper: BN→GroupNorm for finetuning stability
+    spatial_softmax: true           # spatial keypoints → localization (obs_dim = 512*2*1 + 14 = 1038)
+
+    num_inference_steps: 16
+    noise_scheduler:
+        _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+        num_train_timesteps: 16
+        beta_start: 0.0001
+        beta_end: 0.02
+        beta_schedule: squaredcos_cap_v2
+        prediction_type: ${prediction_type}
+    optim:
+        _target_: torch.optim.AdamW
+        lr: 0.0003
+        weight_decay: 0.01
+        betas: [0.9, 0.99]
+        fused: true
+    scheduler:
+        _target_: diffusers.optimization.get_scheduler
+        name: cosine
+        num_warmup_steps: 500
+
+    ### DAgger
+    alpha: 0.99
+    batch_multiplier: 32
+    num_per_batch: 1
+    patience: 2
+    patience_window: ${policy.patience}
+
+train:
+    accelerator: "auto"  # or "gpu", "cpu"
+    devices: 1  # or number of GPUs
+    train_steps: null
+    train_bs: 64 # or whatever your train batch size is.

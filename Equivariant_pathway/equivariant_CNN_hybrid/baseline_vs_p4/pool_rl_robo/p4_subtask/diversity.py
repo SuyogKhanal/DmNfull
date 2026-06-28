@@ -31,7 +31,9 @@ def farthest_point_select(descs: List[FailureDescriptor], k: int,
     if n == 0:
         return []
     k = max(1, min(int(k), n))
-    feats = np.asarray([d.feature() for d in descs], dtype=float)
+    # Same feature space as clustering: R3M visual embedding (image-based) or the
+    # 6-D geometric feature, via cluster_feature().
+    feats = np.asarray([d.cluster_feature() for d in descs], dtype=float)
     Xs = _standardize(feats) if n > 1 else feats
 
     selected: List[int] = []

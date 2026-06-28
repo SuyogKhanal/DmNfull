@@ -1,0 +1,68 @@
+# config_pusht_image_smoke.yaml — FAST smoke of the IMAGE-based PushT code path.
+#
+# NOT a learning run — tiny everything. Validates end-to-end on a GPU node that:
+#   * BOTH arms build/train an IMAGE diffusion policy (obs_mode=rgb, frozen R3M)
+#     from a freshly collected bootstrap — no pre-existing image dataset needed,
+#   * the PushT-v2 base_camera rgb obs flows through the policy + held-out eval,
+#   * collected expert demos carry rgb (on-policy re-roll AND bridge paths),
+#   * p4_subtask clusters failures in the VISUAL (R3M) space (cluster_features:
+#     visual) — frames embed, PCA reduces, clustering picks a target, the LLM
+#     SELECT/BRIDGE parses, a demo collects, telemetry "visual_embed" = ok,
+#   * the VLM renders + reads PushT failure frames (3 GPUs) with no Vulkan hang.
+# Run via submit_pusht_img_smoke.sh (RUN_ID=990, 3 GPUs, h100|h200, no reuse).
+
+n_runs: 1
+initial_demos: 6           # tiny warm-start (weak image policy ⇒ plenty of failures)
+budget: 3                  # 3 hybrid rounds (enough to see SELECT and BRIDGE + visual embed)
+demos_per_round: 1
+target_sr: 1.0
+max_rounds: 6
+max_steps: 200
+heldout_n: 20              # tiny eval (20 % eval_num_envs(10) == 0)
+seed: 990
+
+nd_retrain: 1              # retrain+eval every round (exercise the full loop fast)
+initial_epochs: 20
+round_epochs: 10
+max_train_steps: 2000
+eval_num_envs: 10
+rollout_episodes: 6
+max_episodes_per_arm: 300
+
+methods: ["diff_dagger", "p4_subtask"]
+
+environments: ["PushT-v1"]
+
+baselines:
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 8}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  prompts_dir: null
+  subtask:
+    enabled: true
+    collect: hybrid
+    signal: diffusion
+    cluster_features: visual   # the IMAGE-study addition under test
+    embed_model: r3m
+    embed_pool: concat
+    embed_pca_dim: 16
+    max_clusters: 3
+    snap_eps: 0.02
+    bridge_max_xy: 0.10
+    bridge_max_theta: 0.6
+    confirm_target_with_heldout: true
+    diversity: true
+    memory_gamma: 0.6
+    memory_sigma: 0.06
+    perturb_max_xy: 0.06
+    perturb_max_theta: 0.4
+    exact_anchor_fallback: true
