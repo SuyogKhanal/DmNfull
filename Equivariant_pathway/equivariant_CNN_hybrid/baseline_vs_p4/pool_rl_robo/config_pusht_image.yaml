@@ -1,0 +1,83 @@
+# config_pusht_image.yaml — IMAGE-based PushT-v1: P4-LLM (V3 hybrid, VISUAL-
+# embedding clustering) vs Diff-DAgger, apples-to-apples. The diffusion policy
+# observes a CAMERA IMAGE (PushT-v2 base_camera, frozen R3M ResNet18) instead of
+# the privileged tee pose — selected for BOTH arms via $SUITE_HYDRA_CFG pointing
+# at configs/hydra/pusht_image.yaml (set by the launchers). This is the image
+# row of the Diff-DAgger paper (Table III, Pushing 1-Expert), run under our
+# identical-conditions protocol (nd_retrain=1, shared bootstrap, frozen held-out).
+#
+# Only difference between the two arms = the demo-acquisition rule:
+#   diff_dagger  — robot-gated DAgger, in-place expert correction at the query.
+#   p4_subtask   — V3 hybrid: cluster failures in a LATENT VISUAL space (R3M over
+#                  the failure's rendered key-frames → PCA), the LLM picks SELECT
+#                  (on-policy correct one real failure) or BRIDGE (one middle-
+#                  ground scene covering 2-3), one demo/round. Geometry of the
+#                  prescription/reset is unchanged — only mode DISCOVERY is visual.
+#
+# Run protocol (matches the state study): submit_pusht_img_baseline.sh builds each
+# seed's shared_baselines/init_ckpt.pth (image policy); submit_pusht_img_hybrid.sh
+# reuses it BYTE-IDENTICALLY via P4_REUSE_INIT_CKPT. The launchers also export
+# SUITE_HYDRA_CFG so both arms use the image Hydra config.
+
+n_runs: 1
+initial_demos: 20
+budget: 100
+demos_per_round: 1
+target_sr: 1.0            # run to budget; image SR is read off the curve (paper ~0.87)
+max_rounds: 100
+max_steps: 200            # matches the state PushT study (consistency over paper's 250)
+heldout_n: 100
+seed: 1                   # overridden per-job by the launcher (seeds 1, 2)
+
+nd_retrain: 1             # retrain from scratch after every demo (matches diff_dagger)
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10         # render-safe; heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60      # low-noise rollout-SR so target early-stop doesn't false-fire
+max_episodes_per_arm: 5000
+
+methods: ["diff_dagger", "p4_subtask"]
+
+environments: ["PushT-v1"]
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8     # p4's per-step diffusion-loss N_b (matches config_astar.yaml)
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  prompts_dir: null
+
+  # ── p4_subtask block ─────────────────────────────────────────────────────
+  subtask:
+    enabled: true
+    collect: hybrid        # v3 SELECT/BRIDGE; safety floor escalates a failed bridge to SELECT
+    signal: diffusion      # re-roll detector = policy's own diffusion loss (== diff_dagger query)
+
+    # ── IMAGE-based clustering: the whole point of this study ──────────────
+    # Cluster failures in a LATENT VISUAL space instead of the 6-D geometric
+    # descriptor: R3M(ResNet18) over each failure's rendered key-frames
+    # (start / peak-loss t* / end), pooled, then numpy-PCA reduced and clustered
+    # by the existing silhouette-swept agglomerative machinery. Falls back to
+    # geometric automatically if the encoder/frames are unavailable.
+    cluster_features: visual
+    embed_model: r3m       # cached offline at ~/.r3m; falls back to geometric on failure
+    embed_pool: concat     # start→t*→end keyframes concatenated (coarse trajectory shape)
+    embed_pca_dim: 16      # PCA target dim (capped at n_failures-1 each round)
+
+    snap_eps: 0.02
+    bridge_max_xy: 0.10
+    bridge_max_theta: 0.6
+    confirm_target_with_heldout: true
+    max_clusters: 6
+    diversity: true
+    memory_gamma: 0.6
+    memory_sigma: 0.06
+    perturb_max_xy: 0.06
+    perturb_max_theta: 0.4
+    exact_anchor_fallback: true

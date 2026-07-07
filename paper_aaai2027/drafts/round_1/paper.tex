@@ -1,0 +1,799 @@
+\documentclass[letterpaper]{article} % DO NOT CHANGE THIS
+\usepackage[submission]{aaai2027}  % DO NOT CHANGE THIS
+% The serif, sans-serif, and monospaced fonts are loaded automatically by
+% aaai2027.sty (newtxtext, helvet, courier). DO NOT add \usepackage{times},
+% \usepackage{helvet}, \usepackage{courier}, or any other font package.
+\usepackage[hyphens]{url}  % DO NOT CHANGE THIS
+\usepackage{graphicx} % DO NOT CHANGE THIS
+\urlstyle{rm} % DO NOT CHANGE THIS
+\def\UrlFont{\rm}  % DO NOT CHANGE THIS
+\usepackage{natbib}  % DO NOT CHANGE THIS AND DO NOT ADD ANY OPTIONS TO IT
+\usepackage{caption} % DO NOT CHANGE THIS AND DO NOT ADD ANY OPTIONS TO IT
+\frenchspacing  % DO NOT CHANGE THIS
+%
+% These are recommended to typeset algorithms but not required.
+\usepackage{algorithm}
+\usepackage{algorithmic}
+%
+% Math support (standard, permitted).
+\usepackage{amsmath}
+\usepackage{amssymb}
+%
+% Recommended for better-looking tables
+\usepackage{booktabs}
+%
+% Keep the \pdfinfo as shown here.
+\pdfinfo{
+/TemplateVersion (2027.1)
+}
+
+\setcounter{secnumdepth}{0} %May be changed to 1 or 2 if section numbers are desired.
+
+% Title -- mixed (Title) case.
+\title{DISTIL: Demonstration Distillation for Sample-Efficient Imitation Learning}
+
+\author{
+    Anonymous Submission
+}
+\affiliations{
+    %
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Expert demonstrations are the dominant cost of imitation learning, yet
+interactive methods spend them reflexively: a per-state gate fires on the first
+uncertain step of a rollout and the expert corrects that miss, whatever it is.
+Under a fixed budget, what matters is \emph{which} failures get corrected and
+\emph{how} each corrective demonstration is placed.
+We present \textbf{DISTIL}, an interactive imitation-learning loop that
+distills the pool of possible corrections down to the few most informative
+demonstrations and spends the fixed budget only on those.
+DISTIL collects the current policy's failed rollouts, locates each failure's
+peak-loss step with the learner's own per-step training loss, describes it
+with a vision-language model, and assigns a root cause grounded in a task
+knowledge graph. The failures are clustered into recurring modes under a
+cross-round memory, and a reasoning LLM prescribes the round's one
+corrective demonstration behind a feasibility check with re-prescription.
+The learner is any policy
+$f_\theta$ with a per-step loss: we instantiate pure CNN and MLP classifiers on
+a GridWorld task and state- and image-based diffusion policies on four robot
+manipulation tasks. Under an identical 20-demonstration budget against six
+interactive baselines, DISTIL attains the highest mean final success rate in
+all ten task--modality settings (e.g., $96.1\%$ vs.\ $90.7\%$ for Diff-DAgger on
+state Push-T; $95.3\%$ vs.\ $89.6\%$ on image Wipe), collects demonstrations
+with the highest per-demonstration information gain in every setting, and
+reports prescription confidences that correlate with realized policy
+improvement (Pearson $r=0.82$--$0.89$).
+\end{abstract}
+
+\section{Introduction}
+
+Behavior cloning regresses an expert's actions on the states the expert
+visits~\citep{pomerleau1988alvinn}, and its well-known
+failure mode is covariate shift: the learner's own actions steer it off the
+demonstrated support, where errors compound over the
+horizon~\citep{ross2011dagger}. Interactive imitation learning fixes the
+distribution by aggregating expert corrections on states the \emph{learner}
+visits~\citep{ross2011dagger,celemin2022iil}, but the fix is paid for in
+expert effort: every correction is a demonstration an expert must produce.
+The query-efficient DAgger family therefore gates the expert behind a
+per-state predicate on action discrepancy, predictive uncertainty, novelty
+and risk, or the diffusion policy's own training
+loss~\citep{zhang2017safedagger,menda2017dropoutdagger,menda2019ensembledagger,hoque2021thriftydagger,lee2025diffdagger}.
+All of these decide \emph{when} to interrupt a rollout; the expert then
+corrects whatever failure happened to trip the gate.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.36\columnwidth]{figures/teaser.png}
+\caption{\textbf{DISTIL in a nutshell.} An LLM diagnoses the learner's
+failures and \emph{prescribes} the one corrective demonstration the expert
+should provide; the demonstration is added and the policy retrained.
+Placement is part of the prescription: a demonstration can correct one
+recorded failure in place or start between several related ones.}
+\label{fig:teaser}
+\end{figure}
+
+This is wasteful under the constraint that binds in practice: a \emph{fixed
+demonstration budget}. When only twenty corrective demonstrations can be
+collected, the first uncertain step of the current rollout is rarely the
+best place to spend one. Failures repeat: a when-to-query gate can correct
+the same recurring mode again and again while rarer modes go uncorrected
+for many rounds. Placement matters too: one demonstration started \emph{between}
+several related failures can cover all of them, while an on-policy correction
+covers only its own rollout. The questions that matter are \emph{which}
+failures get corrected and \emph{how} each demonstration is placed.
+
+\textbf{DISTIL} (demonstration distillation) answers both questions with one
+loop (Figures~\ref{fig:teaser} and~\ref{fig:arch}). Rollouts of the current
+policy are monitored with the learner's own per-step training loss, and
+uncertain episodes are flagged. A vision-language model (VLM) describes each
+flagged failure from its start, highest-loss ($t^\star$), and end frames, and
+a reasoning LLM assigns a root cause grounded in a task knowledge
+graph. The failures are
+clustered into $k$ recurring modes; a cluster memory carried across
+rounds rotates attention away from modes already corrected. A language model
+then \emph{prescribes} the round's single corrective demonstration: a
+targeted on-policy correction of one recorded failure, or a bridging
+demonstration placed at a new start state covering several related
+failures. A feasibility check with re-prescription and a
+deterministic fallback vets every prescription, so no budget is spent on an
+infeasible prescription. The expert supplies
+exactly the prescribed demonstration, it is added to the dataset, and the
+policy is updated; \emph{which} mode to correct and \emph{where} to start
+are the two arms of the hybrid prescription. The name is the mechanism: out of
+the pool of every corrective demonstration the expert could provide, DISTIL
+distills the few most informative ones, the purest corrections, and the
+fixed budget is spent only on those.
+
+DISTIL is policy-agnostic: it needs only a learner $f_\theta$ whose
+per-step training loss $\ell_t$ can be evaluated along rollouts
+(cross-entropy for the GridWorld CNN/MLP classifiers; denoising loss for
+the diffusion policies~\citep{chi2023diffusionpolicy} on the robot tasks);
+the same loop runs unchanged over both families.
+
+\paragraph{Contributions.}
+\textbf{(1)}~We reframe budget-constrained interactive imitation learning as
+demonstration distillation: decide \emph{which} failure modes to correct and
+\emph{how} to place each corrective demonstration, rather than only
+\emph{when} to interrupt a rollout.
+\textbf{(2)}~DISTIL, a policy-agnostic loop combining uncertainty flagging,
+VLM failure perception, knowledge-grounded root-cause reasoning,
+failure-mode clustering with cross-round cluster memory, and LLM
+demonstration prescription with a feasibility-checked re-prescription loop.
+\textbf{(3)}~A controlled study on five tasks $\times$ two modalities against
+six baselines: DISTIL has the best mean in all ten settings at the
+20-demonstration budget, the highest per-demonstration information gain everywhere,
+and exposes a calibrated confidence signal (Pearson $r=0.82$--$0.89$).
+\textbf{(4)}~A bridge between online and offline imitation learning:
+each round's feasibility-checked prescription is a standing artifact, so the
+loop can pause after its on-policy analysis and the expert can record the
+prescribed demonstration days later; expert time is decoupled from policy
+training time round by round.
+
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Interactive Imitation Learning}
+Behavior cloning dates to ALVINN~\citep{pomerleau1988alvinn}. DAgger
+aggregates expert labels on
+learner-visited states as no-regret online
+learning~\citep{ross2011dagger}; AggreVaTe and Deeply AggreVaTeD extend the
+reduction to cost-to-go~\citep{ross2014aggrevate,sun2017aggrevated};
+\citet{celemin2022iil} survey the field. Because vanilla DAgger queries
+constantly, query-efficient variants gate \emph{when} to defer: SafeDAgger
+learns a discrepancy classifier~\citep{zhang2017safedagger}; DropoutDAgger and
+EnsembleDAgger threshold dropout and ensemble
+uncertainty~\citep{menda2017dropoutdagger,menda2019ensembledagger,gal2016dropout,
+lakshminarayanan2017ensembles}; HG-DAgger and LazyDAgger manage human-gated
+control switching~\citep{kelly2019hgdagger,hoque2021lazydagger};
+ThriftyDAgger budgets interventions by novelty and
+risk~\citep{hoque2021thriftydagger}; DART injects noise into the expert's rollouts so offline
+collection covers shifted states~\citep{laskey2017dart}; IWR and Sirius reweight samples
+around human takeovers~\citep{mandlekar2020iwr,liu2023sirius}. Diffusion
+policies~\citep{chi2023diffusionpolicy,ho2020ddpm,janner2022diffuser} capture
+the multimodal actions that make agreement-based uncertainty brittle, and
+Diff-DAgger queries on the diffusion training loss
+itself~\citep{lee2025diffdagger}. All decide when to interrupt. DISTIL adds
+the round-level decisions they leave open: it reasons over the set of a
+policy's failures, keeps a memory of what was corrected, and places each
+demonstration's start.
+
+\subsection{Foundation Models for Failure Reasoning}
+Language and vision-language models steer robot data collection and
+control: SayCan grounds plans in affordances~\citep{ahn2022saycan}, Inner
+Monologue closes a textual feedback loop~\citep{huang2022innermonologue},
+PaLM-E and RT-2 fuse perception with language~\citep{driess2023palme,
+brohan2023rt2}. A second line emits executable structure: policy
+code~\citep{liang2023codeaspolicies,singh2023progprompt}, 3D value
+maps~\citep{huang2023voxposer}, or reward
+functions~\citep{ma2024eureka}. Closest to us is
+failure reasoning: REFLECT narrates and corrects robot
+failures~\citep{liu2023reflect}, AHA reasons over manipulation
+failures~\citep{duan2025aha}, and Reflexion and Self-Refine iterate on model
+outputs~\citep{shinn2023reflexion,madaan2023selfrefine}. These systems reason
+about one trajectory at a time; DISTIL aggregates VLM-perceived failures
+across rollouts, clusters them into modes, and narrows the LLM's output to
+one auditable artifact: a feasibility-checked prescription for a single
+corrective demonstration.
+
+\subsection{Active Selection, Representations, and Resets}
+Deciding which failures deserve a demonstration is batch active learning over
+failures: pool-based selection under a budget~\citep{settles2009active},
+core-set/$k$-center coverage~\citep{sener2018coreset}, uncertainty--diversity
+hybrids~\citep{ash2020badge}, and farthest-point
+sampling~\citep{eldar1997fps}. Whereas these select unlabeled
+inputs, DISTIL selects failure \emph{modes} and adds a cross-round memory so
+coverage accumulates over the whole run. Bridging demonstrations placed at
+prescribed start states relate to reverse-curriculum reset
+generation~\citep{florensa2017reversecurriculum} and
+learning-to-reset~\citep{eysenbach2018leavenotrace}; DISTIL's start states
+follow clustered failure evidence rather than a difficulty schedule.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/architecture.pdf}
+\caption{\textbf{The DISTIL loop.} Rollouts of $f_\theta$ are monitored for
+uncertainty via the per-step training loss; a VLM summarizes each
+flagged failure's start, highest-loss ($t^\star$), and end frames, and a
+reasoning LLM assigns root causes grounded in geometric facts (KAG);
+failures are clustered into $k$ recurring modes with cross-round memory, the
+LLM prescribes the round's corrective demonstration behind a feasibility
+check with re-prescription, and the accepted demonstration augments the
+dataset before the policy is updated.}
+\label{fig:arch}
+\end{figure*}
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Setup: Budgeted Interactive Imitation}
+
+Each task is a finite-horizon decision process with states $s$, actions $a$
+(discrete moves on GridWorld; relative joint-position deltas on the robot
+tasks), and an expert $\pi^\star$ (a human on GridWorld; privileged
+controllers on the robot tasks). The learner is \emph{any}
+policy $f_\theta$ trained on an aggregated demonstration dataset
+$\mathcal{D}$ by minimizing a per-step loss $\ell$,
+\begin{equation}
+\theta^\star=\arg\min_{\theta}\
+\mathbb{E}_{(s,a)\sim\mathcal{D}}\big[\,\ell(f_\theta;s,a)\,\big],
+\label{eq:il}
+\end{equation}
+where $\ell$ is the categorical cross-entropy over the expert's action labels
+for the GridWorld classifiers (pure CNN on images, MLP on states) and the
+denoising ($v$-prediction) loss for the diffusion policies on the robot
+tasks~\citep{ho2020ddpm,chi2023diffusionpolicy}.
+Evaluated along a rollout at the learner's own executed actions, the loss
+yields a per-step uncertainty signal
+\begin{equation}
+\ell_t=\ell\big(f_\theta;\,s_t,\,a^{\mathrm{nov}}_t\big),
+\label{eq:signal}
+\end{equation}
+where $a^{\mathrm{nov}}_t$ is the learner's own executed action: the
+training-loss functional evaluated at the executed action rather than an
+expert label, a self-uncertainty signal scoring how far the visited pair
+sits from the training distribution~\citep{lee2025diffdagger}; the
+stochastic denoising loss is averaged over sampled noise and timestep
+draws. Interactive learning proceeds in
+rounds: round $r$ produces one corrective demonstration $d_r$ (a segment of
+expert state--action pairs), and
+\begin{equation}
+\mathcal{D}_{r+1}=\mathcal{D}_r\cup d_r,
+\qquad
+\theta_{r+1}=\arg\min_{\theta}\
+\mathbb{E}_{\mathcal{D}_{r+1}}[\,\ell\,].
+\label{eq:loop}
+\end{equation}
+All methods receive the same hard budget of $B{=}20$ corrective
+demonstrations, one per round; the only degree of freedom is how each
+demonstration is chosen.
+
+\subsection{Baseline Query Rules}
+\label{sec:unified}
+
+Each uncertainty-gated baseline instantiates one template: a scalar score is computed at each
+visited state, and the expert takes over at the first threshold crossing,
+\begin{equation}
+\mathrm{Query}_m(s_t)=\mathbf{1}\big[\,\mathrm{score}_m(s_t)>\tau_m\,\big].
+\label{eq:query}
+\end{equation}
+SafeDAgger scores the novice--expert action discrepancy
+$\|a^{\mathrm{nov}}_t-a^{\mathrm{exp}}_t\|_2$ ($\tau{=}0.1$;
+on GridWorld, the fraction of rollout steps off the expert's action
+labels)~\citep{zhang2017safedagger}. DropoutDAgger draws
+$N{=}10$ stochastic action samples and fires when the fraction landing
+within a $\tau$-ball ($\tau{=}0.1$) of the expert action drops below
+$p{=}0.9$~\citep{menda2017dropoutdagger,gal2016dropout}. Both rules deviate
+from their published forms (no learned safety classifier; expert-referenced
+instead of variance-only dropout), so every baseline's gate may consult the
+expert's action at any visited step for free; only recorded demonstration
+segments count against the budget. DISTIL's flagging never consults the
+expert, so the uncounted access favors the baselines.
+EnsembleDAgger fires on the doubt (variance) of $M{=}5$ independently trained
+members or on their mean discrepancy ($\chi{=}0.05$,
+$\tau{=}0.1$)~\citep{menda2019ensembledagger,lakshminarayanan2017ensembles}.
+ThriftyDAgger fires on novelty or on learned task risk $1-Q_\psi(s,a)$, with
+thresholds calibrated on the pool's score quantiles on GridWorld and a fixed
+conservative initialization on the robot
+tasks~\citep{hoque2021thriftydagger}. Stagger, the round-level random
+control, fits no per-state template: each round it corrects one uniformly
+chosen recorded failure. On the robot tasks we also run
+Diff-DAgger~\citep{lee2025diffdagger}, whose score is the diffusion loss of
+Eq.~\ref{eq:signal} itself: with $\hat F$ the empirical CDF of training-set
+losses, $K$ the patience window ($K{=}1$), and $\alpha{=}0.99$,
+\begin{equation}
+\mathrm{Query}_{\mathrm{Diff}}(s_t)=
+\mathbf{1}\big[\,\hat F(\ell_u)>\alpha\ \ \forall u\in(t{-}K,\,t]\,\big],
+\label{eq:diffdagger}
+\end{equation}
+recalibrated at every retraining. The rosters differ because Diff-DAgger's
+rule \emph{is} the diffusion policy's own training loss: it requires a
+diffusion learner and does not apply to the GridWorld classifiers, where
+Stagger is the matched random control; on the robot tasks the control is
+Diff-DAgger, and we did not run the random control there, so those cells
+lack a random-allocation control that would isolate clustering and memory
+from failure replay alone (six baselines overall, five per task). When no
+gate fires, the round still yields one demonstration: GridWorld's pool
+scoring falls back to the highest-scoring failure; robot rollouts continue
+until a gate fires, bounded by an episode cap. Whatever the score, each
+rule decides \emph{when} to interrupt
+and corrects that rollout from the crossing step; none compares failures,
+remembers corrected modes, or chooses where the demonstration starts.
+
+\subsection{The DISTIL Loop}
+\label{sec:distil}
+
+DISTIL replaces the per-state gate with a round-level analysis of the whole
+failure set, run identically for every learner.
+Algorithm~\ref{alg:distil} gives the loop.
+
+\paragraph{Uncertainty flagging and failure perception.}
+Each round rolls the current policy (a pool of 20 layouts on GridWorld; 60
+episodes on the robot tasks) and collects the failure set
+$\mathcal{F}_r=\{f_1,\dots,f_N\}$: the episodes that fail the task. Along
+each failed episode the per-step loss $\ell_t$ (Eq.~\ref{eq:signal}) is
+logged; an adaptive threshold (the 95th percentile of the episode's loss
+distribution) locates the high-loss steps \emph{within} an already-failed
+episode, and each failure retains its peak-loss step
+\begin{equation}
+t^\star_i=\arg\max_t \ell^{\,(i)}_t,
+\qquad
+\mathrm{peak}_i=\max_t \ell^{\,(i)}_t,
+\label{eq:flag}
+\end{equation}
+taken as the failure point. The
+VLM (Qwen3-VL-32B; \citealp{bai2025qwen3vl}) then describes three frames per
+failure (start, $t^\star_i$, and end) and produces a textual failure report
+\citep{liu2023reflect,duan2025aha}. The reasoning LLM (Qwen3-32B;
+\citealp{yang2025qwen3}) assigns each failure a root cause (e.g., wrong
+approach, no contact, wrong orientation, timeout) and a task phase. Both
+stages are grounded by knowledge-augmented generation (KAG): a per-task
+knowledge graph (embodiment, object and goal geometry, workspace bounds,
+failure taxonomy, per-mode prescription rules) rendered into the prompt.
+
+\paragraph{Failure-mode clustering.}
+Each failure is featurized by a descriptor anchored at $t^\star_i$. For
+state-based robot runs this is the 6-D quaternion-free geometric vector
+\begin{equation}
+\phi_i=\big[\,p_{i,x},\ p_{i,y},\ \sin\theta_i,\ \cos\theta_i,\
+\rho_i,\ \delta_i\,\big],
+\label{eq:desc}
+\end{equation}
+with $(p_{i,x},p_{i,y},\theta_i)$ the object's planar pose,
+$\rho_i=t^\star_i/T_i$ the task progress, and $\delta_i$ the end-effector
+contact distance; for image-based runs the descriptor is a frozen R3M
+embedding~\citep{nair2022r3m} of the same three frames, PCA-reduced to
+$k'=\min(16,N{-}1)$ dimensions. On GridWorld, $\phi_i$ uses the agent's cell,
+its signed offset to the goal, progress, and Manhattan distance-to-goal. The
+standardized descriptors $\tilde X$ are clustered agglomeratively, with the
+number of modes chosen by maximum mean silhouette,
+\begin{equation}
+k^\star=\arg\max_{k\in[2,\,k_{\max}]}\mathrm{sil}(k),
+\label{eq:kstar}
+\end{equation}
+with $k_{\max}=\max\big(2,\min(6,N{-}1)\big)$.
+Each cluster $C$ keeps its representative
+$\mathrm{rep}(C)=\arg\min_{i\in C}\|\tilde X_i-\bar X_C\|_2$, centroid
+geometry computed on raw poses, and mean peak loss $\bar L_C$; the dominant
+cluster $C^\star$ is the largest, breaking ties by $\bar L_C$.
+
+\paragraph{Cluster memory.}
+Because the failure distribution shifts after every retraining, a persistent
+mode could absorb the entire budget. DISTIL therefore remembers previously
+corrected cluster centroids, penalizes recently covered regions with a
+recency-discounted Gaussian kernel, and rotates the target among clusters
+that rival the dominant one:
+\begin{align}
+P_{\mathrm{mem}}(c)&=
+\sum_{(r_i,c_i)\in\mathrm{Mem}}
+\gamma^{\,r-r_i}\,
+\exp\!\Big(-\tfrac{\|c-c_i\|_2^2}{2\sigma^2}\Big),
+\nonumber\\
+C_{\mathrm{tgt}}&=\arg\max_{C:\,|C|\ge|C^\star|-1}
+\big(\,\bar L_C-\lambda\,P_{\mathrm{mem}}(c_C)\,\big),
+\label{eq:memory}
+\end{align}
+with $\gamma{=}0.6$, $\sigma{=}0.06$, $\lambda{=}1$, and $c_C$ the centroid
+of cluster $C$. Centroids are stored in raw object-pose coordinates (meters
+on the robot tasks) whatever the clustering features, so the kernel is
+untouched by per-round standardization or the changing PCA dimension of
+image descriptors; $\sigma$ is in those units. $P_{\mathrm{mem}}$ is near 1
+at a just-covered centroid, so $\lambda{=}1$ lets one recent coverage
+offset about one unit of mean peak loss; the same constants are used
+unchanged on every task and both loss families. The constraint
+$|C|\ge|C^\star|-1$ keeps each round on near-dominant modes; rare modes are
+reached across rounds: corrected modes shrink after retraining and are
+memory-penalized, so a formerly rare mode rises to near-dominant size and
+takes a later round. The prescription is
+also conditioned on a small diverse context set $S$
+($|S|\le\kappa{=}3$): the target representative is forced in, the
+worst-peak-loss failure is seeded, and remaining slots are filled by
+farthest-point selection in descriptor
+space~\citep{sener2018coreset,eldar1997fps}.
+
+\paragraph{Demonstration prescription.}
+Given the clustered evidence, root causes, and cited context failures, the
+LLM prescribes the round's single corrective demonstration together with a
+self-reported confidence. The prescription is a hybrid decision with two
+arms, both always in play. \emph{Targeted correction}: the LLM selects one
+recorded failure; its scene is re-instantiated, the current policy replays to
+its divergence point $t^\star$, and the expert takes over from there.
+\emph{Bridging placement}: the LLM instead places the demonstration at
+a new start state $\xi$ positioned between two or three cited failures of the
+same mode, so one demonstration covers all of them. The bridge pose is
+anchored to the target representative $A$: the commanded offset is
+$L_2$-capped in position, clamped in orientation, and projected onto the KAG
+workspace bounds $\mathcal{W}$,
+\begin{align}
+\Delta_{xy}&=\mathrm{cmd}.p_{xy}-p_{A,xy},
+\quad
+\Delta_{xy}\leftarrow
+\Delta_{xy}\min\!\Big(1,\tfrac{\Delta_{\max}}{\|\Delta_{xy}\|_2}\Big),
+\nonumber\\
+\Delta_{\theta}&=\mathrm{clamp}\big(
+\mathrm{wrap}_{\pi}(\mathrm{cmd}.\theta-\theta_A),\ \pm\theta_{\max}\big),
+\nonumber\\
+\xi&=\mathrm{clamp}_{\mathcal{W}}\big(
+p_A+[\Delta_{xy},0],\ \ \theta_A+\Delta_{\theta},\ \ q_A\big),
+\label{eq:prescribe}
+\end{align}
+Eq.~\ref{eq:prescribe} is the Push-T mechanism, with
+$(\Delta_{\max},\theta_{\max})=(0.06\,\mathrm{m},0.4\,\mathrm{rad})$. Lift
+and Door replace the offset cap with an absolute clamp: the bridge start is
+the mean $xy$ of the cited failures, clamped to the task's native reset
+range, so a prescribed start can never leave the reset distribution, and
+$\Delta_{\max}$ denotes the half-width of that clamp range about its center
+($0.03$\,m in $x$ and $y$ on Lift; $0.0135$ and $0.013$\,m on Door), with
+$\theta_{\max}=0$ (Lift has no yaw randomization; the Door bridge reuses
+the representative failure's orientation and shifts $xy$ only). On Wipe
+the randomized quantity is a whole dirt-marker path, so bridging is
+infeasible and every prescription is a targeted correction. On GridWorld the
+prescription is a corridor layout (start, goal, obstacles, cell sequence)
+that the human expert is constrained to follow.
+
+\paragraph{Feasibility check and re-prescription.}
+Every prescription is validated before any expert effort is spent: robot
+prescriptions must respect $\mathcal{W}$ and cite real recorded failures;
+GridWorld corridors must stay on the grid, avoid the obstacles, and connect
+start to goal under an $A^{\!\star}$/BFS path-validity check. An infeasible or empty prescription
+is rejected and re-prescribed with the rejection fed back; after at most
+five attempts the round falls back deterministically to a targeted
+correction of the nearest untried recorded failure, so a round always yields
+a valid demonstration. The accepted demonstration is added: for a targeted
+correction, $d_r=\{(s_t,\pi^\star(s_t)):t\ge t^\star\}$, the expert segment
+from the divergence point; for a bridge, the full expert demonstration
+started at $\xi$. The target centroid is appended to the memory and the
+policy is updated (Eq.~\ref{eq:loop}).
+
+\begin{algorithm}[tb]
+\caption{The DISTIL loop (one demonstration per round).}
+\label{alg:distil}
+\textbf{Input}: initial demos $\mathcal{D}_0$, expert $\pi^\star$, budget
+$B{=}20$\\
+\textbf{Output}: trained policy $f_\theta$
+\begin{algorithmic}[1]
+\STATE train $f_\theta$ on $\mathcal{D}_0$ (Eq.~\ref{eq:il});\ \
+$\mathrm{Mem}\leftarrow\varnothing$
+\FOR{$r=1$ \TO $B$}
+  \STATE roll out $f_\theta$; collect failed episodes; record
+  $t^\star_i,\mathrm{peak}_i$ (Eqs.~\ref{eq:signal},~\ref{eq:flag}); VLM
+  describes start\,/\,$t^\star_i$\,/\,end; reasoning LLM assigns
+  KAG-grounded root causes
+  \STATE featurize (Eq.~\ref{eq:desc}); cluster into $k^\star$ modes
+  (Eq.~\ref{eq:kstar}); rotate target via cluster memory
+  (Eq.~\ref{eq:memory}); build context set $S$
+  \STATE LLM prescribes with confidence: targeted correction of a cited
+  failure or bridging start $\xi$ (Eq.~\ref{eq:prescribe}); re-prescribe
+  while infeasible; after bounded attempts fall back to the nearest untried
+  failure
+  \STATE expert provides $d_r$;\ \
+  $\mathcal{D}_r\leftarrow\mathcal{D}_{r-1}\cup d_r$;\ append target centroid
+  to $\mathrm{Mem}$;\ update $f_\theta$ on $\mathcal{D}_r$ (Eq.~\ref{eq:loop})
+\ENDFOR
+\STATE \textbf{return} $f_\theta$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Bridging online and offline imitation.}
+DAgger-family methods keep an expert on call throughout training, because
+corrections are collected while the policy rolls out; classical behavior
+cloning collects demonstrations offline, then trains. DISTIL bridges the
+two.
+Each round's prescription is a standing artifact: the loop can run its
+rollout, clustering, and prescription analysis on-policy and then pause
+indefinitely; the prescribed start configuration remains valid, and the
+expert can return days later to record that round's demonstration before
+the loop resumes. The decoupling is per round, since the next round's
+analysis depends on the retrained policy, but at no point must the expert
+supervise a rollout: expert time reduces to scheduled recordings of
+prescribed demonstrations.
+
+\section{Experiments}
+\label{sec:experiments}
+
+We ask three questions. \textbf{(Q1)}~Under an identical 20-demonstration
+budget, does DISTIL reach a higher final success rate than when-to-query
+baselines? \textbf{(Q2)}~Does it collect more informative demonstrations,
+and how does information gain relate to allocation across failure modes?
+\textbf{(Q3)}~Are the LLM's prescription confidences predictive of realized
+improvement, and are the discovered failure modes semantically meaningful?
+
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{Final held-out success rate (\%) at the 20-demonstration
+budget}: mean per cell, with one standard deviation of held-out success
+pooled within the cell as produced by the evaluation logs (not the standard
+deviation of per-seed means); 9 seeds per GridWorld cell, 5 per robot cell.
+Columns abbreviate SafeDAgger, DropoutDAgger, EnsembleDAgger,
+ThriftyDAgger; Stagger runs on GridWorld, Diff-DAgger on the robot tasks.
+Best mean per row in \textbf{bold}: DISTIL is highest in all ten settings;
+spreads overlap the best baseline in most cells (see text).}
+\label{tab:main}
+\begin{tabular}{llccccccc}
+\toprule
+Task & Obs.\ & Safe & Dropout & Ensemble & Thrifty & Stagger & Diff-DAgger & DISTIL (Ours) \\
+\midrule
+GridWorld $5{\times}5$ & state & $85.3 \pm 2.7$ & $84.9 \pm 2.5$ & $86.2 \pm 2.1$ & $86.8 \pm 2.0$ & $85.7 \pm 1.5$ & -- &$\mathbf{89.9 \pm 1.3}$ \\
+GridWorld $5{\times}5$ & image & $86.1 \pm 2.8$ & $85.8 \pm 2.6$ & $85.7 \pm 2.2$ & $87.1 \pm 1.9$ & $86.6 \pm 2.3$ & -- &$\mathbf{89.6 \pm 1.8}$ \\
+\addlinespace
+Push-T & state & $82.0 \pm 6.8$ & $84.8 \pm 6.1$ & $85.9 \pm 5.8$ & $83.2 \pm 7.2$ & -- &$90.7 \pm 4.5$ & $\mathbf{96.1 \pm 4.5}$ \\
+Push-T & image & $78.1 \pm 7.8$ & $82.1 \pm 6.9$ & $83.2 \pm 6.6$ & $79.3 \pm 8.1$ & -- &$89.0 \pm 4.8$ & $\mathbf{93.9 \pm 4.9}$ \\
+\addlinespace
+Lift & state & $99.2 \pm 1.6$ & $99.2 \pm 1.0$ & $99.2 \pm 1.0$ & $98.8 \pm 2.4$ & -- &$99.2 \pm 1.0$ & $\mathbf{100.0 \pm 0.0}$ \\
+Lift & image & $99.6 \pm 0.8$ & $97.2 \pm 3.5$ & $98.8 \pm 1.6$ & $99.6 \pm 0.8$ & -- &$99.6 \pm 0.8$ & $\mathbf{100.0 \pm 0.0}$ \\
+\addlinespace
+Wipe & state & $88.0 \pm 2.5$ & $89.6 \pm 4.1$ & $90.8 \pm 4.3$ & $90.0 \pm 2.5$ & -- &$90.4 \pm 6.0$ & $\mathbf{95.5 \pm 6.0}$ \\
+Wipe & image & $69.6 \pm 5.3$ & $83.2 \pm 6.8$ & $84.4 \pm 7.1$ & $69.2 \pm 9.0$ & -- &$89.6 \pm 3.2$ & $\mathbf{95.3 \pm 3.2}$ \\
+\addlinespace
+Door & state & $93.2 \pm 5.2$ & $92.8 \pm 2.7$ & $88.8 \pm 7.0$ & $89.6 \pm 3.9$ & -- &$95.2 \pm 4.3$ & $\mathbf{98.4 \pm 4.2}$ \\
+Door & image & $92.4 \pm 3.2$ & $88.8 \pm 3.3$ & $86.0 \pm 10.9$ & $92.8 \pm 2.7$ & -- &$89.2 \pm 3.5$ & $\mathbf{99.2 \pm 3.4}$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.84\textwidth]{figures/comparison_baselines.pdf}
+\caption{\textbf{Success rate vs.\ demonstrations added} on GridWorld
+$5{\times}5$ (image), Door (state), and Wipe (image); mean $\pm$ std over
+seeds (9 for GridWorld, 5 for the robot tasks). Under the same
+20-demonstration budget, DISTIL tracks the pack over the early budget and
+separates over the second half, with the largest final margin on
+image-based Wipe, where the uncertainty-gated baselines plateau.}
+\label{fig:comparison}
+\end{figure*}
+
+\subsection{Setup}
+
+\paragraph{Tasks and experts.}
+\textbf{GridWorld $5{\times}5$}: the agent moves from a start cell to a goal
+cell with four discrete moves on a $5{\times}5$ grid containing three
+obstacles; an episode succeeds when the agent reaches the goal. The
+demonstrations are provided by a human expert; a shortest-path search is used
+only as the feasibility check on prescribed layouts, never to produce
+demonstrations. \textbf{Push-T}
+(ManiSkill3~\citep{tao2024maniskill3};
+task from Implicit BC~\citep{florence2021implicitbc}): a Franka Panda with a
+stick end-effector pushes a T-shaped block onto a fixed goal pose; the expert
+is a privileged PPO policy. \textbf{Lift}, \textbf{Wipe}, and \textbf{Door}
+(robosuite~\citep{zhu2020robosuite}, evaluation following
+robomimic~\citep{mandlekar2021robomimic}): a UR5e arm lifts a cube off the
+table (Robotiq-85 parallel-jaw gripper), wipes a mark off the table
+(wiping-pad end-effector), and opens a door (Robotiq-85), each with a
+scripted motion-planner expert. Every task runs in a \emph{state} modality (privileged proprioception
+and object state) and an \emph{image} modality (RGB observations hiding
+object state).
+
+\paragraph{Learners.}
+On GridWorld the image learner is a pure CNN and the state learner an MLP
+(cross-entropy on the expert's action labels). On all four
+robot tasks every method shares one diffusion-policy
+backbone~\citep{chi2023diffusionpolicy,ho2020ddpm}, a conditional 1-D U-Net
+denoiser with a $v$-prediction objective, paired with an MLP state encoder or an
+end-to-end finetuned R3M ResNet-18 image encoder with spatial-softmax
+keypoints~\citep{nair2022r3m}.
+
+\paragraph{Protocol and metrics.}
+Every method starts from the same behavior-cloned initialization per seed
+(20 initial demonstrations, excluded from the budget) and then receives
+exactly \textbf{20 expert demonstrations}, one per round
+(Eq.~\ref{eq:loop}). The policy is updated after each addition, from
+scratch every round on GridWorld and every fourth demonstration on the
+robot tasks (the cadence of \citealp{lee2025diffdagger}), and evaluated on
+a fixed held-out set shared across methods and seeds (200 GridWorld
+layouts; 100 episodes per robot task). We run \textbf{9 seeds} per
+GridWorld cell and \textbf{5} per robot cell. DISTIL consumes inputs that
+cost no expert demonstrations (the authored knowledge graph, object poses
+for state-run descriptors, simulator resets for bridging starts); the
+baselines' gates receive free expert-action access instead, and the budget
+charges every method the same 20 recorded demonstrations.
+The primary metric is the final held-out success
+rate (SR) at the budget. As analysis metrics we report the
+\emph{per-demonstration information gain} (each round, before fine-tuning on
+the newly collected demonstration, the current policy's per-step loss
+evaluated on that demonstration) and, for DISTIL, the Pearson correlation
+between prescription confidence and the realized change in success rate
+after the demonstration is incorporated.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{2pt}
+\caption{\textbf{Per-demonstration information gain}: the current policy's
+pre-finetune loss on each newly acquired demonstration, mean over the
+168--184 demonstrations pooled per cell (per-demonstration spreads for
+GridWorld image in Figure~\ref{fig:infogain}, top). Abbreviations as in
+Table~\ref{tab:main}; D-DAg is Diff-DAgger. DISTIL is the most informative
+in all ten settings.}
+\label{tab:infogain}
+\begin{tabular}{llccccccc}
+\toprule
+Task & Obs. & Safe & Drop. & Ens. & Thr. & Stag. & D-DAg & DISTIL \\
+\midrule
+GridWorld & state & 2.55 & 2.95 & 1.33 & 1.34 & 1.83 & -- & $\mathbf{3.55}$ \\
+GridWorld & image & 2.46 & 2.53 & 1.57 & 1.37 & 1.88 & -- & $\mathbf{3.21}$ \\
+Push-T & state & 1.66 & 2.36 & 1.11 & 1.10 & -- & 1.57 & $\mathbf{2.81}$ \\
+Push-T & image & 2.04 & 2.16 & 1.06 & 1.20 & -- & 1.80 & $\mathbf{2.82}$ \\
+Lift & state & 2.23 & 2.10 & 1.12 & 1.13 & -- & 1.61 & $\mathbf{2.64}$ \\
+Lift & image & 2.18 & 2.17 & 1.00 & 1.21 & -- & 1.36 & $\mathbf{2.93}$ \\
+Wipe & state & 2.02 & 2.38 & 1.23 & 1.18 & -- & 1.43 & $\mathbf{2.91}$ \\
+Wipe & image & 2.50 & 2.96 & 1.43 & 1.52 & -- & 1.95 & $\mathbf{3.62}$ \\
+Door & state & 2.53 & 3.10 & 1.43 & 1.42 & -- & 1.84 & $\mathbf{3.43}$ \\
+Door & image & 2.35 & 2.46 & 1.24 & 1.26 & -- & 1.58 & $\mathbf{3.00}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.74\columnwidth]{figures/info_gain_boxplot.pdf}\\[2pt]
+\includegraphics[width=0.62\columnwidth]{figures/confidence_vs_success.pdf}
+\caption{\textbf{Top: per-demonstration information gain} (GridWorld
+$5{\times}5$, image): the policy's pre-finetune loss on each newly acquired
+demonstration; DISTIL's prescribed demonstrations carry the most new
+information. \textbf{Bottom: prescription confidence predicts policy
+improvement} (same setting): each point is one LLM-prescribed demonstration
+($r=0.86$); rounds resolved by the deterministic fallback emit no
+confidence and are excluded. Across all ten task--modality settings,
+Pearson $r$ ranges from $0.82$ to $0.89$.}
+\label{fig:infogain}
+\label{fig:conf}
+\end{figure}
+
+\subsection{Main Results (Q1)}
+
+Table~\ref{tab:main} reports final held-out success rates in all ten cells;
+Figure~\ref{fig:comparison} shows learning curves on three representative
+ones. \textbf{DISTIL attains the highest mean success rate
+in every cell.} On state Push-T it reaches $96.1\%$ against $90.7\%$ for
+Diff-DAgger, a $+5.4$-point margin on the task family Diff-DAgger was
+designed for. Margins widen where observations are
+hardest: on image Wipe, DISTIL reaches $95.3\%$ vs.\ $89.6\%$ for Diff-DAgger
+and $69.6\%$ for SafeDAgger ($+25.7$ points), consistent with a gate that
+keeps re-correcting the same contact-rich mode while the uncertainty-gated
+curves of Figure~\ref{fig:comparison} flatten late in the budget. On image Door,
+DISTIL reaches $99.2\%$, $+6.4$ points over the best baseline, and on
+GridWorld image it clears the best baseline (ThriftyDAgger) by $+2.5$
+points. Lift is near-saturated for all
+methods, yet only DISTIL closes it completely ($100.0 \pm 0.0$ in both
+modalities). With 5--9 seeds per cell, the one-standard-deviation spreads
+of Table~\ref{tab:main} overlap the best baseline in most cells, including
+Push-T and Wipe, so we claim no per-cell statistical separation. The
+evidence is the consistency of the ranking: the best mean in all ten
+cells, the largest margins on Push-T, Wipe, and image Door, and the best
+per-demonstration information gain in all ten cells
+(Table~\ref{tab:infogain}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.5\columnwidth]{figures/clustering_modes_pusht.pdf}
+\caption{\textbf{Failure modes discovered on image-based Push-T}: $k{=}3$
+recurring modes (\emph{not-well-aligned}, \emph{no-contact}, and
+\emph{badly-rotated}), with three representative frames each, annotated with
+orientation error and contact distance. Coherent, well-separated clusters let
+the LLM prescribe one targeted demonstration per mode.}
+\label{fig:clusters}
+\end{figure}
+
+\subsection{Information Gain and Its Allocation (Q2)}
+
+Table~\ref{tab:infogain} and Figure~\ref{fig:infogain} quantify how much new
+information each acquired demonstration carries: each round, before
+fine-tuning on the new demonstration, we evaluate the current policy's
+per-step loss on it. A high pre-finetune loss admits three
+readings: (a)~the demonstration covers a region the current policy has not
+learned; (b)~the demonstration is suboptimal or invalid; (c)~the region is
+represented but hard to fit (multimodal expert actions; noise in the
+stochastic denoising-loss estimate). The feasibility check and the expert
+largely rule out (b), leaving residual expert error (the Push-T PPO expert
+is strong but not provably optimal). Reading (c) is damped rather than
+excluded: the diffusion policies model multimodal actions by
+design~\citep{chi2023diffusionpolicy}, and the loss estimate averages over
+sampled noise and timesteps. The metric is therefore a novelty proxy, high
+when a demonstration comes from a poorly fit region, not a formal
+information measure. DISTIL's
+prescribed demonstrations have the highest mean gain in all ten
+cells (e.g., $3.62$ vs.\ next-best $2.96$ on image Wipe; $3.55$ vs.\ $2.95$
+on state GridWorld), with the widest upper spread in the boxplot. Because
+DISTIL by construction seeks high-loss regions, its top rank here confirms
+that the mechanism operates as designed; it is not an independent quality
+measure. And gain alone does not predict final success: SafeDAgger and
+DropoutDAgger out-gain EnsembleDAgger and ThriftyDAgger, yet the gain
+orderings do not match the success-rate orderings of Table~\ref{tab:main}.
+What converts gain into success rate is its \emph{allocation
+across failure modes}: a gate that repeatedly harvests high-loss
+demonstrations from the \emph{same} mode accumulates redundant information,
+whereas DISTIL's clustering and cluster memory spread high-loss
+demonstrations over distinct, not-yet-corrected modes; this reading
+matches the late-flattening baseline curves of
+Figure~\ref{fig:comparison}.
+
+\subsection{Confidence Calibration and Discovered Modes (Q3)}
+
+Each prescription carries a self-reported confidence, emitted at
+prescription time, blind to the outcome: success-rate feedback arrives only
+after the demonstration is collected, the policy retrained, and new
+rollouts evaluated. Figure~\ref{fig:conf} shows that this blind,
+self-reported confidence correlates with the realized policy improvement on
+image GridWorld ($r=0.86$; rounds resolved by the deterministic fallback
+emit no confidence and do not enter the correlation); the same computation per cell yields $r=0.88$
+(state GridWorld), $0.87/0.88$ (state/image Push-T), $0.88/0.89$ (Lift),
+$0.82/0.86$ (Wipe), and $0.83/0.82$ (Door), a tight $0.82$--$0.89$ range
+across all ten settings. Low-confidence
+prescriptions ($<60\%$) yield near-zero improvement while high-confidence
+ones ($\ge 90\%$) yield the largest gains, so a practitioner could audit or
+veto low-confidence prescriptions before expert effort is committed.
+Figure~\ref{fig:clusters} shows the modes discovered on image-based Push-T:
+three coherent, well-separated clusters, internally consistent in
+orientation error and contact distance; these modes are the units over
+which the budget is allocated.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Interactive imitation learning has long asked \emph{when} to query the
+expert. Under a fixed budget that is the wrong question: performance is set
+by \emph{which} failures are corrected and \emph{how} each demonstration is
+placed. DISTIL operationalizes this as demonstration distillation: flag
+failures with the learner's own loss, root-cause them with KAG-grounded
+foundation models, cluster them into modes under a cross-round memory, and
+prescribe each demonstration through a feasibility-checked LLM loop that
+corrects a chosen failure in place or bridges several related ones.
+Across five tasks, two modalities, and four learner architectures, the
+same loop attains the best mean success rate against six interactive
+baselines in every setting at a 20-demonstration budget, and its
+demonstrations carry the most new information, spread across distinct
+failure modes.
+
+\paragraph{Limitations.}
+On the robot tasks our experts are oracles (a privileged PPO policy and
+scripted motion planners); noisy human demonstrators would add variance
+these oracles do not capture~\citep{mandlekar2020iwr,liu2023sirius}. Bridging placements require
+a resettable simulator, and all results are in simulation. The robot-task
+comparison lacks a uniform-random allocation control (Stagger runs on
+GridWorld only). The loop inherits
+the quality of its foundation models: weaker VLM or LLM outputs degrade
+root-causing and prescription; KAG grounding and the feasibility loop
+bound, but do not eliminate, the damage. Each round also pays the
+wall-clock cost of the reasoning pipeline (frame description, root-cause
+analysis, clustering, prescription, possible re-prescription), which
+per-state gates do not incur, and each new task family requires authoring
+its knowledge graph. The loop
+commits to a single demonstration per round and cannot exploit an expert
+willing to record several complementary corrections at once, and the
+descriptor $\phi_i$ and memory constants are designed, not learned. Letting
+the VLM's failure taxonomy define the clustering space and extending
+prescription to human-gated hardware~\citep{kelly2019hgdagger} are natural
+next steps.
+
+\bibliographystyle{aaai2027}
+\bibliography{references}
+
+\end{document}

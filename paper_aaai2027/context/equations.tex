@@ -1,0 +1,359 @@
+% =====================================================================
+%  PACE : unified equation set (AAAI-2027)
+%  Single shared notation across problem setup, diffusion policy,
+%  all interactive-IL baselines, and PACE.
+%  ASCII-only math. Every block is preceded by a % intent comment.
+%  PACE is presented as a strict generalization of the query-based
+%  baselines: baselines answer "WHEN to query"; PACE answers
+%  "WHEN + WHICH failures + WHERE to place the corrective demo".
+% =====================================================================
+
+% ---------------------------------------------------------------------
+%  NOTATION TABLE  (symbol -> meaning). Keep identical everywhere.
+% ---------------------------------------------------------------------
+% -- Environment / policy --
+%   s in S            state (privileged proprio for state-mode; image obs for image-mode)
+%   a in A            action (discrete move in T1; rel_joint_pos delta in T2-T5)
+%   pi_theta          novice (learner) policy, parameters theta
+%   pi_star           expert oracle (A*/BFS in T1; PPO/motion-planner in T2-T5)
+%   P(s'|s,a), R, H   transition kernel, reward, horizon
+%   gamma_env         MDP discount (distinct from the memory discount gamma below)
+%   tau_traj          a trajectory (s_0,a_0,...); rho_pi its state-visitation dist.
+% -- Datasets / loop --
+%   D                 aggregated demonstration dataset (state-action pairs)
+%   r                 interactive-IL round index (one prescribed demo per round)
+%   n_d               retrain cadence (retrain from scratch every n_d demos)
+%   B                 expert-query budget (max added demos); q = #queries used
+% -- Diffusion policy --
+%   x_0 = a           clean action (target of denoising), a in R^{da}
+%   k in {1..K_dif}   diffusion timestep; K_dif = num_train_timesteps
+%   eps ~ N(0,I)      injected noise; alpha_bar_k the DDPM cumulative schedule
+%   x_k               noised action at diffusion step k
+%   v_k               v-prediction target
+%   eps_theta,v_theta network prediction (noise / v param.) conditioned on obs
+%   L_dif(s,a)        per-pair diffusion (denoising) loss  == UNCERTAINTY SIGNAL
+%   ell_t = L_dif(s_t, a^{nov}_t)   diffusion loss at rollout step t
+%   F_hat             empirical CDF of training-set diffusion losses
+%   alpha             CDF quantile level for the Diff-DAgger threshold (0.99)
+% -- Interactive-IL query machinery (shared by ALL baselines) --
+%   a^{nov}_t         novice's first executed action at step t
+%   a^{exp}_t         expert action at s_t (both in comparable rel_joint_pos space)
+%   Query(s_t)        binary predicate: 1 => expert intervenes at t*
+%   t* = min{t: Query(s_t)=1}   first intervention step of the round
+%   tau_sd, tau,...   per-method thresholds (subscripts name the method)
+% -- MC-dropout / ensemble --
+%   N_mc              # stochastic samples (MC-dropout / diffusion draws)
+%   a^{(i)}_t         i-th stochastic action sample at s_t
+%   M                 # ensemble members; a^{[m]}_t member m's action
+%   p_hat_t           in-ball fraction (agreement with expert)
+% -- Success-Q (ThriftyDAgger) --
+%   Q_psi(s,a)        goal-conditioned success value, params psi
+%   y_t               Monte-Carlo success-to-go BCE target
+%   risk(s,a)=1-Q     task-risk term
+%   delta_h, beta_h   novelty / risk quantile thresholds (level 1-alpha_h)
+% -- PACE PARTITION/PRIORITIZE (per round, on the round's failures) --
+%   F_r={f_1..f_N}    the round's failure set; i,j index failures; N=|F_r|
+%   t*_i,T_i          peak-loss step / total steps of failure i
+%   peak_i,mean_i     max / mean diffusion loss over failure i
+%   p^tee_i,theta_i   object (tee) planar pose + yaw of failure i
+%   p^tcp_i,q^full_i  end-effector pos / full robot qpos at t*_i
+%   rho_i,delta_i     progress t*_i/T_i ; contact distance ||p^tcp_i-p^tee_i||
+%   phi_i in R^6      geometric failure descriptor  (featurizer phi(.))
+%   v_i, v_tilde_i    raw R3M frame embedding / PCA-reduced visual embedding
+%   psi_i             clustering feature = v_tilde_i (visual) else phi_i
+%   X, X_tilde        stacked features / z-standardized features
+%   C_1..C_m          clusters; k* silhouette-optimal cluster count
+%   rep(C)            cluster representative (member nearest centroid)
+%   C_star,C_tgt      dominant cluster / memory-rotated target cluster
+%   S                 diversity-selected failure subset, |S|<=kappa
+%   kappa             selection cap == top_k (default 3)
+%   Pmem(c)           cross-round recency penalty at pose c
+%   gamma,sigma_mem   memory discount / bandwidth ; lambda memory weight
+% -- PACE PRESCRIBE --
+%   A                 anchor = rep(C_tgt) geometry
+%   cmd               LLM SceneCommand (target tee pose, tcp, label)
+%   g(.)              prescribe map: SceneCommand -> ResetSpec (reset dist.)
+%   xi                corrective reset / sub-task-entry spec (start of demo)
+%   clamp_W(.)        projection onto KAG workspace bounds W
+% -- Metrics --
+%   SR               held-out success rate; SR_target = 0.90
+%   q(SR_target)     #expert queries to reach target SR
+%   Eff             demo-efficiency = AUC of SR vs #demos
+%   Cov             coverage of collected demos over the task space
+% ---------------------------------------------------------------------
+
+
+% =====================================================================
+%  PART I -- PROBLEM SETUP
+% =====================================================================
+
+% (1) Sequential decision process (MDP; POMDP if s is a partial image obs).
+\begin{equation}
+\mathcal{M} = \big(\, \mathcal{S},\ \mathcal{A},\ P(s'\mid s,a),\ R(s,a),\ H,\ \gamma_{\mathrm{env}} \,\big),
+\qquad
+\pi_\theta:\ \mathcal{S}\to\Delta(\mathcal{A}),
+\label{eq:mdp}
+\end{equation}
+
+% (2) Expert oracle and the demonstration dataset it induces (roll pi_star).
+\begin{equation}
+\pi^\star=\arg\max_{\pi}\ \mathbb{E}_{\tau\sim\pi}\!\Big[\textstyle\sum_{t=0}^{H}\gamma_{\mathrm{env}}^{\,t} R(s_t,a_t)\Big],
+\qquad
+\mathcal{D}=\big\{(s_t,a_t)\ :\ a_t=\pi^\star(s_t)\big\}.
+\label{eq:expert}
+\end{equation}
+
+% (3) Behavior-cloning objective: match the expert on the aggregated data.
+\begin{equation}
+\theta^\star=\arg\min_{\theta}\ \mathbb{E}_{(s,a)\sim\mathcal{D}}\big[\,\mathcal{L}_{\mathrm{BC}}\big(\pi_\theta(\cdot\mid s),\,a\big)\,\big],
+\qquad
+\mathcal{L}_{\mathrm{BC}}=-\log\pi_\theta(a\mid s)\ \ \text{(disc.)}\ \ \text{or}\ \ \|\pi_\theta(s)-a\|_2^2\ \ \text{(cont.)}.
+\label{eq:bc}
+\end{equation}
+
+% (4) Interactive-IL query loop: DAgger-style aggregation with a query gate.
+%     A round rolls pi_theta, flags an intervention point t*, the expert takes
+%     over there, and the resulting expert segment is the single new demo.
+\begin{align}
+\text{roll } \pi_{\theta_r}\ &\Rightarrow\ t^\star=\min\{t:\ \mathrm{Query}(s_t)=1\}, \nonumber\\
+\mathcal{D}_{r+1}&=\mathcal{D}_r\ \cup\ \big\{(s_t,\pi^\star(s_t)):\ t\ge t^\star\big\},\qquad
+\theta_{r+1}=\arg\min_{\theta}\ \mathbb{E}_{\mathcal{D}_{r+1}}[\mathcal{L}_{\mathrm{BC}}],
+\label{eq:iil-loop}
+\end{align}
+% one demo per round; retrain from scratch every n_d demos; stop at SR_target or budget B.
+
+
+% =====================================================================
+%  PART II -- DIFFUSION POLICY + ITS PER-STEP UNCERTAINTY SIGNAL
+% =====================================================================
+
+% (5) Forward noising of the action target a=x_0 over K_dif diffusion steps.
+\begin{equation}
+x_k=\sqrt{\bar\alpha_k}\,x_0+\sqrt{1-\bar\alpha_k}\,\epsilon,
+\qquad \epsilon\sim\mathcal{N}(0,I),\quad k\in\{1,\dots,K_{\mathrm{dif}}\}.
+\label{eq:forward}
+\end{equation}
+
+% (6) Training objective: v-prediction denoising (equiv. DDPM eps-prediction).
+%     v_k is the DDPM v-target; conditioning on obs s is suppressed for brevity.
+\begin{equation}
+v_k=\sqrt{\bar\alpha_k}\,\epsilon-\sqrt{1-\bar\alpha_k}\,x_0,
+\qquad
+\mathcal{L}_{\mathrm{DP}}(\theta)=\mathbb{E}_{k,\epsilon,(s,a)}\big[\big\|v_\theta(x_k,k,s)-v_k\big\|_2^2\big].
+\label{eq:vpred}
+\end{equation}
+
+% (7) The per-pair diffusion loss reused as the UNCERTAINTY SIGNAL.
+%     Averaged over noise draws (and, optionally, all k); ell_t is its value
+%     at the novice's own executed action along a rollout.
+\begin{equation}
+L_{\mathrm{dif}}(s,a)=\mathbb{E}_{k,\epsilon}\big[\big\|v_\theta(x_k,k,s)-v_k\big\|_2^2\big],
+\qquad
+\ell_t \;=\; L_{\mathrm{dif}}\big(s_t,\,a^{\mathrm{nov}}_t\big).
+\label{eq:diffsignal}
+\end{equation}
+
+
+% =====================================================================
+%  PART III -- BASELINE QUERY PREDICATES (a SINGLE decision rule family)
+%  Every baseline is  Query(s_t)=1[ score_method(s_t) crosses threshold ].
+%  Actions compared in the shared rel_joint_pos space so ||.|| is consistent.
+% =====================================================================
+
+% (8) SafeDAgger*: query when novice/expert action discrepancy exceeds tau_sd.
+%     (Robot: L2 in joint-delta space; T1: fraction of off-optimal-mask steps.)
+\begin{equation}
+\mathrm{Query}_{\mathrm{Safe}}(s_t)=\mathbf{1}\big[\ \|a^{\mathrm{nov}}_t-a^{\mathrm{exp}}_t\|_2 > \tau_{\mathrm{sd}}\ \big],
+\qquad
+d^{\mathrm{maze}}_{\mathrm{safe}}=\tfrac1N\!\sum_{t}\mathbf{1}\!\big[\,\mathrm{opt}_t[a^{\mathrm{nov}}_t]<\tfrac12\,\big].
+\label{eq:safe}
+\end{equation}
+
+% (9) DropoutDAgger: N_mc stochastic samples; query when the in-tau-ball
+%     agreement fraction p_hat_t with the expert drops below p.
+\begin{align}
+\hat p_t=\tfrac{1}{N_{\mathrm{mc}}}\sum_{i=1}^{N_{\mathrm{mc}}}\mathbf{1}\big[\ \|a^{(i)}_t-a^{\mathrm{exp}}_t\|_2\le\tau\ \big],
+\qquad
+\mathrm{Query}_{\mathrm{Drop}}(s_t)=\mathbf{1}\big[\ \hat p_t<p\ \big].
+\label{eq:dropout}
+\end{align}
+
+% (10) EnsembleDAgger: query on ensemble DOUBT (variance) OR mean DISCREPANCY.
+\begin{align}
+\mathrm{doubt}_t&=\tfrac1{d_a}\!\sum_{j=1}^{d_a}\mathrm{Var}_{m}\big(a^{[m]}_{t,j}\big),
+&
+\mathrm{disc}_t&=\tfrac1M\!\sum_{m=1}^{M}\big\|a^{[m]}_t-a^{\mathrm{exp}}_t\big\|_2, \nonumber\\
+\mathrm{Query}_{\mathrm{Ens}}(s_t)&=\mathbf{1}\big[\ \mathrm{disc}_t>\tau\ \ \lor\ \ \mathrm{doubt}_t>\chi\ \big]. &&
+\label{eq:ensemble}
+\end{align}
+
+% (11) ThriftyDAgger: query on NOVELTY (ensemble doubt) OR RISK=1-Q.
+%      Success-Q trained by BCE on a Monte-Carlo success-to-go target y_t;
+%      thresholds are budget-alpha_h auto-calibrated (1-alpha_h)-quantiles.
+\begin{align}
+y_t&=\mathbf{1}[\mathrm{success}]\cdot\gamma^{\,n-1-t},
+\qquad
+\mathcal{L}_Q=\mathrm{BCE}\big(\sigma(Q_\psi(s_t,a_t)),\,y_t\big),
+\qquad
+\mathrm{risk}(s,a)=1-\sigma\!\big(Q_\psi(s,a)\big), \nonumber\\
+\delta_h&=\mathrm{Quantile}_{1-\alpha_h}\{\mathrm{doubt}\},\quad
+\beta_h=\mathrm{Quantile}_{1-\alpha_h}\{\mathrm{risk}\},\quad
+\mathrm{Query}_{\mathrm{Thr}}(s_t)=\mathbf{1}\big[\ \mathrm{doubt}_t>\delta_h\ \lor\ \mathrm{risk}_t>\beta_h\ \big].
+\label{eq:thrifty}
+\end{align}
+
+% (12) Diff-DAgger: native diffusion-loss CDF quantile held for K windowed steps.
+%      Threshold = alpha-quantile of the training-loss CDF, recalibrated each retrain.
+\begin{equation}
+\eta_\alpha=\hat F^{-1}(\alpha),
+\qquad
+\mathrm{Query}_{\mathrm{Diff}}(s_t)=\mathbf{1}\!\left[\ \sum_{u=t-K+1}^{t}\mathbf{1}\big[\ \ell_u>\eta_\alpha\ \big]\ \ge\ K\ \right]
+\;=\;\mathbf{1}\big[\ \hat F(\ell_u)>\alpha\ \ \forall u\in(t-K,t]\ \big].
+\label{eq:diffdagger}
+\end{equation}
+
+% (13) Uniform-random control ("Stagger"): query at a pre-drawn random step.
+\begin{equation}
+t_{\mathrm{stag}}\sim\mathrm{Unif}\{0,\dots,H-1\},
+\qquad
+\mathrm{Query}_{\mathrm{Rand}}(s_t)=\mathbf{1}\big[\ t\ge t_{\mathrm{stag}}\ \big].
+\label{eq:stagger}
+\end{equation}
+
+
+% =====================================================================
+%  PART IV -- PACE  (Perceive -> Assess -> Choose -> Execute)
+%  Generalization: baselines pick WHEN (a single t*); PACE additionally
+%  partitions the round's failures, selects a diverse WHICH-set, and
+%  prescribes WHERE the corrective demo begins.
+% =====================================================================
+
+% (14) PERCEIVE. Failure set of the round; each failure keeps its peak-loss
+%      step t*_i = argmax_t ell_t (the moment of maximal diffusion uncertainty),
+%      which is exactly the Diff-DAgger signal (12) reused as the analysis frame.
+\begin{equation}
+\mathcal{F}_r=\{f_1,\dots,f_N\},
+\qquad
+t^\star_i=\arg\max_t \ell^{\,(i)}_t,\quad
+\mathrm{peak}_i=\max_t \ell^{\,(i)}_t,\quad
+\rho_i=\frac{t^\star_i}{\max(1,T_i)},\quad
+\delta_i=\big\|p^{\mathrm{tcp}}_i-p^{\mathrm{tee}}_i\big\|_2.
+\label{eq:perceive}
+\end{equation}
+
+% (15) Featurizer phi(.): 6-D geometric descriptor (quaternion-free);
+%      optional visual embedding v_i (R3M) reduced by PCA to v_tilde_i.
+%      psi_i is the clustering feature actually used; X_tilde its z-standardization.
+\begin{align}
+\phi_i&=\big[\,p^{\mathrm{tee}}_{i,x},\ p^{\mathrm{tee}}_{i,y},\ \sin\theta_i,\ \cos\theta_i,\ \rho_i,\ \delta_i\,\big]\in\mathbb{R}^6,
+\qquad
+\tilde v_i=\mathrm{PCA}_{k'}\big(v_i\big),\ \ k'=\min(16,N-1,d), \nonumber\\
+\psi_i&=\begin{cases}\tilde v_i & \text{visual mode}\\[2pt]\phi_i & \text{geometric (default)}\end{cases},
+\qquad
+X=[\psi_1;\dots;\psi_N],\qquad
+\tilde X_i=\big(\psi_i-\mu\big)\oslash\sigma,\quad \sigma_j\!\leftarrow\!\max(\sigma_j,10^{-8}).
+\label{eq:phi}
+\end{align}
+
+% (16) PARTITION. Cluster the standardized features; choose k by max silhouette.
+%      Per-cluster geometry (centroid, circular-mean yaw, mean peak-loss) is
+%      always computed on the RAW tee pose; the representative is the member
+%      nearest the cluster mean in feature space.
+\begin{align}
+k^\star&=\arg\max_{k\in[2,\,k_{\max}]}\ \mathrm{sil}(k),\qquad k_{\max}=\max\!\big(2,\min(6,N-1)\big),\nonumber\\
+c^{xy}_{C}&=\tfrac{1}{|C|}\!\sum_{i\in C}p^{\mathrm{tee}}_{i,xy},\quad
+\bar\theta_{C}=\operatorname{atan2}\!\Big(\!\sum_{i\in C}\!\sin\theta_i,\ \sum_{i\in C}\!\cos\theta_i\Big),\quad
+\bar L_{C}=\tfrac{1}{|C|}\!\sum_{i\in C}\mathrm{peak}_i,\nonumber\\
+\mathrm{rep}(C)&=\arg\min_{i\in C}\ \big\|\tilde X_i-\bar X_{C}\big\|_2,\qquad
+\bar X_{C}=\tfrac1{|C|}\!\sum_{i\in C}\tilde X_i.
+\label{eq:partition}
+\end{align}
+
+% (17) Dominant cluster: lexicographic on (size, mean peak-loss, -min episode id).
+\begin{equation}
+C^\star=\operatorname*{arg\,lexmax}_{C\in\{C_1..C_m\}}\ \big(\ |C|,\ \bar L_{C},\ -\!\min_{i\in C}\mathrm{eid}_i\ \big).
+\label{eq:dominant}
+\end{equation}
+
+% (18) Cross-round MEMORY: Gaussian, recency-discounted coverage penalty, and
+%      the memory-rotated TARGET cluster (among clusters within one member of
+%      dominant). Rotation avoids re-prescribing an already-covered mode.
+\begin{align}
+P_{\mathrm{mem}}(c)&=\sum_{i:\,(r_i,c_i)\in\mathrm{Mem}}\gamma^{\,\max(0,\,r-r_i)}\exp\!\Big(-\tfrac{\|c-c_i\|_2^2}{2\sigma_{\mathrm{mem}}^2}\Big),\nonumber\\
+C_{\mathrm{tgt}}&=\arg\max_{C:\,|C|\ge|C^\star|-1}\ \Big(\ \bar L_{C}\ -\ \lambda\,P_{\mathrm{mem}}\big(c^{xy}_{C}\big)\ \Big),\qquad \gamma=0.6,\ \sigma_{\mathrm{mem}}=0.06,\ \lambda=1.
+\label{eq:memory}
+\end{align}
+
+% (19) PRIORITIZE. Diversity selection = k-center / farthest-point (max-min)
+%      with the target representative FORCED in and the worst-loss seed added.
+%      This is the coverage/diversity objective PACE adds over WHEN-only rules.
+\begin{align}
+S_0&=\big\{\,\mathrm{rep}(C_{\mathrm{tgt}})\,\big\}\ \cup\ \big\{\,\arg\max_i \mathrm{peak}_i\,\big\}, \nonumber\\
+S&\leftarrow S\ \cup\ \Big\{\ \arg\max_{i\notin S}\ \min_{j\in S}\ \big\|\tilde X_i-\tilde X_j\big\|_2\ \Big\}\quad\text{until}\ |S|=\kappa,\qquad \kappa=3, \nonumber\\
+S^\star&=\arg\max_{S\subseteq\mathcal{F}_r,\ |S|\le\kappa}\ \min_{\substack{i,j\in S\\ i\ne j}}\ \big\|\tilde X_i-\tilde X_j\big\|_2\quad\text{s.t.}\ \ \mathrm{rep}(C_{\mathrm{tgt}})\in S.
+\label{eq:diversity}
+\end{align}
+% Eq. (19) top two lines = the greedy realization; last line = the max-min
+% coverage objective it approximates (forced-representative constraint).
+
+% (20) PRESCRIBE. The anchor is the target representative; the VLM/LLM emits a
+%      SceneCommand cmd; the prescribe map g(.) turns it into a corrective reset
+%      / sub-task-entry distribution xi (the START STATE of the one new demo),
+%      projected onto the KAG workspace bounds W. A(nchor)-relative perturbation
+%      is L2-capped in position and clamped in yaw.
+\begin{align}
+A&=\big(p^{\mathrm{tee}}_A,\ \theta_A,\ q^{\mathrm{full}}_A,\ p^{\mathrm{tcp}}_A,\ t^\star_A\big)=\mathrm{rep}(C_{\mathrm{tgt}}),
+\qquad
+\mathrm{cmd}=\mathrm{VLM/LLM}\big(A,\ \text{frames}(t^\star_A),\ \mathrm{KAG}\big),\nonumber\\
+\Delta_{xy}&=\mathrm{cmd}.p^{\mathrm{tee}}_{xy}-p^{\mathrm{tee}}_{A,xy},\quad
+\Delta_{xy}\leftarrow\Delta_{xy}\cdot\min\!\Big(1,\ \tfrac{\Delta_{\max}}{\|\Delta_{xy}\|_2}\Big),\quad
+\Delta_\theta=\mathrm{clamp}\big(\mathrm{wrap}_\pi(\mathrm{cmd}.\theta-\theta_A),\,\pm\theta_{\max}\big),\nonumber\\
+\xi&=g(\mathrm{cmd})=\mathrm{clamp}_{\,\mathcal{W}}\Big(p^{\mathrm{tee}}_A+[\Delta_{xy},0],\ \ \theta_A+\Delta_\theta,\ \ q^{\mathrm{full}}_A\Big),
+\qquad
+(\Delta_{\max},\theta_{\max})=(0.06,0.4).
+\label{eq:prescribe}
+\end{align}
+
+% (21) The prescribed round: sample the start state from the reset distribution
+%      induced by xi, let the expert roll from t*, and aggregate ONE demo.
+%      This recovers Diff-DAgger (12) when |S|=1, C_tgt=C*, g=on-policy identity.
+\begin{equation}
+s_0\sim\Xi(\,\cdot\mid\xi\,),
+\qquad
+\mathcal{D}_{r+1}=\mathcal{D}_r\ \cup\ \big\{(s_t,\pi^\star(s_t)):\ t\ge t^\star,\ s_0\sim\Xi(\cdot\mid\xi)\big\}.
+\label{eq:prescribe-demo}
+\end{equation}
+
+
+% =====================================================================
+%  PART V -- EVALUATION METRICS
+% =====================================================================
+
+% (22) Held-out success rate over a fixed evaluation set E (target 0.90).
+\begin{equation}
+\mathrm{SR}(\theta)=\frac{1}{|\mathcal{E}|}\sum_{e\in\mathcal{E}}\mathbf{1}\big[\ \text{episode }e\ \text{succeeds under }\pi_\theta\ \big],
+\qquad \mathrm{SR}_{\mathrm{target}}=0.90.
+\label{eq:sr}
+\end{equation}
+
+% (23) Expert-query count to reach the target SR (else the full budget B).
+\begin{equation}
+q(\mathrm{SR}_{\mathrm{target}})=\min\big\{\,q\ :\ \mathrm{SR}(\theta_q)\ge\mathrm{SR}_{\mathrm{target}}\,\big\},
+\qquad
+q\leftarrow B\ \ \text{if the target is never reached.}
+\label{eq:queries}
+\end{equation}
+
+% (24) Demo efficiency = area under the SR-vs-#demos curve (trapezoidal).
+\begin{equation}
+\mathrm{Eff}=\int_{0}^{B}\mathrm{SR}(\theta_{q})\ \mathrm{d}q
+\ \approx\ \sum_{q=1}^{B}\tfrac12\big(\mathrm{SR}(\theta_{q-1})+\mathrm{SR}(\theta_{q})\big).
+\label{eq:eff}
+\end{equation}
+
+% (25) Coverage of the collected demos over the task space Z (grid cells in T1;
+%      quantized workspace/pose cells in T2-T5).
+\begin{equation}
+\mathrm{Cov}=\frac{1}{|\mathcal{Z}|}\Big|\ \big\{\,z\in\mathcal{Z}\ :\ \exists\,(s,a)\in\mathcal{D}\ \text{with}\ \mathrm{cell}(s)=z\,\big\}\ \Big|.
+\label{eq:cov}
+\end{equation}

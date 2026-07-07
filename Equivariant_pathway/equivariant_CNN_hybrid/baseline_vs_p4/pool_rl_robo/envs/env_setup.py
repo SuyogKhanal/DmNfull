@@ -121,9 +121,10 @@ TASKS: Dict[str, TaskSpec] = {
     "PlugCharger-v1": TaskSpec(
         suite_id="PlugCharger-v1",
         fork_env_id="PlugCharger-v1",
-        hydra_cfg="diffdagger/config/sim/plugcharger_state.yaml",  # authored later
+        hydra_cfg="configs/hydra/plugcharger_state.yaml",   # suite-local (not fork)
         expert_kind="motionplanner",
-        reposition_env_id=None,
+        reposition_env_id="PlugCharger-Start-v0",           # suite-local, honours
+                                                            # prescribed charger/socket poses (BRIDGE)
         task_description=(
             "A Franka Panda grasps a charger and inserts its prongs into a wall "
             "socket. Contact-rich, tight tolerances. Success = charger fully "
@@ -147,7 +148,23 @@ def fork_env_id(suite_id: str) -> str:
 def hydra_cfg_path(suite_id: str) -> Path:
     """Resolve a task's Hydra config. PushT lives in the fork; non-PushT tasks
     (StackCube/…) are authored SUITE-LOCAL (we never edit the fork), so prefer a
-    path under SUITE_ROOT and fall back to FORK_ROOT."""
+    path under SUITE_ROOT and fall back to FORK_ROOT.
+
+    Override hook: if ``$SUITE_HYDRA_CFG`` points to an existing file, it WINS —
+    this is how the IMAGE-based run swaps the state config (pusht_state.yaml) for
+    pusht_image.yaml (obs_mode=rgb + R3M encoder) for BOTH arms (diff_dagger and
+    p4_subtask) without editing the fork or the task catalog. A relative value is
+    resolved against SUITE_ROOT."""
+    import os
+    ov = os.environ.get("SUITE_HYDRA_CFG", "").strip()
+    if ov:
+        ovp = Path(ov)
+        if not ovp.is_absolute():
+            ovp = SUITE_ROOT / ovp
+        if ovp.is_file():
+            return ovp
+        print(f"[env_setup] WARNING: SUITE_HYDRA_CFG={ov!r} not found; "
+              f"using the default Hydra config for {suite_id}.")
     rel = task_spec(suite_id).hydra_cfg
     suite_p = SUITE_ROOT / rel
     if suite_p.is_file():
@@ -172,6 +189,10 @@ def register_envs() -> None:
         from . import stackcube_start  # noqa: F401  registers StackCube-Start-v0
     except Exception as exc:  # pragma: no cover
         print(f"[env_setup] note: StackCube-Start-v0 not registered ({exc})")
+    try:
+        from . import plugcharger_start  # noqa: F401  registers PlugCharger-Start-v0
+    except Exception as exc:  # pragma: no cover
+        print(f"[env_setup] note: PlugCharger-Start-v0 not registered ({exc})")
 
 
 def is_success(info: dict) -> bool:

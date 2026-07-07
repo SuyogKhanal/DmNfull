@@ -100,6 +100,8 @@ def run_p4_subtask_arm(*, method: str, top_k: int, cfg, env, eval_env, repositio
     pipe._subtask_collect = collect_subtask_demo_v2
     print(f"[p4_subtask] planner injected (collect={planner.collect_mode}, "
           f"signal={planner.signal_mode}, max_clusters={planner.max_k}, "
+          f"cluster_features={planner.cluster_features}"
+          f"{f'/{planner.embed_model}' if planner.cluster_features == 'visual' else ''}, "
           f"heldout_confirm={planner.confirm_target_with_heldout}); "
           f"telemetry → {work/'telemetry'}")
 

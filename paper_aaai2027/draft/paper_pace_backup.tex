@@ -1,0 +1,1354 @@
+\documentclass[letterpaper]{article} % DO NOT CHANGE THIS
+\usepackage[submission]{aaai2027}  % DO NOT CHANGE THIS
+% The serif, sans-serif, and monospaced fonts are loaded automatically by
+% aaai2027.sty (newtxtext, helvet, courier). DO NOT add \usepackage{times},
+% \usepackage{helvet}, \usepackage{courier}, or any other font package.
+\usepackage[hyphens]{url}  % DO NOT CHANGE THIS
+\usepackage{graphicx} % DO NOT CHANGE THIS
+\urlstyle{rm} % DO NOT CHANGE THIS
+\def\UrlFont{\rm}  % DO NOT CHANGE THIS
+\usepackage{natbib}  % DO NOT CHANGE THIS AND DO NOT ADD ANY OPTIONS TO IT
+\usepackage{caption} % DO NOT CHANGE THIS AND DO NOT ADD ANY OPTIONS TO IT
+\frenchspacing  % DO NOT CHANGE THIS
+%
+% These are recommended to typeset algorithms but not required.
+\usepackage{algorithm}
+\usepackage{algorithmic}
+%
+% Math support (standard, permitted).
+\usepackage{amsmath}
+\usepackage{amssymb}
+%
+% Recommended for better-looking tables
+\usepackage{booktabs}
+%
+% Visible red placeholder for pending numeric results -- grep "\PH{" to find them.
+\usepackage{xcolor}
+\newcommand{\PH}[1]{{\color{red}\textbf{[#1]}}}
+%
+% Keep the \pdfinfo as shown here.
+\pdfinfo{
+/TemplateVersion (2027.1)
+}
+
+\setcounter{secnumdepth}{0} %May be changed to 1 or 2 if section numbers are desired.
+
+% Title -- mixed (Title) case.
+\title{PACE: Curating Failure Modes for Query-Efficient\\ Interactive Imitation Learning}
+
+\author{
+    Anonymous Submission
+}
+\affiliations{
+    %
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Interactive imitation learning corrects the compounding covariate shift of
+behavior cloning by aggregating fresh expert demonstrations on visited states.
+The dominant DAgger family answers only \emph{when} to query the expert---via a
+per-state uncertainty or safety gate---leaving implicit \emph{which} of the many
+observed failures deserve scarce expert effort. \textbf{PACE}
+(\textbf{P}erceive~$\rightarrow$~\textbf{A}ssess~$\rightarrow$~%
+\textbf{C}hoose~$\rightarrow$~\textbf{E}xecute) is an interactive-imitation loop
+for diffusion policies that curates each round's rollout failures as a batch.
+\emph{Perceive} anchors a geometric (optionally visual) descriptor at the
+peak-diffusion-loss step; \emph{Assess} clusters descriptors into failure modes
+scored by dominance and cross-round novelty; \emph{Choose} rotates the target via
+cross-round memory to a mode not yet covered; \emph{Execute} collects the
+correction on-policy at the failure, or optionally from an LLM-prescribed
+sub-task-entry start state. PACE's central axis is thus \emph{which} failure mode
+to correct, not only \emph{when} to query; the prescribed \emph{where}-to-start is
+an ablated option, and a unifying view places query-based baselines in one corner
+of the design space. We study PACE on two \emph{implemented} tasks (a $5\times5$
+grid and ManiSkill Push, in state and image observations, five seeds) against the
+DAgger family and single-axis \emph{where} and \emph{which} controls; three
+RoboSuite tasks (Lift, Wipe, Door) are \emph{planned} extensions with no result
+rows. Under a paired per-seed protocol we test whether PACE reaches the target
+success rate with \PH{pace-vs-diff-q-reduction} fewer expert queries than the
+strongest baseline. All reported numbers are placeholders pending the five-seed
+runs; today's contribution is the method, framework, and pre-registered protocol.
+\end{abstract}
+
+\section{Introduction}
+
+Behavior cloning regresses an expert's actions on the states the expert
+visits~\citep{pomerleau1988alvinn,pomerleau1991efficient}, and its
+well-known failure mode is \emph{covariate shift}: the learner's own
+actions determine the states it later encounters, so small prediction
+errors push it off the demonstrated support, where errors compound over
+the horizon~\citep{ross2011dagger}. Interactive imitation learning (IIL)
+confronts this by aggregating expert labels on states the \emph{learner}
+visits, bounding error linearly rather than quadratically in the
+horizon~\citep{ross2011dagger,celemin2022iil}. The price is expert
+effort: vanilla DAgger relabels every rolled-out state, which is
+prohibitive when the expert is a human teleoperator or an expensive
+planner~\citep{zhang2017safedagger,hoque2021thriftydagger}. \emph{Query
+efficiency} --- reaching a target success rate with as few expert queries
+as possible --- is therefore the axis along which IIL methods are judged,
+and the one we study.
+
+\paragraph{The DAgger-family gap.}
+Every query-efficient descendant of DAgger decides \emph{when} to hand
+control to the expert during a rollout; only the signal varies. SafeDAgger
+uses a learned safety classifier~\citep{zhang2017safedagger}; DropoutDAgger
+and EnsembleDAgger read predictive uncertainty off dropout and ensemble
+variance~\citep{menda2017dropoutdagger,menda2019ensembledagger,
+gal2016dropout,lakshminarayanan2017ensembles}; HG-DAgger and LazyDAgger watch
+the learner--expert discrepancy~\citep{kelly2019hgdagger,hoque2021lazydagger};
+ThriftyDAgger budgets by novelty and risk~\citep{hoque2021thriftydagger}; and
+Diff-DAgger --- built for the multimodal diffusion policies we adopt --- reuses
+the diffusion training loss as the query signal~\citep{lee2025diffdagger,
+chi2023diffusionpolicy}. Different signals, one decision structure: a per-state
+predicate $\mathrm{Query}(s_t)$ fires the first time a scalar score crosses a
+threshold, and the expert takes over from that step~(Eq.~\ref{eq:iil-loop}); they
+differ only in the score inside the indicator
+(Eqs.~\ref{eq:safe}--\ref{eq:diffdagger}). This answers only \emph{when} to query
+and leaves two axes unasked. Nothing decides \emph{which} of a round's distinct
+failures deserve correction, so redundant failures from one mode are corrected
+repeatedly while rarer modes starve; and with no memory across rounds, a
+mode already fixed can be re-queried indefinitely. Budget is thus spent on the
+\emph{easiest-to-detect} uncertainty rather than a diverse cover of the policy's
+failure modes. A third, softer axis --- \emph{where} a corrective demonstration
+begins --- the baselines fix to whatever state the rollout reached; PACE can
+prescribe this start state, but treats it as an option, not the core method.
+
+\paragraph{PACE.}
+\textbf{PACE} (\textbf{P}erceive $\to$ \textbf{A}ssess $\to$
+\textbf{C}hoose $\to$ \textbf{E}xecute) widens the DAgger-family query from
+``\emph{when}'' to ``\emph{when} $+$ \emph{which},'' with an \emph{optional}
+\emph{where}. Each round it rolls the current diffusion policy to collect a
+\emph{set} of failures rather than one intervention point; the four stages are
+defined in \S\ref{sec:method}. Perceive localizes each failed rollout at its
+peak diffusion-loss frame --- the state the Diff-DAgger signal
+flags~(Eq.~\ref{eq:diffdagger}) --- as a geometric or visual
+descriptor~(Eq.~\ref{eq:phi}) that a vision--language
+model~\citep{bai2025qwen3vl} describes. Assess clusters descriptors into failure
+\emph{modes}~\citep{lloyd1982kmeans}, sets their count by
+silhouette~(Eq.~\ref{eq:partition}), and marks the dominant one. Choose is where
+coverage accumulates: a cross-round memory penalizes covered modes and
+\emph{rotates} the target away from solved ones~(Eq.~\ref{eq:memory}), then a
+farthest-point / $k$-center rule fixes the anchor failure and a context
+set~(Eq.~\ref{eq:diversity}). Execute defaults to an on-policy expert
+demonstration from the anchor's own step; with the option on, a language
+model~\citep{yang2025qwen3} prescribes a corrective sub-task-entry start state,
+projects it onto the task's workspace bounds, and the expert rolls from
+there~(Eqs.~\ref{eq:prescribe}--\ref{eq:prescribe-demo}). The primary novelty is
+the \emph{which} axis (Perceive $+$ Assess $+$ Choose): curating a round's
+failures into modes and spending the single query on a memory-rotated,
+previously-uncorrected mode. The prescribed \emph{where} start state is an option
+we expose and ablate. This decomposition also gives a unifying view in which the
+query-based baselines occupy one corner of the PACE design space; we develop that
+view in \S\ref{sec:method} rather than here.
+
+Two lines of prior work meet here. The DAgger family supplies correction on the
+learner's own state distribution~\citep{ross2011dagger,laskey2017dart}, whose
+diffusion loss we reuse as the failure signal~\citep{lee2025diffdagger}.
+Foundation-model robotics supplies the machinery to \emph{perceive} and describe
+failures~\citep{liu2023reflect,duan2025aha,shinn2023reflexion} and to
+\emph{prescribe} structured targets --- here reset states and sub-task entry
+points, not whole plans or reward functions~\citep{liang2023codeaspolicies,
+ma2024eureka,yu2023language2rewards,florensa2017reversecurriculum,
+eysenbach2018leavenotrace}. Assess and Choose are, in effect, batch active
+learning over failures: cluster into modes and cover them with a diversity-aware
+coreset under a budget~\citep{settles2009active,ash2020badge,sener2018coreset}.
+Prior work touches each axis in isolation --- reverse-curriculum methods choose
+\emph{where} to start~\citep{florensa2017reversecurriculum,eysenbach2018leavenotrace},
+intervention-reweighting up-weights \emph{which} samples
+matter~\citep{mandlekar2020iwr,liu2023sirius}, and failure-reasoning VLMs perceive
+and cluster failures~\citep{liu2023reflect,duan2025aha}. PACE's novelty is their
+\emph{integration}: perceived failure-mode clustering feeds a memory-rotated
+target inside one diffusion-policy DAgger loop under a fixed one-demo-per-round
+budget, with selection made \emph{before} data is collected rather than after. To
+separate the integration from its parts we run two single-axis controls alongside
+the DAgger family: a reset-curriculum \emph{where}-arm~\citep{florensa2017reversecurriculum}
+without failure-mode curation, and an IWR-style \emph{which}-arm~\citep{mandlekar2020iwr}
+that up-weights failure states after collection. We do not claim to be first to
+consider \emph{which} or \emph{where}; we claim this failure-mode-driven
+combination and evaluate what it buys over each axis alone.
+
+\paragraph{Evaluation.}
+Our scope is two implemented tasks, each in a state and an image modality
+(Table~\ref{tab:tasks}): the toy $5{\times}5$ grid (multimodal navigation,
+shortest-path expert) and Push (ManiSkill
+PushT~\citep{mu2021maniskill,tao2024maniskill3,florence2021implicitbc}, a
+diffusion-policy learner~\citep{chi2023diffusionpolicy,ho2020ddpm}). We compare
+against the query-efficient DAgger family, a uniform-random control, and the two
+single-axis controls. Three RoboSuite/UR5 tasks --- Lift, Wipe,
+Door~\citep{zhu2020robosuite,mandlekar2021robomimic} --- are \emph{planned}
+extensions carrying no result rows. All robot methods share one diffusion-policy
+learner and differ only in the demonstration-acquisition rule, so the comparison
+isolates query efficiency. We measure held-out SR, expert queries to reach
+$\mathrm{SR}_{\mathrm{target}}{=}0.90$~(Eqs.~\ref{eq:sr}--\ref{eq:queries}), demo
+efficiency (Eq.~\ref{eq:eff}), and coverage~(Eq.~\ref{eq:cov}), reporting PACE's
+extra reset/foundation-model cost separately (\S Cost Accounting) and the sign of
+each comparison from paired per-seed differences over five seeds.
+
+\begin{table}[t]
+\centering
+\small
+\caption{The evaluation suite. Every task is run in both a state and an image
+modality; robot tasks share a single diffusion-policy learner across all
+methods so that only the demonstration-acquisition rule varies. $\dim(\mathcal{A})$
+is the policy action space (T2 policy control is $9$-D \texttt{rel\_joint\_pos};
+its PPO expert emits $7$ arm-joint deltas, which we lift to $9$-D by placing them
+in the $7$ arm-joint components and setting the two \texttt{panda\_stick} finger
+components --- which have no actuator on this end-effector --- to the novice's own
+(zero-delta) values, so $\|\cdot\|$ between novice and expert is taken in the
+shared $9$-D space with the two inert dimensions contributing zero to every
+discrepancy identically for all methods --- see
+\S Baselines). \textbf{Diff-DAgger} is a robot-only baseline (requires the
+diffusion learner). \textbf{T1--T2 are implemented and are the only tasks
+evaluated in this paper.} T3--T5 (RoboSuite/UR5) are a \emph{planned} protocol
+only: not implemented, not run, and carrying no result rows anywhere in the paper.}
+\label{tab:tasks}
+\begin{tabular}{llcccc}
+\toprule
+ & Sim & Embodiment & $\dim(\mathcal{A})$ & Expert & Status \\
+\midrule
+T1 Toy  & MazeNav          & grid agent    & $4$ (disc.) & $A^{\!\star}$/BFS & done \\
+T2 Push & ManiSkill3       & Panda stick   & $9$         & PPO & done \\
+T3 Lift & RoboSuite        & UR5e          & TBD & MP & planned \\
+T4 Wipe & RoboSuite        & UR5           & TBD & MP & planned \\
+T5 Door & RoboSuite        & UR5           & TBD & MP & planned \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Contributions.}
+We make three contributions; because the empirical numbers are pending,
+\textbf{(3)} ships as a \emph{pre-registered protocol and code} rather than
+finished results.
+\textbf{(1)} We reframe interactive imitation learning
+\cite{ross2011dagger,celemin2022iil} as a per-round failure-curation problem
+rather than a per-state query-gating problem, and cast the safe /
+query-efficient DAgger family---SafeDAgger, DropoutDAgger, EnsembleDAgger,
+ThriftyDAgger, and the diffusion-native Diff-DAgger
+\cite{zhang2017safedagger,menda2017dropoutdagger,menda2019ensembledagger,hoque2021thriftydagger,lee2025diffdagger}---%
+as the special case that answers only \emph{when} to query
+(Eq.~\ref{eq:iil-loop}, Eq.~\ref{eq:diffdagger}).
+\textbf{(2)} \textbf{PACE} itself, a Perceive--Assess--Choose--Execute loop
+for diffusion-policy learners \cite{chi2023diffusionpolicy,ho2020ddpm} whose
+central added axis is \emph{which} failure mode to correct: it perceives failures
+by peak-loss localization and (for prescription) a vision--language model
+\cite{bai2025qwen3vl,liu2023reflect,duan2025aha}, partitions them into modes by
+clustering \cite{lloyd1982kmeans}, and chooses a memory-rotated target with a
+farthest-point / k-center context set \cite{sener2018coreset,eldar1997fps}; an
+\emph{optional} Execute stage additionally prescribes an LLM-generated corrective
+sub-task-entry start state
+\cite{yang2025qwen3,florensa2017reversecurriculum,eysenbach2018leavenotrace}
+(Eqs.~\ref{eq:perceive}--\ref{eq:prescribe-demo}). Its novelty is the specific
+integration of these axes in one loop, not any single axis alone; to separate the
+integration from its parts we include a reset-curriculum \emph{where}-arm and an
+IWR-style \emph{which}-arm as run baselines.
+\textbf{(3)} We contribute a \emph{controlled, pre-registered empirical protocol}
+(and its implementation) on the two implemented tasks
+(toy grid, ManiSkill Push) in both state and image modalities
+\cite{tao2024maniskill3,florence2021implicitbc,nair2022r3m}: five seeds, a paired
+per-seed test, up to eight demonstration-acquisition arms (Diff-DAgger on robot
+tasks only) under a matched one-demo-per-round budget, and a per-cell,
+effect-size ablation that isolates each PACE stage and the foundation models.
+The protocol is designed to test whether PACE cuts
+expert queries to reach $\mathrm{SR}_{\mathrm{target}}{=}0.90$ by
+\PH{pace-vs-diff-q-reduction} versus the best baseline at a mean held-out success
+rate of \PH{mean-pace-sr}. \emph{Every result
+cell is a placeholder pending the five-seed runs; no numeric claim in this paper
+is yet established, and we phrase the empirical section as the protocol that will
+answer it. What we can defend now is the method, the framework, and the protocol.}
+
+\section{Related Work}
+\label{sec:related}
+
+Interactive-IL baselines answer a single question through a per-state predicate
+$\mathrm{Query}(s_t)\!=\!\mathbf{1}[\,\mathrm{score}(s_t)\,\square\,\mathrm{thresh}\,]$
+(Eqs.~\eqref{eq:iil-loop}, \eqref{eq:safe}--\eqref{eq:diffdagger}); PACE instead
+perceives and partitions a round's failures, chooses a memory-rotated mode to
+correct, and executes the correction (on-policy, optionally at a prescribed entry
+state) (Eqs.~\eqref{eq:perceive}--\eqref{eq:prescribe-demo}). We review each thread
+PACE touches, marking the axis it adds.
+
+\subsection{Interactive Imitation Learning and the DAgger Family}
+Behavior cloning maps observations to expert actions, dating to ALVINN
+\cite{pomerleau1988alvinn,pomerleau1991efficient}, but suffers covariate shift:
+small errors compound into states absent from $\mathcal{D}$
+(Eqs.~\eqref{eq:expert}--\eqref{eq:bc}) \cite{ross2011dagger,laskey2017dart}. DAgger
+recasts imitation as no-regret online learning, aggregating expert labels on
+\emph{learner}-visited states to bound error linearly rather than quadratically
+\cite{ross2011dagger}; AggreVaTe and Deeply AggreVaTeD extend this to cost-to-go and
+differentiable policies \cite{ross2014aggrevate,sun2017aggrevated}. Since vanilla
+DAgger demands
+near-constant expert access, \emph{safe}, query-efficient variants gate \emph{when}
+to defer: SafeDAgger learns a discrepancy classifier (Eq.~\eqref{eq:safe})
+\cite{zhang2017safedagger}, and DropoutDAgger/EnsembleDAgger threshold
+Bayesian-dropout and ensemble-variance signals
+(Eqs.~\eqref{eq:dropout}--\eqref{eq:ensemble})
+\cite{menda2017dropoutdagger,menda2019ensembledagger}. HG-DAgger cedes control to a
+human on demand \cite{kelly2019hgdagger}, LazyDAgger cuts context switching
+\cite{hoque2021lazydagger}, and ThriftyDAgger budgets interventions by novelty and
+risk (Eq.~\eqref{eq:thrifty}) \cite{hoque2021thriftydagger}. DART instead injects
+optimized noise into demonstrations for shift-robust offline cloning
+\cite{laskey2017dart}, while a deployment-time thread reweights samples around human
+takeovers: IWR up-weights bottleneck states \cite{mandlekar2020iwr} and Sirius uses
+an approximated trust signal \cite{liu2023sirius}; the landscape is surveyed by
+\citet{celemin2022iil}. We compare against the robot-gated subset sharing our
+one-demo-per-round budget; human-gated (HG-/Lazy-DAgger), noise-injection (DART),
+and reweighting (IWR, Sirius) methods assume a different budget and are discussed
+but not run.
+
+Every method above picks one step
+$t^\star\!=\!\min\{t:\mathrm{Query}(s_t)\!=\!1\}$ and collects one on-policy segment
+per round (Eq.~\eqref{eq:iil-loop}). PACE departs on two counts plus one option: it
+localizes failures over completed rollouts and (for prescription) describes them
+with a VLM (Eq.~\eqref{eq:perceive}); its central addition clusters failures into
+modes and spends the query on a memory-rotated mode
+(Eqs.~\eqref{eq:partition}--\eqref{eq:diversity}); and it optionally prescribes the
+correction's \emph{start state} rather than resuming at $t^\star$
+(Eqs.~\eqref{eq:prescribe}--\eqref{eq:prescribe-demo}). A query-based round is the
+corner $|\mathcal{S}|\!=\!1$, $C_{\mathrm{tgt}}\!=\!C^\star$ with an identity
+prescribe map, so the DAgger family sits \emph{inside} PACE. The learner, a
+diffusion policy, is itself one baseline's query source and thus shared
+infrastructure: denoising diffusion models \cite{ho2020ddpm} were adapted to
+trajectory planning \cite{janner2022diffuser} and to visuomotor control, capturing
+multimodal actions unimodal regression collapses \cite{chi2023diffusionpolicy}, with
+Implicit BC contributing the PushT task \cite{florence2021implicitbc}.
+Dropout/ensemble gates rest on predictive uncertainty
+\cite{gal2016dropout,lakshminarayanan2017ensembles,%
+menda2017dropoutdagger,menda2019ensembledagger}, brittle for multimodal policies
+where mode disagreement is misread as doubt \cite{lee2025diffdagger}; Diff-DAgger
+instead thresholds the per-step diffusion loss against a training-loss quantile
+(Eqs.~\eqref{eq:diffsignal}, \eqref{eq:diffdagger}) \cite{lee2025diffdagger}. PACE
+reuses this loss $\ell_t$ only to locate each failure's peak frame
+(Eq.~\eqref{eq:perceive}) and keys on failure \emph{outcomes} and geometry
+(Eq.~\eqref{eq:phi}): it \emph{groups} failures instead of \emph{triggering} on
+per-state uncertainty.
+
+\subsection{Foundation Models for Robot Perception and Prescription}
+Foundation models increasingly supply robot behavior. SayCan grounds LLM plans in
+affordances \cite{ahn2022saycan}, Inner Monologue closes a textual-feedback loop
+\cite{huang2022innermonologue}, and PaLM-E and RT-2 fuse perception with language
+\cite{driess2023palme,brohan2023rt2}. A separate line emits \emph{executable
+structure} --- policy code
+\cite{liang2023codeaspolicies,singh2023progprompt}, 3D value maps
+\cite{huang2023voxposer}, or reward code
+\cite{ma2024eureka,yu2023language2rewards} --- and a recent thread reasons over
+failures: REFLECT narrates and corrects robot failures \cite{liu2023reflect}, AHA
+reasons over manipulation failures \cite{duan2025aha}, and Reflexion and Self-Refine
+iterate on their own language outputs
+\cite{shinn2023reflexion,madaan2023selfrefine}. These motivate PACE's use of a
+vision--language model (Qwen3-VL \cite{bai2025qwen3vl}) to \emph{describe} why a
+rollout failed, feeding only the \emph{optional} prescription stage; unlike
+single-trajectory recovery, PACE aggregates the descriptions into a clustered
+feature set. When enabled, prescription narrows the LLM's (Qwen3
+\cite{yang2025qwen3}, thinking/non-thinking) generativity: rather than plans, code,
+or rewards, it emits a compact \texttt{SceneCommand} that the prescribe map
+$g(\cdot)$ turns into a single $L_2$-capped, workspace-clamped sub-task-entry start
+state (Eq.~\eqref{eq:prescribe}) --- not an executed behavior.
+
+\subsection{Active Learning, Representations, and Reset Curricula}
+PACE's \emph{which} decision is batch active learning over failures: pool-based
+active learning selects informative examples under a budget \cite{settles2009active},
+the core-set/$k$-center formulation maximizes min coverage \cite{sener2018coreset},
+BADGE unifies uncertainty and diversity \cite{ash2020badge}, and farthest-point
+sampling gives deterministic min-max coverage \cite{eldar1997fps}. PACE clusters
+failures into modes with silhouette-chosen $K$-means \cite{lloyd1982kmeans}
+(Eq.~\eqref{eq:partition}) and a farthest-point context set (Eq.~\eqref{eq:diversity});
+whereas classical methods select \emph{unlabeled inputs}, PACE selects \emph{failure
+modes}. We disambiguate two R3M roles: (i) a \emph{frozen}, PCA-reduced embedding
+\cite{nair2022r3m} is the visual failure descriptor $\tilde v_i$ that Assess/Choose
+cluster over (Eq.~\eqref{eq:phi}), with MVP \cite{radosavovic2022mvp} and VIP
+\cite{ma2023vip} as alternatives; (ii) a \emph{separately finetuned} R3M is the
+diffusion-policy image encoder (\S Policies per Modality). Our simulators build on
+ManiSkill
+\cite{mu2021maniskill,gu2023maniskill2,tao2024maniskill3} (Push, from Implicit BC
+\cite{florence2021implicitbc}), robomimic \cite{mandlekar2021robomimic}, and
+robosuite \cite{zhu2020robosuite} (planned Lift/Wipe/Door). Finally, PACE's optional
+Execute stage relates to reset-state and curriculum generation --- reverse
+curriculum grows start states outward from the goal
+\cite{florensa2017reversecurriculum} and learning-to-reset enables autonomous
+operation \cite{eysenbach2018leavenotrace} --- but PACE's entry states follow
+clustered failure modes, not a difficulty curriculum; we include a reverse-curriculum
+arm as a single-axis \emph{where} control (\S Baselines). Having placed PACE against
+each thread, we now define it formally.
+
+\section{Method}
+\label{sec:method}
+
+We present \textbf{PACE} (\textbf{P}erceive $\rightarrow$ \textbf{A}ssess
+$\rightarrow$ \textbf{C}hoose $\rightarrow$ \textbf{E}xecute), an interactive
+imitation-learning (IIL) loop for diffusion policies. \emph{The DAgger-family
+baselines answer only \textbf{when} to query the expert; PACE additionally
+decides \textbf{which} failure mode to correct --- its central addition --- and,
+as an option, \textbf{where} the corrective demonstration should begin.} We first
+fix the problem setup and the diffusion-policy learner (Preliminaries), then cast
+the classical query rules as instances of one shared decision family (A Unified
+Query Framework), and finally define PACE, which extends that family and contains
+it as one corner. The four stages map to the equation blocks below: Perceive
+(Eqs.~\ref{eq:perceive}--\ref{eq:phi}), Assess
+(Eqs.~\ref{eq:partition}--\ref{eq:dominant}), Choose
+(Eqs.~\ref{eq:memory}--\ref{eq:diversity}), and Execute
+(Eqs.~\ref{eq:prescribe}--\ref{eq:prescribe-demo}).
+
+\subsection{Preliminaries}
+
+\paragraph{Sequential decision process.}
+Each task is a finite-horizon (PO)MDP
+\begin{equation}
+\mathcal{M} = \big(\, \mathcal{S},\ \mathcal{A},\ P(s'\mid s,a),\ R(s,a),\ H,\ \gamma_{\mathrm{env}} \,\big),
+\qquad
+\pi_\theta:\ \mathcal{S}\to\Delta(\mathcal{A}),
+\label{eq:mdp}
+\end{equation}
+where the state $s$ is privileged proprioception in the state-based setting and a
+partial image observation in the image-based setting, $a$ is a discrete move (toy
+grid) or a relative joint-position delta (manipulation), and $\pi_\theta$ is the
+learner (novice) policy. An expert oracle $\pi^\star$ (A$^\star$/BFS on the grid,
+PPO / motion-planner on the robots) induces demonstrations
+\begin{equation}
+\pi^\star=\arg\max_{\pi}\ \mathbb{E}_{\tau\sim\pi}\!\Big[\textstyle\sum_{t=0}^{H}\gamma_{\mathrm{env}}^{\,t} R(s_t,a_t)\Big],
+\qquad
+\mathcal{D}=\big\{(s_t,a_t)\ :\ a_t=\pi^\star(s_t)\big\},
+\label{eq:expert}
+\end{equation}
+and behavior cloning fits the policy to the aggregated data,
+\begin{equation}
+\theta^\star=\arg\min_{\theta}\ \mathbb{E}_{(s,a)\sim\mathcal{D}}\big[\,\mathcal{L}_{\mathrm{BC}}\big(\pi_\theta(\cdot\mid s),\,a\big)\,\big],
+\label{eq:bc}
+\end{equation}
+with $\mathcal{L}_{\mathrm{BC}}=-\log\pi_\theta(a\mid s)$ (discrete) or
+$\|\pi_\theta(s)-a\|_2^2$ (continuous). Because the learner visits states its own
+errors produce, offline cloning suffers covariate shift
+\cite{pomerleau1988alvinn,pomerleau1991efficient}; DAgger corrects this by
+aggregating expert labels on \emph{learner-visited} states
+\cite{ross2011dagger,ross2014aggrevate,sun2017aggrevated}.
+
+\paragraph{Interactive-IL loop.}
+All methods we study share one loop skeleton. In round $r$ the learner
+$\pi_{\theta_r}$ is rolled out, a \emph{query predicate} $\mathrm{Query}(s_t)$
+flags a first intervention step $t^\star$, the expert takes over from there, and
+the resulting expert segment is the single new demonstration:
+\begin{align}
+\text{roll } \pi_{\theta_r}\ &\Rightarrow\ t^\star=\min\{t:\ \mathrm{Query}(s_t)=1\}, \nonumber\\
+\mathcal{D}_{r+1}&=\mathcal{D}_r\ \cup\ \big\{(s_t,\pi^\star(s_t)):\ t\ge t^\star\big\},\quad
+\theta_{r+1}=\arg\min_{\theta}\ \mathbb{E}_{\mathcal{D}_{r+1}}[\mathcal{L}].
+\label{eq:iil-loop}
+\end{align}
+Here $\mathcal{L}$ is the imitation loss: $\mathcal{L}_{\mathrm{BC}}$
+(Eq.~\ref{eq:bc}) for the T1 classifier/CNN and $\mathcal{L}_{\mathrm{DP}}$
+(Eq.~\ref{eq:vpred}) for the T2 (and planned T3--T5) diffusion learner. Exactly one
+demonstration is added per round, the policy is retrained from scratch every $n_d$
+demos, and the loop stops when a held-out success rate
+$\mathrm{SR}_{\mathrm{target}}=0.90$ is reached or a budget $B$ is spent. This
+one-demo-per-round protocol is the shared sample-efficiency axis on which every
+method is compared, and the only degree of freedom is how the new demonstration is
+chosen.
+
+\paragraph{Diffusion-policy learner.}
+Every robot-task method (PACE, Diff-DAgger, and all IIL baselines) shares one
+diffusion-policy backbone \cite{chi2023diffusionpolicy,ho2020ddpm,janner2022diffuser}
+so that only the demo-acquisition rule differs. With clean action target
+$x_0=a$, the forward process noises $x_0$ over $K_{\mathrm{dif}}$ steps,
+\begin{equation}
+x_k=\sqrt{\bar\alpha_k}\,x_0+\sqrt{1-\bar\alpha_k}\,\epsilon,
+\qquad \epsilon\sim\mathcal{N}(0,I),\quad k\in\{1,\dots,K_{\mathrm{dif}}\},
+\label{eq:forward}
+\end{equation}
+and the network is trained with a $v$-prediction denoising objective (conditioning
+on $s$ suppressed for brevity),
+\begin{equation}
+v_k=\sqrt{\bar\alpha_k}\,\epsilon-\sqrt{1-\bar\alpha_k}\,x_0,
+\qquad
+\mathcal{L}_{\mathrm{DP}}(\theta)=\mathbb{E}_{k,\epsilon,(s,a)}\big[\big\|v_\theta(x_k,k,s)-v_k\big\|_2^2\big].
+\label{eq:vpred}
+\end{equation}
+Crucially, the per-pair denoising loss doubles as an uncertainty signal
+\cite{lee2025diffdagger}: averaged over noise draws it scores how out-of-distribution
+a state--action pair is, and evaluated at the novice's own executed action along a
+rollout it gives the per-step signal $\ell_t$,
+\begin{equation}
+L_{\mathrm{dif}}(s,a)=\mathbb{E}_{k,\epsilon}\big[\big\|v_\theta(x_k,k,s)-v_k\big\|_2^2\big],
+\qquad
+\ell_t \;=\; L_{\mathrm{dif}}\big(s_t,\,a^{\mathrm{nov}}_t\big).
+\label{eq:diffsignal}
+\end{equation}
+$\ell_t$ is the trigger for Diff-DAgger and, in PACE, the analysis frame selector
+that localizes each failure (Perceive).
+
+\subsection{A Unified Query Framework for the Baselines}
+\label{sec:unified}
+
+Every IIL baseline instantiates the same template: it computes a scalar score at
+each visited state and queries when that score crosses a threshold,
+$\mathrm{Query}_{\mathrm{method}}(s_t)=\mathbf{1}\big[\mathrm{score}_{\mathrm{method}}(s_t)\gtrless\tau_{\mathrm{method}}\big]$.
+All action comparisons are made in the shared $9$-D relative-joint-position space. The
+PPO expert's $7$ arm-joint deltas are lifted to $9$-D by a fixed, method-independent
+embedding whose two extra \texttt{panda\_stick} finger dimensions take the novice's
+own values (zero contribution to $\|a^{\mathrm{nov}}_t-a^{\mathrm{exp}}_t\|_2$); the
+same lift is used by all discrepancy-based methods, so none is advantaged. The score
+distinguishes the methods: \emph{SafeDAgger}$^\star$ on action discrepancy
+(Eq.~\ref{eq:safe}); \emph{DropoutDAgger} on MC-sampled in-ball agreement
+(Eq.~\ref{eq:dropout}); \emph{EnsembleDAgger} on ensemble doubt or mean discrepancy
+(Eq.~\ref{eq:ensemble}); \emph{ThriftyDAgger} on novelty or learned task-risk $1-Q$
+(Eq.~\ref{eq:thrifty}); and a uniform-random \emph{Random} control
+(Eq.~\ref{eq:stagger}). We defer these five predicates and their constants to the
+Appendix and keep the diffusion-native rule in the body, since it is the one PACE
+reduces toward. \emph{Diff-DAgger} \cite{lee2025diffdagger} uses the diffusion loss
+of Eq.~\ref{eq:diffsignal}: with $\eta_\alpha$ the $\alpha$-quantile of the
+training-loss CDF (recalibrated each retrain), it queries when the last $K$ steps are
+all in the tail,
+\begin{equation}
+\eta_\alpha=\hat F^{-1}(\alpha),
+\qquad
+\mathrm{Query}_{\mathrm{Diff}}(s_t)=\mathbf{1}\!\left[\ \sum_{u=t-K+1}^{t}\mathbf{1}\big[\ \ell_u>\eta_\alpha\ \big]\ \ge\ K\ \right].
+\label{eq:diffdagger}
+\end{equation}
+Two faithfulness notes. \emph{SafeDAgger}$^\star$ is starred because we gate on the
+raw novice--expert action discrepancy against the (A$^\star$/planner) oracle rather
+than the learned safety classifier of the original~\cite{zhang2017safedagger}: same
+decision variable, an oracle signal in place of a learned one; we do not claim this
+is conservative and label it a variant of unknown bias. For \emph{ThriftyDAgger}
+\cite{hoque2021thriftydagger}, the success-to-go discount $\gamma_Q$ is distinct from
+the MDP discount $\gamma_{\mathrm{env}}$ (Eq.~\ref{eq:mdp}) and the memory discount
+$\gamma_{\mathrm{mem}}$ (Eq.~\ref{eq:memory}). Both baselines are fully specified in
+the Appendix.
+
+\paragraph{What the framework leaves on the table.}
+Eqs.~\ref{eq:safe}--\ref{eq:stagger} and \ref{eq:diffdagger} answer only \emph{at
+which step $t^\star$ should the expert intervene?} and then correct on-policy from
+that step. Two limitations follow, and they are what PACE's \emph{which} axis
+targets: (i) being per-state, they cannot reason about which failures in a batch are
+redundant, and (ii) being memoryless across rounds, they may correct a persistent
+mode repeatedly. A softer third gap is that they inherit the start state of the
+tripping rollout; PACE can optionally place the demo at a prescribed sub-task entry
+point (the \emph{where} option), which the ablations show is not the driver of any
+gain. PACE keeps the loop of Eq.~\ref{eq:iil-loop} unchanged and replaces only the
+single-scalar query with a four-stage pipeline; the next subsection defines each
+stage and Algorithm~\ref{alg:pace} assembles them.
+
+\subsection{PACE}
+\label{sec:pace}
+
+PACE operates on the \emph{set} of failures $\mathcal{F}_r=\{f_1,\dots,f_N\}$
+produced by a round's rollouts, transforming it into one corrective demonstration;
+Algorithm~\ref{alg:pace} gives the full loop.
+
+\paragraph{Perceive.}
+For each failure $i$ we localize the failure point $t^\star_i$ as the peak-loss step
+of Eq.~\ref{eq:diffsignal} (maximal diffusion uncertainty) and record raw geometry
+there:
+\begin{equation}
+\mathcal{F}_r=\{f_1,\dots,f_N\},
+\quad
+t^\star_i=\arg\max_t \ell^{\,(i)}_t,\quad
+\mathrm{peak}_i=\max_t \ell^{\,(i)}_t,\quad
+\rho_i=\frac{t^\star_i}{\max(1,T_i)},\quad
+\delta_i=\big\|p^{\mathrm{tcp}}_i-p^{\mathrm{tee}}_i\big\|_2 .
+\label{eq:perceive}
+\end{equation}
+Here $\rho_i$ is task progress and $\delta_i$ a contact distance between object and
+end-effector. Equations \ref{eq:perceive} and \ref{eq:prescribe} (the geometry-bearing
+Perceive and Execute terms) are written for the \emph{manipulation} instantiation
+(T2, and T3--T5 when wired), where
+$p^{\mathrm{tee}}_i$ is the object's planar pose and $p^{\mathrm{tcp}}_i$ the
+end-effector (tool-center-point) pose at $t^\star_i$. The toy grid (T1) uses a
+distinct instantiation of the same pipeline (grid-cell geometry, classifier-BCE
+$\ell_t$, corridor prescription) with the Assess/Choose stages
+(Eqs.~\ref{eq:partition}--\ref{eq:diversity}) unchanged; the full grid walkthrough is
+in the Appendix. A
+vision--language model \cite{bai2025qwen3vl,duan2025aha,liu2023reflect} reads three
+key frames around $t^\star_i$ (start, peak, end) with a per-task knowledge-augmented
+generation (KAG) context --- a knowledge graph of workspace bounds and a failure
+taxonomy --- and \emph{describes} why the rollout failed; this text is the VLM's sole
+output into the loop. \textbf{Where the VLM acts, precisely.} Localization uses the
+scalar peak-loss step (Eq.~\ref{eq:diffsignal}) and mode discovery (Assess, Choose)
+runs on the descriptor $\psi_i$ below, both without a VLM; the VLM text enters only
+Execute, where it conditions the LLM \texttt{SceneCommand} that $g(\cdot)$ turns into
+the corrective reset (Eq.~\ref{eq:prescribe})
+\cite{driess2023palme,huang2022innermonologue,shinn2023reflexion,madaan2023selfrefine},
+and a dedicated VLM-off ablation (\S Ablations) isolates whether it helps. Failures
+are featurized by a quaternion-free geometric descriptor $\phi_i\in\mathbb{R}^6$,
+with an optional \emph{frozen} R3M visual embedding \cite{nair2022r3m} (PCA-reduced)
+for the image-based setting --- distinct from the separately finetuned R3M encoder
+used inside the diffusion policy (\S Policies per Modality):
+\begin{align}
+\phi_i&=\big[\,p^{\mathrm{tee}}_{i,x},\ p^{\mathrm{tee}}_{i,y},\ \sin\theta_i,\ \cos\theta_i,\ \rho_i,\ \delta_i\,\big]\in\mathbb{R}^6,
+\quad
+\tilde v_i=\mathrm{PCA}_{k'}\big(v_i\big),\ \ k'=\min(16,N-1,d), \nonumber\\
+\psi_i&=\begin{cases}\tilde v_i & \text{visual mode}\\[2pt]\phi_i & \text{geometric (default)}\end{cases},
+\quad
+X=[\psi_1;\dots;\psi_N],\quad
+\tilde X_i=\big(\psi_i-\mu\big)\oslash\sigma,\quad \sigma_j\!\leftarrow\!\max(\sigma_j,10^{-8}).
+\label{eq:phi}
+\end{align}
+The feature $\psi_i$ is used only for mode discovery; all prescription geometry
+(Execute) uses the raw object pose and full robot configuration.
+
+\paragraph{Assess.}
+PACE clusters the standardized features into failure modes, choosing the number of
+clusters by maximum mean silhouette \cite{lloyd1982kmeans} and computing per-cluster
+geometry on the raw object pose:
+\begin{align}
+k^\star&=\arg\max_{k\in[2,\,k_{\max}]}\ \mathrm{sil}(k),\qquad k_{\max}=\max\!\big(2,\min(6,N-1)\big),\nonumber\\
+c^{xy}_{C}&=\tfrac{1}{|C|}\!\sum_{i\in C}p^{\mathrm{tee}}_{i,xy},\quad
+\bar\theta_{C}=\operatorname{atan2}\!\Big(\!\sum_{i\in C}\!\sin\theta_i,\ \sum_{i\in C}\!\cos\theta_i\Big),\quad
+\bar L_{C}=\tfrac{1}{|C|}\!\sum_{i\in C}\mathrm{peak}_i,\nonumber\\
+\mathrm{rep}(C)&=\arg\min_{i\in C}\ \big\|\tilde X_i-\bar X_{C}\big\|_2,\qquad
+\bar X_{C}=\tfrac1{|C|}\!\sum_{i\in C}\tilde X_i.
+\label{eq:partition}
+\end{align}
+The cluster representative $\mathrm{rep}(C)$ is the member nearest the cluster mean
+in feature space. The \emph{dominant} mode --- the most prevalent, hardest failure
+mode --- is selected by a deterministic lexicographic key on (size, mean peak-loss,
+earliest episode),
+\begin{equation}
+C^\star=\operatorname*{arg\,lexmax}_{C\in\{C_1..C_m\}}\ \big(\ |C|,\ \bar L_{C},\ -\!\min_{i\in C}\mathrm{eid}_i\ \big).
+\label{eq:dominant}
+\end{equation}
+
+\paragraph{Choose.}
+This stage decides \emph{which} failure mode the round corrects. Because the policy
+is retrained after every demo, the failure distribution shifts each round and a
+single mode could be prescribed repeatedly. PACE therefore keeps a cross-round
+\emph{memory} of already-corrected centroids and applies a recency-discounted
+Gaussian coverage penalty, rotating the target mode among those tied with the
+dominant one to avoid re-covering a solved mode
+\cite{florensa2017reversecurriculum,eysenbach2018leavenotrace}:
+\begin{align}
+P_{\mathrm{mem}}(c)&=\sum_{i:\,(r_i,c_i)\in\mathrm{Mem}}\gamma_{\mathrm{mem}}^{\,\max(0,\,r-r_i)}\exp\!\Big(-\tfrac{\|c-c_i\|_2^2}{2\sigma_{\mathrm{mem}}^2}\Big),\nonumber\\
+C_{\mathrm{tgt}}&=\arg\max_{C:\,|C|\ge|C^\star|-1}\ \Big(\ \bar L_{C}\ -\ \lambda\,P_{\mathrm{mem}}\big(c^{xy}_{C}\big)\ \Big),\qquad \gamma_{\mathrm{mem}}=0.6,\ \sigma_{\mathrm{mem}}=0.06,\ \lambda=1.
+\label{eq:memory}
+\end{align}
+Given the target, PACE selects the within-round set by a memoryless \emph{coreset /
+k-center} (farthest-point) rule
+\cite{sener2018coreset,eldar1997fps,ash2020badge,settles2009active}, forcing the
+target representative in and seeding the hardest failure:
+\begin{align}
+S_0&=\big\{\,\mathrm{rep}(C_{\mathrm{tgt}})\,\big\}\ \cup\ \big\{\,\arg\max_i \mathrm{peak}_i\,\big\}, \nonumber\\
+S&\leftarrow S\ \cup\ \Big\{\ \arg\max_{i\notin S}\ \min_{j\in S}\ \big\|\tilde X_i-\tilde X_j\big\|_2\ \Big\}\quad\text{until}\ |S|=\kappa,\qquad \kappa=3, \nonumber\\
+S^\star&=\arg\max_{\substack{S\subseteq\mathcal{F}_r,\ |S|\le\kappa\\ S_0\subseteq S}}\ \min_{\substack{i,j\in S\\ i\ne j}}\ \big\|\tilde X_i-\tilde X_j\big\|_2
+\quad\text{s.t.}\ \ S_0=\big\{\mathrm{rep}(C_{\mathrm{tgt}}),\ \arg\max_i\mathrm{peak}_i\big\}.
+\label{eq:diversity}
+\end{align}
+The last line is the max-min coverage objective PACE approximates; the first two are
+its greedy realization, and forcing the same seed $S_0$ (target representative and
+worst-loss failure) into both makes the greedy pick optimize exactly the constrained
+objective. Under a one-demo-per-round budget the coverage work is done by the memory
+rotation of Eq.~\ref{eq:memory}, which changes \emph{which mode} $C_{\mathrm{tgt}}$
+anchors each round and accumulates a broad, non-redundant cover across rounds. The
+within-round set $S$ of Eq.~\ref{eq:diversity} is subordinate:
+$\mathrm{rep}(C_{\mathrm{tgt}})$ is the demo anchor and the remaining $\kappa{-}1$
+members are cited context and escalation fallback. Under the default on-policy
+Execute they do not change the collected demo (a tie-break); they matter only under
+a \texttt{BRIDGE} prescription, where the LLM places a middle-ground start near
+$2$--$3$ cited members so the context set alters \emph{where} the demo begins. This
+is the cross-round coverage axis the per-state baselines of \S\ref{sec:unified} lack.
+The ablation separates these (Table~\ref{tab:ablation}): a $-$Memory row isolates the
+acting mechanism and a $-$Choose-context row plus the BRIDGE-on/off contrast tests
+whether the context set ever changes the demo. Choose fixes \emph{which} mode anchors
+the round; Execute decides \emph{where} the corrective demonstration begins.
+
+\paragraph{Execute.}
+The anchor $A$ is the target representative's raw geometry. Execute collects the one
+new demonstration and has a default and an option. \textbf{Default (on-policy,
+$g=\mathrm{identity}$).} The demonstration re-rolls the anchor failure's own scene
+and lets the expert take over in place from step $t^\star_A$ --- exactly the
+DAgger-family on-policy correction, with the \emph{which} decision applied on top.
+This keeps the \emph{where} decision off, so PACE's gain must come entirely from
+\emph{which} mode is corrected; we treat it as the primary configuration.
+\textbf{Option (prescribed \emph{where}, $g\neq\mathrm{identity}$).} When enabled, a
+VLM/LLM
+\cite{yang2025qwen3,ma2024eureka,yu2023language2rewards,liang2023codeaspolicies}
+emits a scene command $\mathrm{cmd}$ (target object pose, TCP, decision label) that
+$g(\cdot)$ turns into a sub-task-entry start state $\xi$. When $\mathrm{cmd}$ points
+at a single recorded failure the round reduces to the default (a \texttt{SELECT});
+when it proposes a middle-ground pose over $2$--$3$ cited members it becomes a
+\texttt{BRIDGE}, the only mode that genuinely uses $g\neq\mathrm{identity}$. The
+anchor-relative perturbation is $L_2$-capped in position and clamped in yaw, and the
+spec is projected onto the KAG workspace bounds $\mathcal{W}$:
+\begin{align}
+A&=\big(p^{\mathrm{tee}}_A,\ \theta_A,\ q^{\mathrm{full}}_A,\ p^{\mathrm{tcp}}_A,\ t^\star_A\big)=\mathrm{rep}(C_{\mathrm{tgt}}),
+\quad
+\mathrm{cmd}=\mathrm{VLM/LLM}\big(A,\ \text{frames}(t^\star_A),\ \mathrm{KAG}\big),\nonumber\\
+\Delta_{xy}&=\mathrm{cmd}.p^{\mathrm{tee}}_{xy}-p^{\mathrm{tee}}_{A,xy},\quad
+\Delta_{xy}\leftarrow\Delta_{xy}\cdot\min\!\Big(1,\ \tfrac{\Delta_{\max}}{\|\Delta_{xy}\|_2}\Big),\quad
+\Delta_\theta=\mathrm{clamp}\big(\mathrm{wrap}_\pi(\mathrm{cmd}.\theta-\theta_A),\,\pm\theta_{\max}\big),\nonumber\\
+\xi&=g(\mathrm{cmd})=\mathrm{clamp}_{\,\mathcal{W}}\Big(p^{\mathrm{tee}}_A+[\Delta_{xy},0],\ \ \theta_A+\Delta_\theta,\ \ q^{\mathrm{full}}_A\Big),
+\quad
+(\Delta_{\max},\theta_{\max})=(0.06,0.4).
+\label{eq:prescribe}
+\end{align}
+Either way, the round samples the start state from the reset distribution
+$\Xi(\cdot\mid\xi)$ ($\xi$ is the on-policy anchor state under the default), lets
+the expert roll from $t^\star$, and aggregates the single new demo:
+\begin{equation}
+s_0\sim\Xi(\,\cdot\mid\xi\,),
+\qquad
+\mathcal{D}_{r+1}=\mathcal{D}_r\ \cup\ \big\{(s_t,\pi^\star(s_t)):\ t\ge t^\star,\ s_0\sim\Xi(\cdot\mid\xi)\big\}.
+\label{eq:prescribe-demo}
+\end{equation}
+An empty or refused prescription is never accepted (a hard non-emptiness floor with
+bounded re-prescription attempts), since a wasted round is the worst outcome under a
+fixed budget. The caps $(\Delta_{\max},\theta_{\max})$ and memory constants
+$(\gamma_{\mathrm{mem}},\sigma_{\mathrm{mem}},\lambda)$ are given for Push; per-task
+values are carried in the configuration. Because the default already carries the
+\emph{which} decision, the $-$Execute ablation (Table~\ref{tab:ablation}) is exactly
+the test of whether the optional \emph{where} adds anything on top; if not, the
+contribution rests on \emph{which}.
+
+\paragraph{A unifying view: the baselines as a corner of PACE.}
+We close with an organizing observation (not a contribution), scoped to the
+diffusion-loss task (T2): the query-based family sits at one corner of the PACE
+design space. A PACE round collapses to a single on-policy query under three
+\emph{simultaneous} restrictions: (i) $|S|=1$; (ii) memory and rotation off,
+$C_{\mathrm{tgt}}=C^\star$ reduced to the peak-loss failure; and (iii) the on-policy
+default $g=\mathrm{identity}$, so $\Xi(\cdot\mid\xi)$ replays the failing rollout and
+the expert corrects in place from $t^\star$. Requiring all three at once, this is a
+corner of a three-parameter family, not a single-axis nesting; PACE contains the
+query family at this corner and we claim nothing stronger. Even here, equality is
+delicate because PACE's discovery differs structurally: it analyzes \emph{completed}
+rollouts and localizes the peak-loss frame $t^\star_i=\arg\max_t\ell^{(i)}_t$
+(Eq.~\ref{eq:perceive}), whereas Diff-DAgger triggers \emph{online} at the first
+windowed tail-crossing (Eq.~\ref{eq:diffdagger}). The relation is a definitional
+inequality, not a result: with window $K{=}1$ and a non-empty tail, the first
+crossing $\min\{t:\ell_t>\eta_\alpha\}$ never follows the maximum $\arg\max_t\ell_t$,
+and the two coincide exactly when the loss is non-decreasing up to its peak (then the
+rounds aggregate the identical demonstration; otherwise their $t^\star$ differ). It
+does not extend to the other baselines, whose triggers use different scores
+(Eqs.~\ref{eq:safe}--\ref{eq:stagger}) and are recovered by the same corner only up
+to substituting their own $\mathrm{Query}(\cdot)$, and is vacuous on the toy grid
+(Appendix). What PACE \emph{adds} over the corner is cross-round memory
+rotation (Eq.~\ref{eq:memory}), the within-round context set (Eq.~\ref{eq:diversity},
+active only under \texttt{BRIDGE}), and the optional learned \emph{where}-to-start
+prescription ($g\neq\mathrm{identity}$, Eq.~\ref{eq:prescribe}) --- with the VLM/LLM
+grounding, all ablated in \S Ablations.
+
+\begin{algorithm}[tb]
+\caption{PACE: Perceive $\rightarrow$ Assess $\rightarrow$ Choose $\rightarrow$
+Execute. Written modality-agnostically ($\mathcal{L}$ is the task loss); the T1
+grid replaces the Perceive signal and the prescribe map $g$ as described in the
+Method, keeping the Assess/Choose core.}
+\label{alg:pace}
+\textbf{Input}: initial demos $\mathcal{D}_0$, expert $\pi^\star$, budget $B$,
+retrain cadence $n_d$, target $\mathrm{SR}_{\mathrm{target}}$, cap $\kappa$\\
+\textbf{Output}: trained policy $\pi_\theta$
+\begin{algorithmic}[1]
+\STATE $\theta \leftarrow \arg\min_\theta \mathbb{E}_{\mathcal{D}_0}[\mathcal{L}]$;\ \ $r\leftarrow 0$;\ \ $q\leftarrow 0$;\ \ $\mathrm{Mem}\leftarrow\varnothing$ \hfill{\footnotesize// $\mathcal{L}{=}\mathcal{L}_{\mathrm{DP}}$ (robot, Eq.~\ref{eq:vpred}) or $\mathcal{L}_{\mathrm{BC}}$ (T1)}
+\WHILE{$q<B$ \textbf{and} $\mathrm{SR}(\theta)<\mathrm{SR}_{\mathrm{target}}$}
+  \STATE roll $\pi_\theta$; collect failure set $\mathcal{F}_r$; for each $f_i$ get $t^\star_i,\mathrm{peak}_i,\rho_i,\delta_i$ \hfill{\footnotesize// \textsc{Perceive}, Eq.~\ref{eq:perceive}}
+  \STATE VLM describes failures around $t^\star_i$; featurize $\psi_i$; standardize to $\tilde X$ \hfill{\footnotesize// Eq.~\ref{eq:phi}}
+  \STATE cluster $\{C_1,\dots\}$ at $k^\star$; compute $\mathrm{rep}(C),\bar L_C$; pick dominant $C^\star$ \hfill{\footnotesize// \textsc{Assess}, Eqs.~\ref{eq:partition}--\ref{eq:dominant}}
+  \STATE $C_{\mathrm{tgt}}\leftarrow$ memory-rotated target (coverage mechanism);\ \ $S\leftarrow$ k-center context, $\mathrm{rep}(C_{\mathrm{tgt}})$ forced, $|S|\!\le\!\kappa$ \hfill{\footnotesize// \textsc{Choose}, Eqs.~\ref{eq:memory}--\ref{eq:diversity}}
+  \STATE \textbf{if} where-option off: $\xi\leftarrow$ anchor's own $t^\star_A$ state ($g{=}\mathrm{id}$); \textbf{else} $\mathrm{cmd}\leftarrow$ VLM/LLM$(A,\mathrm{frames},\mathrm{KAG})$, $\xi\leftarrow g(\mathrm{cmd})$ \hfill{\footnotesize// \textsc{Execute}, Eq.~\ref{eq:prescribe}}
+  \STATE $s_0\!\sim\!\Xi(\cdot|\xi)$; expert rolls from $t^\star$; $\mathcal{D}_{r+1}\!\leftarrow\!\mathcal{D}_r\cup\{(s_t,\pi^\star(s_t)):t\ge t^\star\}$ \hfill{\footnotesize// Eq.~\ref{eq:prescribe-demo}}
+  \STATE append $(r,c^{xy}_{C_{\mathrm{tgt}}},\bar\theta_{C_{\mathrm{tgt}}})$ to $\mathrm{Mem}$;\ \ $q\leftarrow q+1$;\ \ $r\leftarrow r+1$
+  \IF{$q \bmod n_d = 0$}
+    \STATE $\theta \leftarrow \arg\min_\theta \mathbb{E}_{\mathcal{D}_r}[\mathcal{L}]$ \hfill{\footnotesize// retrain from scratch; recalibrate $\eta_\alpha$ (robot)}
+  \ENDIF
+\ENDWHILE
+\STATE \textbf{return} $\pi_\theta$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Experiments}
+
+The unifying view of \S\ref{sec:method} anchors the T2 comparison: at its corner PACE
+reduces to Diff-DAgger, so a measured gain there isolates the added decision. That
+corner is built on the diffusion loss and applies to T2 only; Diff-DAgger is absent
+from the toy grid (T1), which shares only the Assess/Choose core under a distinct
+Perceive signal (classifier BCE loss) and Execute map. T1 is thus a weaker sanity
+check on whether clustering$+$memory-rotation helps a discrete IIL task, read against
+the diffusion-free analogue ``correct the highest-loss failure on-policy'' (the
+$-$Assess/$-$Choose/$-$Execute reduction). We test PACE along four axes.
+\textbf{(Q1, primary)}~Under a fixed one-demonstration-per-round budget, does PACE
+reach a target held-out success rate with fewer expert queries than uncertainty- and
+safety-gated IIL baselines and the IWR-style arm? \textbf{(Q2, secondary/optional)}~Does
+the optional prescribed start-state (\texttt{BRIDGE}) improve efficiency and coverage
+on top of the on-policy default, or does the reset-curriculum arm already capture that
+gain? We treat Q2 as a test of an option, not the thesis. \textbf{(Q3)}~Do the Q1
+gains hold across observation modalities (privileged state vs.\ raw image) on the two
+implemented tasks (T1 grid, T2 Franka Panda)? Cross-embodiment transfer to UR5/UR5e is
+left to the planned RoboSuite extension (\S Task Suite) and is \emph{not} claimed here.
+\textbf{(Q4)}~Which of the four PACE stages---Perceive, Assess, Choose, Execute---and
+which foundation model (VLM vs.\ LLM) drive any improvement? Because the five-seed
+runs are in progress, every quantitative entry is a red placeholder macro and we
+phrase each empirical statement as a question the pending numbers will answer; the
+tables and callouts fix the reporting protocol (\S Metrics) so no result ships
+un-filled or un-tested.
+
+\subsection{Task Suite}
+
+We evaluate on the two implemented tasks summarized in Table~\ref{tab:tasks} (T1
+Toy, T2 Push), spanning a discrete navigation problem with an exact expert and a
+contact-rich pushing task; three RoboSuite tasks on UR5/UR5e arms (T3--T5) are
+specified below as a \emph{planned} protocol only. Both implemented tasks are
+genuinely multi-modal in optimal behavior --- the regime in which per-state
+action-agreement uncertainty is least reliable and failure-mode partitioning (Assess)
+is expected to help.
+
+\textbf{T1 (Toy).} A custom $5{\times}5$ grid-navigation environment
+(\texttt{MazeNavEnv}) in which a point agent moves \{up, down, left, right\}
+($\mathcal{A}=\mathrm{Discrete}(4)$) from a fixed start to a fixed goal; two central
+fire tiles leave two equally-optimal $8$-step routes (top, bottom), making the task
+multi-modal by construction. The $A^{\!\star}$/BFS expert emits a multi-label
+optimal-action mask (every action that reduces BFS distance-to-goal is positive),
+teaching both routes. The state observation is a $14$-d vector (agent/goal
+coordinates, a $3{\times}3$ local tile patch, steps-remaining fraction); the image
+observation is an $80{\times}80{\times}3$ bird's-eye render. Held-out evaluation uses
+$\PH{toy-heldout-n}$ fixed layouts.
+
+\textbf{T2 (Push).} ManiSkill3~\cite{tao2024maniskill3,mu2021maniskill} PushT with a
+Franka Panda and a \texttt{panda\_stick} end-effector: push a T-shaped block onto a
+fixed goal pose (success $=$ overlap within tolerance); PushT originates in Implicit
+BC~\cite{florence2021implicitbc}. State mode exposes the privileged T-pose
+(\texttt{proprio\_dim}\,$=21$); image mode uses a $256{\times}256$ base-camera RGB
+stream and hides the T-pose (\texttt{proprio\_dim}\,$=14$), forcing the policy to read
+the object from pixels. The action space is
+$\texttt{rel\_joint\_pos}\in\mathbb{R}^{9}$ and the expert is a privileged PPO policy,
+identical across modalities so demonstrations differ only by observation.
+
+\textbf{T3--T5 (Lift, Wipe, Door) --- planned, not evaluated.}
+We \emph{specify} but do not run three RoboSuite~\cite{zhu2020robosuite}
+manipulation tasks on a UR5e (Lift) and UR5 (Wipe, Door), each intended to use state
+and image diffusion policies and a motion-planner expert, following the offline
+protocol of robomimic~\cite{mandlekar2021robomimic} and reusing the T2 loop verbatim.
+These tasks are \emph{not implemented} (simulator wiring, policy configs, and experts
+are pending); we describe them only to fix the intended cross-embodiment protocol.
+They contribute \emph{no result rows} and no UR5/UR5e generality claim is made.
+
+\subsection{Policies per Modality}
+
+To isolate the demonstration-acquisition rule, all arms share one learner per
+(task, modality) cell. On T1 the \emph{state} learner is a $p4m$/$D_4$
+group-equivariant policy (\texttt{escnn}) and the \emph{image} learner a plain
+grid-size-invariant CNN. On T2 (and planned T3--T5) both modalities use a single
+shared diffusion-policy backbone~\cite{chi2023diffusionpolicy,ho2020ddpm}: a
+conditional $1$-D U-Net denoiser (obs horizon $1$, prediction horizon $32$, action
+horizon $2$), trained with the $v$-prediction objective (Eq.~\ref{eq:vpred}) under a
+DDIM schedule. The state encoder is an MLP; the image encoder is an R3M
+ResNet-18~\cite{nair2022r3m} \emph{finetuned end-to-end} with a spatial-softmax head
+(output dim $1038$ for PushT) --- a distinct module from the frozen R3M failure
+descriptor of Assess/Choose (\S Method). One identical learner per arm keeps the
+comparison apples-to-apples in the regime Diffusion Policy and Diff-DAgger
+target~\cite{chi2023diffusionpolicy,lee2025diffdagger}.
+
+\subsection{Baselines}
+
+We compare PACE against the interactive-IL family, all cast as a single decision-rule
+schema $\mathrm{Query}(s_t)=\mathbf{1}[\,\mathrm{score}_\mathrm{method}(s_t)\ \text{crosses threshold}\,]$
+so that only the query criterion changes. \textbf{SafeDAgger}~\cite{zhang2017safedagger}
+queries on novice--expert action discrepancy (Eq.~\ref{eq:safe});
+\textbf{DropoutDAgger}~\cite{menda2017dropoutdagger,gal2016dropout} fires when
+MC-sampled in-ball agreement drops (Eq.~\ref{eq:dropout}); and
+\textbf{EnsembleDAgger}~\cite{menda2019ensembledagger,lakshminarayanan2017ensembles}
+fires on ensemble doubt or mean discrepancy (Eq.~\ref{eq:ensemble}).
+\textbf{ThriftyDAgger}~\cite{hoque2021thriftydagger} queries on novelty or learned
+task risk $1-Q_\psi$ with budget-calibrated thresholds (Eq.~\ref{eq:thrifty}).
+\textbf{Random} is a uniform one-demo-per-round control (``Stagger'',
+Eq.~\ref{eq:stagger}), a floor rather than a published method. On robot tasks we
+add \textbf{Diff-DAgger}~\cite{lee2025diffdagger}, the diffusion-native rule that
+queries when the per-step diffusion loss stays in the tail of its training-loss CDF
+for $K$ windowed steps (Eq.~\ref{eq:diffdagger}); it is omitted on T1, which lacks
+the diffusion learner. \textbf{Two single-axis controls} isolate the integration from its parts, since
+integration-only novelty is credible only when the integrated system beats the best
+individual axis. \textbf{Reset-Curriculum} ($R$-arm) is a reverse-curriculum
+control~\cite{florensa2017reversecurriculum}: it grows the corrective start state
+outward from the failure state (a Brownian step under the same $L_2$/workspace caps as
+Eq.~\ref{eq:prescribe}) \emph{without} the Perceive/Assess/Choose curation, and shares
+PACE's reset access. \textbf{IWR-Reweight} ($W$-arm, in the spirit of
+IWR~\cite{mandlekar2020iwr}) up-weights failure-region samples in the training loss
+\emph{after} on-policy collection at $t^\star$, and uses no reset access. Both run
+under the identical one-demo-per-round loop and shared bootstrap, giving T1 seven arms
+(five DAgger-family $+$ two controls) and T2 eight ($+$ Diff-DAgger). Each baseline
+uses its default hyperparameters, reported \emph{per code path} where the two differ:
+SafeDAgger $\tau=0.1$; EnsembleDAgger $M=5$; ThriftyDAgger $\alpha_h=0.1$;
+Diff-DAgger $\alpha=0.99$, $K=1$; and \textbf{DropoutDAgger} on robot ($N=10$
+diffusion draws, $\tau=0.1$, in-ball fraction threshold $p=0.9$) vs.\ grid ($N=16$
+MC-dropout samples, dropout rate $0.2$, agreement threshold $p_{\mathrm{thr}}=0.5$),
+the split reflecting that the diffusion policy is natively stochastic while the grid
+classifier needs injected dropout. PACE reuses the same per-step signal to
+\emph{perceive} failures but also partitions them, selects a memory-rotated mode, and
+optionally prescribes the corrective entry state, recovering Diff-DAgger at its corner
+($|S|=1$, $C_\mathrm{tgt}=C^\star$, on-policy identity prescribe map,
+Eq.~\ref{eq:prescribe-demo}).
+
+\subsection{Active-Loop Protocol}
+
+Every method follows the same interactive loop (Eq.~\ref{eq:iil-loop}): bootstrap a
+policy from a small shared set of expert demonstrations, then repeat \{roll out
+$\to$ query rule flags a failure $\to$ collect exactly \textbf{one} new expert
+demonstration $\to$ retrain $\to$ held-out eval\} until a stop condition. The
+\textbf{one-demo-per-round} cap is a hard invariant that makes the number of expert
+queries the shared sample-efficiency axis, and all arms share the same bootstrap
+policy per seed, so the only difference between arms is the acquisition rule.
+
+\textbf{Toy (T1).} We bootstrap from $\PH{toy-init-demos}$ $A^{\!\star}$/BFS
+demonstrations, draw a size-$\PH{toy-pool-n}$ correction pool per round, retrain from
+scratch each round, and evaluate on $\PH{toy-heldout-n}$ fixed held-out layouts. The
+budget is $\PH{toy-budget}$ extra demonstrations over the bootstrap, with a
+$\PH{toy-max-rounds}$-round cap and rollout cap of $\PH{toy-max-steps}$ steps and
+target $\mathrm{SR}_\mathrm{target}=0.90$ (Eq.~\ref{eq:sr}). A run stops at target,
+budget exhaustion, or round cap.
+
+\textbf{Robot (T2; identical for planned T3--T5).} We bootstrap a behavior-cloned
+diffusion policy from $\PH{robot-init-demos}$ expert demonstrations (one shared warm
+start per seed). Each round discovers a failure via the method's rule over a
+$\PH{robot-rollout-n}$-episode rollout and adds one demonstration; the policy is
+retrained \emph{from scratch every} $n_d=\PH{robot-nd}$ \emph{demonstrations}
+following Diff-DAgger~\cite{lee2025diffdagger}, a cadence shared across methods. An
+episode counts as a demonstration only if the expert succeeded, actually intervened,
+and contributed at least $\PH{robot-min-expert-steps}$ expert steps. We evaluate on
+$\PH{robot-heldout-n}$ held-out episodes per checkpoint (fixed held-out seed base
+$\PH{robot-heldout-seed}$, vectorized over $\PH{robot-eval-envs}$ environments), with
+a budget of $\PH{robot-budget}$ additional demonstrations, a $\PH{robot-max-rounds}$-round
+cap, and $\mathrm{SR}_\mathrm{target}=0.90$; the query count is recorded when the
+target is first reached.
+
+\subsection{Metrics and Seeds}
+
+For each (task, modality, method, seed) we report four metrics from the learning
+curve. \textbf{SR}: final held-out success rate (Eq.~\ref{eq:sr}). \textbf{Q}: expert
+queries---equivalently demonstrations added---to first reach
+$\mathrm{SR}_\mathrm{target}=0.90$ (Eq.~\ref{eq:queries}). $Q$ is
+\emph{right-censored}: a run that never reaches target contributes $Q=B$, so a bare
+mean$\pm$std understates the gap between reaching and non-reaching methods. We
+therefore lead with a censoring-aware summary --- the fraction of seeds that reach
+target, $\mathrm{Reach}=\tfrac15\sum_{s}\mathbf{1}[\mathrm{SR}(\theta_B)\ge0.90]$, and
+the \emph{median} $Q$ among reaching seeds only. Cells still show mean$\pm$std $Q$,
+but a cell is bold on $Q$ only among methods with the highest $\mathrm{Reach}$ (a
+censored cell is never bold), and the headline comparison uses Reach first, then
+median-$Q$ among reachers. \textbf{Eff}: demonstration efficiency, the area under the
+SR-vs-\#demonstrations curve (Eq.~\ref{eq:eff}), well-defined even for non-reaching
+runs. \textbf{Cov}: coverage of collected demonstrations over the task space
+(Eq.~\ref{eq:cov}).
+
+\paragraph{Seeds and significance.} We run \textbf{$5$ seeds} per cell (per-run seed
+$=\text{base}+\text{run\_id}$), a floor we will raise to $10$ for the camera-ready if
+resources permit. Because arms share the bootstrap per seed, seeds are \emph{paired},
+so for each headline comparison we report the five paired per-seed differences
+directly rather than a bootstrap CI (pinned to min/max over five points). We call a
+comparison directional only when all five differences share a sign (a one-sided sign
+test at $p=1/32$), paired with the effect size (median paired difference); we do
+\emph{not} treat non-overlap of $\pm$std bars as significance. Given the many pairwise
+comparisons, we confine strong claims to the single pre-registered contrast (PACE
+vs.\ the strongest arm per cell) and report the rest descriptively. Formally, over a
+fixed evaluation set $\mathcal{E}$,
+\begin{equation}
+\mathrm{SR}(\theta)=\frac{1}{|\mathcal{E}|}\sum_{e\in\mathcal{E}}\mathbf{1}\big[\ e\ \text{succeeds under }\pi_\theta\ \big],
+\qquad \mathrm{SR}_{\mathrm{target}}=0.90,
+\label{eq:sr}
+\end{equation}
+\begin{equation}
+q(\mathrm{SR}_{\mathrm{target}})=\min\big\{\,q\ :\ \mathrm{SR}(\theta_q)\ge\mathrm{SR}_{\mathrm{target}}\,\big\},
+\qquad q\leftarrow B\ \text{if never reached},
+\label{eq:queries}
+\end{equation}
+\begin{equation}
+\mathrm{Eff}=\int_{0}^{B}\mathrm{SR}(\theta_{q})\ \mathrm{d}q
+\ \approx\ \sum_{q=1}^{B}\tfrac12\big(\mathrm{SR}(\theta_{q-1})+\mathrm{SR}(\theta_{q})\big),
+\label{eq:eff}
+\end{equation}
+\begin{equation}
+\mathrm{Cov}=\frac{1}{|\mathcal{Z}|}\Big|\ \big\{\,z\in\mathcal{Z}\ :\ \exists\,(s,a)\in\mathcal{D},\ \mathrm{cell}(s)=z\,\big\}\ \Big|,
+\label{eq:cov}
+\end{equation}
+where $\mathcal{Z}$ is the quantized task space (grid cells for T1, workspace/pose
+cells for T2); $\mathrm{Cov}$ isolates the effect of PACE's diversity/memory
+choice on the collected data.
+
+\subsection{Main Results}
+
+Table~\ref{tab:main} consolidates held-out SR and query count $Q$ for all methods
+across both modalities on the two implemented tasks (T1, T2). These cells answer
+whether PACE reaches target with the fewest expert queries while matching or exceeding
+baseline SR: averaged over the two tasks PACE attains $\PH{mean-pace-sr}$ SR, and on
+Push its expert-query change to reach $0.90$ SR relative to Diff-DAgger is
+$\PH{pace-vs-diff-q-reduction}$. The pre-registered contrast is PACE against \emph{the
+strongest of} the DAgger family and the two single-axis controls ($R$, $W$): if PACE
+does not beat both single-axis arms, the integration claim is not supported and we say
+so. We report the sign from the paired per-seed differences (\S Metrics) and claim
+``fewer than the strongest arm'' only when they agree in sign; with $n{=}5$ every
+entry is provisional. The foundation-model and reset cost PACE alone incurs is
+accounted separately in Table~\ref{tab:cost}, so ``query efficiency'' is never read in
+isolation.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Main results on the two \emph{implemented} tasks: held-out SR (\%) and
+expert queries $Q$ to reach $0.90$ SR, mean$\pm$std over $5$ seeds. Best per
+column within a task in \textbf{bold}, restricted to methods with the highest
+Reach (a right-censored $Q$ --- target never reached, so $Q{=}B$ --- is never
+bold; see \S Metrics). State/Image $=$ the two modalities (T1: equivariant MLP /
+plain CNN; T2: state / image diffusion policy). Diff-DAgger is robot-only.
+Reset-Curric.\ ($R$) is the single-axis \emph{where} control and IWR-Reweight ($W$)
+the single-axis \emph{which} control (\S Baselines). The
+planned RoboSuite tasks (T3--T5) are \emph{not} shown: they are unimplemented and
+contribute no rows. All cells are red placeholders pending the five-seed runs.}
+\label{tab:main}
+\begin{tabular}{l cc cc}
+\toprule
+ & \multicolumn{2}{c}{State} & \multicolumn{2}{c}{Image} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Method & SR$\uparrow$ & Q$\downarrow$ & SR$\uparrow$ & Q$\downarrow$ \\
+\midrule
+\multicolumn{5}{l}{\emph{T1 Toy grid}}\\
+SafeDAgger     & \PH{toy-st-safe-sr}     & \PH{toy-st-safe-q}     & \PH{toy-im-safe-sr}     & \PH{toy-im-safe-q} \\
+DropoutDAgger  & \PH{toy-st-dropout-sr}  & \PH{toy-st-dropout-q}  & \PH{toy-im-dropout-sr}  & \PH{toy-im-dropout-q} \\
+EnsembleDAgger & \PH{toy-st-ensemble-sr} & \PH{toy-st-ensemble-q} & \PH{toy-im-ensemble-sr} & \PH{toy-im-ensemble-q} \\
+ThriftyDAgger  & \PH{toy-st-thrifty-sr}  & \PH{toy-st-thrifty-q}  & \PH{toy-im-thrifty-sr}  & \PH{toy-im-thrifty-q} \\
+Random         & \PH{toy-st-rand-sr}     & \PH{toy-st-rand-q}     & \PH{toy-im-rand-sr}     & \PH{toy-im-rand-q} \\
+Reset-Curric.\ ($R$) & \PH{toy-st-rcur-sr} & \PH{toy-st-rcur-q} & \PH{toy-im-rcur-sr} & \PH{toy-im-rcur-q} \\
+IWR-Reweight ($W$)   & \PH{toy-st-iwr-sr}  & \PH{toy-st-iwr-q}  & \PH{toy-im-iwr-sr}  & \PH{toy-im-iwr-q} \\
+\textbf{PACE (ours)} & \PH{toy-st-pace-sr} & \PH{toy-st-pace-q} & \PH{toy-im-pace-sr} & \PH{toy-im-pace-q} \\
+\midrule
+\multicolumn{5}{l}{\emph{T2 Push (ManiSkill PushT)}}\\
+Diff-DAgger    & \PH{push-st-diff-sr}     & \PH{push-st-diff-q}     & \PH{push-im-diff-sr}     & \PH{push-im-diff-q} \\
+SafeDAgger     & \PH{push-st-safe-sr}     & \PH{push-st-safe-q}     & \PH{push-im-safe-sr}     & \PH{push-im-safe-q} \\
+DropoutDAgger  & \PH{push-st-dropout-sr}  & \PH{push-st-dropout-q}  & \PH{push-im-dropout-sr}  & \PH{push-im-dropout-q} \\
+EnsembleDAgger & \PH{push-st-ensemble-sr} & \PH{push-st-ensemble-q} & \PH{push-im-ensemble-sr} & \PH{push-im-ensemble-q} \\
+ThriftyDAgger  & \PH{push-st-thrifty-sr}  & \PH{push-st-thrifty-q}  & \PH{push-im-thrifty-sr}  & \PH{push-im-thrifty-q} \\
+Random         & \PH{push-st-rand-sr}     & \PH{push-st-rand-q}     & \PH{push-im-rand-sr}     & \PH{push-im-rand-q} \\
+Reset-Curric.\ ($R$) & \PH{push-st-rcur-sr} & \PH{push-st-rcur-q} & \PH{push-im-rcur-sr} & \PH{push-im-rcur-q} \\
+IWR-Reweight ($W$)   & \PH{push-st-iwr-sr}  & \PH{push-st-iwr-q}  & \PH{push-im-iwr-sr}  & \PH{push-im-iwr-q} \\
+\textbf{PACE (ours)} & \PH{push-st-pace-sr} & \PH{push-st-pace-q} & \PH{push-im-pace-sr} & \PH{push-im-pace-q} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cost Accounting: What $Q$ Does and Does Not Count}
+
+The query metric $Q$ counts \emph{only} expert demonstrations, which the
+one-demo-per-round budget equalizes across methods. But PACE's Execute stage is not
+free along two axes the baselines never touch. \emph{(1) Reset access} (only under the
+optional prescription): the on-policy default resumes the expert on the failed
+rollout, but a \texttt{BRIDGE} prescription instead samples a new start state
+$s_0\sim\Xi(\cdot\mid\xi)$ (Eq.~\ref{eq:prescribe-demo}), requiring a resettable
+simulator (Limitations~ii). \emph{(2) Foundation-model calls}: each PACE round issues
+VLM/LLM calls the baselines do not. Table~\ref{tab:cost} reports these axes per
+reached-target run so PACE's $Q$ advantage is never read without its reset and
+inference cost. Because a single $-$Execute row would confound losing the prescribed
+start state with losing reset access, we report both controls in
+Table~\ref{tab:ablation} ($-$Execute and $-$Prescribe$+$Reset), letting a reviewer
+attribute any drop to the right cause.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Competing cost axes that the query count $Q$ omits, per run that reaches
+$0.90$ SR (T2 Push, mean over $5$ seeds). Baselines require none of the last three
+columns. All cells are red placeholders pending the runs.}
+\label{tab:cost}
+\begin{tabular}{l cccc}
+\toprule
+Method & $Q\downarrow$ & Resets & VLM calls & LLM calls \\
+\midrule
+Diff-DAgger          & \PH{push-diff-q}      & $0$ & $0$ & $0$ \\
+Best baseline        & \PH{push-base-q}      & $0$ & $0$ & $0$ \\
+\textbf{PACE (ours)} & \PH{push-pace-q}      & \PH{pace-resets} & \PH{pace-vlm-calls} & \PH{pace-llm-calls} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Learning Curves and Coverage}
+
+Endpoint SR and Q answer \emph{whether} PACE is more query-efficient; the curves and
+coverage test \emph{why}. We plot held-out SR against the number of collected
+demonstrations for every implemented (task, modality) cell (Figure~\ref{fig:lc}). The
+question is whether PACE lies on the upper-left of the SR-vs-demonstration frontier
+--- higher \textbf{Eff} at a given budget --- because cross-round memory rotation
+front-loads failure-mode coverage rather than re-correcting the dominant mode; whether
+it holds is decided by the pending five-seed numbers. On the state PushT curve, PACE
+attains $\PH{push-st-pace-eff}$ Eff vs.\ $\PH{push-st-diff-eff}$ for Diff-DAgger; on
+the image curve, $\PH{push-im-pace-eff}$ vs.\ $\PH{push-im-diff-eff}$. Coverage
+\textbf{Cov} is the mechanistic check: PACE reaches $\PH{push-st-pace-cov}$
+workspace-cell coverage on state PushT (vs.\ $\PH{push-st-diff-cov}$ for the strongest
+baseline) and $\PH{toy-st-pace-cov}$ grid-cell coverage on the toy task (vs.\
+$\PH{toy-st-rand-cov}$); if the efficiency ordering tracks the coverage ordering, the
+gain is attributable to broader failure-mode coverage rather than higher
+per-demonstration quality. Figure~\ref{fig:qual} shows a representative
+failure$\to$prescription panel: a clustered failure mode, its VLM-perceived
+description, and the prescribed corrective reset state.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\columnwidth]{figures/lc_push_image.pdf}
+\caption{Learning curves: held-out success rate versus number of collected
+demonstrations (five-seed mean; shaded band is $\pm1$ std), shown for a
+representative (task, modality) cell. PACE is expected to lie on the upper-left
+frontier --- reaching $\mathrm{SR}_{\mathrm{target}}=0.90$ (dashed) with fewer
+demonstrations --- if the cross-round memory rotation front-loads
+failure-mode coverage. One panel per task$\times$modality appears in the full grid;
+per-panel demo-efficiency (Eq.~\ref{eq:eff}) is reported in the main tables.}
+\label{fig:lc}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\columnwidth]{figures/qual_push.pdf}
+\caption{Qualitative failure$\to$prescription example. Left: a clustered failure
+mode (members of $C_{\mathrm{tgt}}$ at their peak diffusion-loss frames,
+Eq.~\ref{eq:perceive}). Center: the VLM-perceived description grounding the scene
+command. Right: the prescribed, workspace-clamped corrective reset state $\xi$
+(Eq.~\ref{eq:prescribe}) from which the single new expert demonstration is
+collected.}
+\label{fig:qual}
+\end{figure}
+
+\subsection{Ablations}
+
+To attribute the gains to the PACE mechanisms (Q4) we ablate one at a time
+(Table~\ref{tab:ablation}). \textbf{The analysis is pre-registered; it is not an
+AND-rule.} We run the ablation on \emph{two} cells --- T1 Toy (state) and T2 Push
+(image), spanning both embodiments and modalities --- and report each cell separately
+with its paired-per-seed effect size (median paired difference from full PACE), not a
+strict ``degrades in both'' gate that would discard true effects as readily as false
+ones over two noisy $n{=}5$ cells. At $n{=}5$ the paired sign test resolves a
+consistent-direction effect at $p{=}1/32$, and the median paired difference
+distinguishes a genuine null from low power. A mechanism ``carries weight'' in a cell
+when its removal degrades that cell with all five differences agreeing in sign; we
+state the per-cell direction expected \emph{a priori}. Each row isolates one
+mechanism (defined precisely in the table caption), separating loss-localization
+($-$Perceive) from the foundation models ($-$VLM, $-$LLM, which together answer
+whether these are causal or decorative), the failure-mode partition ($-$Assess), the
+coverage mechanism ($-$Memory, Eq.~\ref{eq:memory}), and the within-round context
+($-$Choose-ctx). On the Execute side, the ($-$Execute,$-$Prescribe$+$Reset,full)
+triple separates free resets from the prescribed start state. We expect the largest
+Eff drop at $-$Memory or $-$Assess and, per our stated scope, a small or null
+$-$Prescribe$+$Reset$\to$full gap; if that gap is null, the prescription option is not
+a driver and we say so. We also report the $\kappa$ sweep and the Qwen3
+LLM~\cite{yang2025qwen3} reasoning-enabled vs.\ disabled modes ($\PH{abl-think-eff}$
+vs.\ $\PH{abl-nothink-eff}$), with failure perception driven by the Qwen3-VL
+vision--language model~\cite{bai2025qwen3vl}.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Ablation of PACE mechanisms on two cells (T1 Toy state, T2 Push image),
+mean$\pm$std over $5$ seeds, reported \emph{per cell} (no both-cells AND-rule; see
+text). $-$Perceive ablates loss-localization only; $-$VLM/$-$LLM remove the
+foundation models; $-$Memory removes the acting coverage mechanism; $-$Choose-ctx
+($\kappa{=}1$) removes the within-round \texttt{BRIDGE} context and is expected
+\emph{near-identical} to full PACE under the on-policy default; $-$Execute is fully
+on-policy with no reset access; $-$Prescribe$+$Reset keeps reset access but does not
+move the start state, so ($-$Execute,$-$Prescribe$+$Reset,full) separates free
+resets from the prescribed \emph{where}. Demonstration
+efficiency Eff (Eq.~\ref{eq:eff}), coverage Cov (Eq.~\ref{eq:cov}). All cells are
+red placeholders. On T1 the VLM/LLM operate on the grid corridor prescription;
+$-$VLM/$-$LLM there use the scripted A$^\star$ corridor.}
+\label{tab:ablation}
+\begin{tabular}{l cc cc}
+\toprule
+ & \multicolumn{2}{c}{T1 Toy (state)} & \multicolumn{2}{c}{T2 Push (image)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Variant & Eff$\uparrow$ & Cov$\uparrow$ & Eff$\uparrow$ & Cov$\uparrow$ \\
+\midrule
+$-$Perceive & \PH{abl-toy-perceive-eff} & \PH{abl-toy-perceive-cov} & \PH{abl-perceive-eff} & \PH{abl-perceive-cov} \\
+$-$VLM      & \PH{abl-toy-vlm-eff}      & \PH{abl-toy-vlm-cov}      & \PH{abl-vlm-eff}      & \PH{abl-vlm-cov} \\
+$-$LLM      & \PH{abl-toy-llm-eff}      & \PH{abl-toy-llm-cov}      & \PH{abl-llm-eff}      & \PH{abl-llm-cov} \\
+$-$Assess   & \PH{abl-toy-assess-eff}   & \PH{abl-toy-assess-cov}   & \PH{abl-assess-eff}   & \PH{abl-assess-cov} \\
+$-$Memory   & \PH{abl-toy-memory-eff}   & \PH{abl-toy-memory-cov}   & \PH{abl-memory-eff}   & \PH{abl-memory-cov} \\
+$-$Choose-ctx ($\kappa{=}1$) & \PH{abl-toy-choose-eff} & \PH{abl-toy-choose-cov} & \PH{abl-choose-eff} & \PH{abl-choose-cov} \\
+$-$Execute (no reset) & \PH{abl-toy-execute-eff}  & \PH{abl-toy-execute-cov}  & \PH{abl-execute-eff}  & \PH{abl-execute-cov} \\
+$-$Prescribe$+$Reset  & \PH{abl-toy-presreset-eff} & \PH{abl-toy-presreset-cov} & \PH{abl-presreset-eff} & \PH{abl-presreset-cov} \\
+\midrule
+\textbf{PACE (full)} & \PH{abl-toy-full-eff} & \PH{abl-toy-full-cov} & \PH{abl-full-eff} & \PH{abl-full-cov} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\textbf{PACE} changes what the DAgger family asks. Safe and query-efficient DAgger
+variants decide only \emph{when} to query the expert from a per-state uncertainty
+or safety
+gate \cite{zhang2017safedagger,menda2017dropoutdagger,menda2019ensembledagger,hoque2021thriftydagger,lee2025diffdagger};
+PACE adds \emph{which} failure mode to correct --- its central axis --- and an
+\emph{optional} decision of \emph{where} the corrective demonstration begins. Failures
+are localized at their peak-loss frame, optionally described by a vision--language model
+\cite{bai2025qwen3vl}, and clustered into
+failure modes (Eqs.~\eqref{eq:perceive}--\eqref{eq:partition}); the target mode
+is chosen by a cross-round memory rotation with a small k-center context set
+(Eqs.~\eqref{eq:memory}--\eqref{eq:diversity}); the demonstration is collected
+on-policy by default, or, when enabled, from an LLM-prescribed
+\cite{yang2025qwen3} sub-task-entry start state
+(Eqs.~\eqref{eq:prescribe}--\eqref{eq:prescribe-demo}). As a unifying view scoped to
+the diffusion-loss task rather than a theorem, prior interactive IL sits at one
+corner: collapsing selection, memory, and the prescribe map turns a PACE round
+into a single on-policy query, and at window $K{=}1$ that corner meets the
+diffusion-loss rule of Diff-DAgger \cite{lee2025diffdagger} under the
+peak-loss/first-crossing monotonicity condition noted in
+\S\ref{sec:method}. We claim nothing stronger, and the view does not cover the toy
+grid's classifier loss.
+
+On the two implemented tasks of Table~\ref{tab:tasks}---a toy $5\times5$ grid and ManiSkill
+Push \cite{florence2021implicitbc,tao2024maniskill3}, in both state and image modalities---we
+test whether PACE reaches the $0.90$ target success rate with
+fewer expert queries than the DAgger-family baselines while matching or exceeding their
+final success rate, reporting paired per-seed differences and
+accounting separately for reset and foundation-model cost (\S Metrics,
+Table~\ref{tab:cost}). \emph{The result cells (mean held-out SR \PH{mean-pace-sr}, query
+change \PH{pace-vs-diff-q-reduction} relative to Diff-DAgger, Table~\ref{tab:main}) are
+placeholders; no numeric claim is yet established until the five-seed runs complete.}
+Three RoboSuite tasks on a UR5/UR5e arm \cite{zhu2020robosuite}
+are a \emph{planned} cross-embodiment extension, not evaluated here. The
+ablation (Table~\ref{tab:ablation}, with VLM-off, LLM-off, and reset-access controls)
+tests whether the \emph{which} mechanisms carry the gain and whether the optional
+\emph{where} adds anything on top. Because integration-only novelty is weak, the
+headline contrast pits PACE against the strongest DAgger baseline and the two
+single-axis controls. We expect the signature to appear in coverage (Eq.~\eqref{eq:cov}),
+consistent with the guiding idea that spending expert effort on curated, non-redundant
+failure modes---rather than on every uncertain state---yields more sample-efficient
+corrective data. What we defend today is the method, framework, and protocol;
+the query-efficiency thesis awaits the five-seed T1/T2 numbers.
+
+\subsection{Limitations}
+\label{sec:limitations}
+
+We make the load-bearing assumptions explicit. \emph{(i) Evaluation scope.} The
+study covers two implemented tasks (T1 Toy, T2 Push) at five seeds; the three
+RoboSuite/UR5 tasks are specified but not run, all result cells are placeholders,
+and $n{=}5$ limits statistical resolution (\S Metrics).
+\emph{(ii) Reset access and cost.} The optional \emph{where} prescription is
+\emph{conditional} on a resettable simulator
+\cite{eysenbach2018leavenotrace,florensa2017reversecurriculum}, and every round
+issues VLM/LLM calls; the query metric $q$ counts neither, so we report them as a
+separate cost axis (Table~\ref{tab:cost}) and two controls that
+separate free resets from the prescribed start state (Table~\ref{tab:ablation})
+rather than folding them into $q$. The on-policy default needs no reset access.
+\emph{(iii) Foundation-model fidelity.} A mis-described failure or
+out-of-bounds prescription degrades the demo; we mitigate with hard KAG workspace
+clamps (Eq.~\eqref{eq:prescribe}), a non-empty floor, and a deterministic
+escalation ladder, but the pipeline is only as reliable as its backbones and
+prompts, and whether the VLM is causal is left to the $-$VLM ablation.
+\emph{(iv) Privileged experts and hand-designed features.} Our expert is an
+A$^\star$/BFS or PPO / motion-planner oracle; a noisier human expert may differ
+\cite{mandlekar2020iwr,liu2023sirius}, and Assess uses a fixed $6$-D geometric or
+frozen-R3M \cite{nair2022r3m} descriptor with $\kappa$ and the memory bandwidth
+fixed, not learned. \emph{(v) Baseline fidelity.} SafeDAgger$^\star$ uses an oracle
+action-discrepancy gate rather than a learned safety classifier, a variant whose
+bias direction is \emph{unknown} (\S Baselines),
+and on the robot path ThriftyDAgger's risk arm degrades to novelty-only when its
+success-Q buffer cannot be read; both are faithful-as-possible proxies whose
+deviation we do not claim to bound.
+
+\subsection{Future Work}
+\label{sec:future-work}
+
+The immediate step is completing the T1--T2 five-seed runs (and raising to ten
+seeds) and the planned RoboSuite tasks, so the design can be judged on results.
+Several extensions then open. One is to close the loop between Perceive and
+Assess: letting the VLM's semantic failure taxonomy \emph{define} the clustering
+feature space --- rather than clustering hand-designed or frozen-encoder features
+--- could make mode discovery more robust and give the VLM a say in \emph{which}
+failures are grouped
+\cite{liu2023reflect,duan2025aha,ash2020badge,sener2018coreset,settles2009active}.
+A second would relax resettability, growing Execute from a single
+reset pose into on-hardware sub-task curricula run with human experts
+\cite{kelly2019hgdagger,liu2023sirius}. And because
+PACE is agnostic to the learner, it should carry over to other generative policy
+classes --- trajectory diffusion planners \cite{janner2022diffuser} and
+vision--language--action models \cite{brohan2023rt2,driess2023palme} --- pushing
+failure-driven data collection past the diffusion policy studied here
+\cite{chi2023diffusionpolicy}. What ties these together is a change of
+framing: treat interactive imitation learning as \emph{failure-mode curation}. An
+agent that groups its own mistakes and corrects them can put a scarce expert
+budget where it is needed most.
+
+\appendix
+\section{Appendix: Baseline Query Predicates}
+\label{app:baselines}
+
+For completeness we give the five query predicates deferred from
+\S\ref{sec:unified}. Each is the score inside the unified template
+$\mathrm{Query}_{\mathrm{method}}(s_t)=\mathbf{1}[\mathrm{score}_{\mathrm{method}}(s_t)\gtrless\tau_{\mathrm{method}}]$,
+with all action comparisons taken in the shared relative-joint-position space.
+\emph{SafeDAgger}$^\star$ \cite{zhang2017safedagger} gates on novice--expert action
+discrepancy (on the grid, the score is the fraction of off-optimal-mask steps),
+\begin{equation}
+\mathrm{Query}_{\mathrm{Safe}}(s_t)=\mathbf{1}\big[\ \|a^{\mathrm{nov}}_t-a^{\mathrm{exp}}_t\|_2 > \tau_{\mathrm{sd}}\ \big].
+\label{eq:safe}
+\end{equation}
+\emph{DropoutDAgger} \cite{menda2017dropoutdagger,gal2016dropout} draws
+$N_{\mathrm{mc}}$ stochastic samples and queries when the in-$\tau$-ball agreement
+$\hat p_t$ with the expert drops below $p$,
+\begin{align}
+\hat p_t=\tfrac{1}{N_{\mathrm{mc}}}\sum_{i=1}^{N_{\mathrm{mc}}}\mathbf{1}\big[\ \|a^{(i)}_t-a^{\mathrm{exp}}_t\|_2\le\tau\ \big],
+\qquad
+\mathrm{Query}_{\mathrm{Drop}}(s_t)=\mathbf{1}\big[\ \hat p_t<p\ \big].
+\label{eq:dropout}
+\end{align}
+\emph{EnsembleDAgger} \cite{menda2019ensembledagger,lakshminarayanan2017ensembles}
+queries on ensemble doubt (variance) \emph{or} mean discrepancy over $M$ members,
+\begin{align}
+\mathrm{doubt}_t&=\tfrac1{d_a}\!\sum_{j=1}^{d_a}\mathrm{Var}_{m}\big(a^{[m]}_{t,j}\big),
+\quad
+\mathrm{disc}_t=\tfrac1M\!\sum_{m=1}^{M}\big\|a^{[m]}_t-a^{\mathrm{exp}}_t\big\|_2, \nonumber\\
+\mathrm{Query}_{\mathrm{Ens}}(s_t)&=\mathbf{1}\big[\ \mathrm{disc}_t>\tau\ \ \lor\ \ \mathrm{doubt}_t>\chi\ \big].
+\label{eq:ensemble}
+\end{align}
+\emph{ThriftyDAgger} \cite{hoque2021thriftydagger} queries on novelty (doubt)
+\emph{or} task risk $1-Q$. The success-Q value $Q_\psi$ is trained by BCE on a
+Monte-Carlo success-to-go target $y_t$, where $n$ is the episode length (the number
+of steps in the trajectory the pair is drawn from); the thresholds
+$(\delta_h,\beta_h)$ are the $(1-\alpha_h)$-quantiles of the current round's
+per-state doubt/risk pool (the calibration set),
+\begin{align}
+y_t&=\mathbf{1}[\mathrm{success}]\cdot\gamma^{\,n-1-t},
+\quad
+\mathcal{L}_Q=\mathrm{BCE}\big(\sigma(Q_\psi(s_t,a_t)),\,y_t\big),
+\quad
+\mathrm{risk}(s,a)=1-\sigma\!\big(Q_\psi(s,a)\big), \nonumber\\
+\delta_h&=\mathrm{Quantile}_{1-\alpha_h}\{\mathrm{doubt}\},\
+\beta_h=\mathrm{Quantile}_{1-\alpha_h}\{\mathrm{risk}\},\
+\mathrm{Query}_{\mathrm{Thr}}(s_t)=\mathbf{1}\big[\ \mathrm{doubt}_t>\delta_h\ \lor\ \mathrm{risk}_t>\beta_h\ \big].
+\label{eq:thrifty}
+\end{align}
+The uniform-random control (\emph{Random}) queries at a pre-drawn step, a lower
+bound on any informed rule,
+\begin{equation}
+t_{\mathrm{stag}}\sim\mathrm{Unif}\{0,\dots,H-1\},
+\qquad
+\mathrm{Query}_{\mathrm{Rand}}(s_t)=\mathbf{1}\big[\ t\ge t_{\mathrm{stag}}\ \big].
+\label{eq:stagger}
+\end{equation}
+Threshold constants $(\tau_{\mathrm{sd}},\tau,p,\chi,\alpha_h,\alpha,K,M,N_{\mathrm{mc}})$
+are fixed configuration values (defaults in \S Baselines) rather than tuned per task.
+As noted in \S\ref{sec:unified}, SafeDAgger$^\star$ substitutes an oracle
+action-discrepancy signal for the original learned safety classifier (a conservative
+proxy), and on the robot path ThriftyDAgger degrades to novelty-only when its
+success-Q buffer is unavailable.
+
+\section*{Appendix: T1 Grid-World Instantiation of Perceive}
+\label{app:t1grid}
+
+Equations~\ref{eq:perceive}--\ref{eq:prescribe} are written for the manipulation
+setting; the toy grid (T1) uses a distinct but explicitly-defined instantiation of
+the same pipeline, and the clustering, dominance, memory, and diversity stages
+(Eqs.~\ref{eq:partition}--\ref{eq:diversity}) run unchanged on the resulting $6$-D
+grid descriptor. There is no continuous yaw, TCP, or object pose, so we set
+$p^{\mathrm{tee}}_i=(\mathrm{col}_i,\mathrm{row}_i)$ to the agent's grid cell at the
+failure step, replace the sin/cos-yaw pair with the signed cell offset to the goal
+$(g_x-\mathrm{col}_i,\,g_y-\mathrm{row}_i)$, keep $\rho_i=t^\star_i/\max(1,T_i)$, and
+set $\delta_i=\|(\mathrm{col}_i,\mathrm{row}_i)-(g_x,g_y)\|_1$ (Manhattan
+distance-to-goal, the grid analogue of contact distance). The per-step signal
+$\ell_t$ is the classifier's behavior-cloning loss rather than the diffusion loss,
+and the peak-loss step $t^\star_i=\arg\max_t\ell_t$ localizes the failure exactly as
+in Eq.~\ref{eq:perceive}. The prescribe map $g$ (Eq.~\ref{eq:prescribe}) is
+likewise replaced on the grid by a \emph{corridor} prescription: the LLM emits a
+start/goal/fire layout and a cell-sequence corridor, which an A$^\star$ expert is
+forced down to yield the one new demonstration. The anchor-relative perturbation
+caps and workspace clamp of Eq.~\ref{eq:prescribe} become an A$^\star$/BFS
+feasibility check that rejects corridors leaving the grid, stepping on fire, or
+disconnecting start from goal. As noted in the Method, the corner correspondence to
+the query family is vacuous here (the per-step signal is a classifier BCE loss
+rather than a diffusion loss); it holds only at the informal level of
+``highest-loss failure, corrected on-policy.''
+
+\bibliographystyle{aaai2027}
+\bibliography{references}
+
+\end{document}

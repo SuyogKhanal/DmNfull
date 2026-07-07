@@ -1,0 +1,93 @@
+# config_plug_hybrid.yaml — Diff-DAgger vs P4-LLM V3 HYBRID on PlugCharger-v1.
+#
+# Diff-DAgger Table IV "Plugging" DAgger-loop knobs, on the rel_joint_pos policy.
+# NOTE: the action/denoising contract (configs/hydra/plugcharger_state.yaml) PIVOTED
+# from the paper's Abs-Pose/ee_pose_6d (which capped BC at ~0.3 — single-step IK can't
+# track the 5 mm insertion) to rel_joint_pos (joint-space, no IK; StackCube-proven).
+# Both arms share it, so the head-to-head stays fair. This config carries the
+# DAgger-loop knobs: Ni warm-start, Nf=100 budget, Nd=1 retrain cadence (apples-to-apples
+# per-demo, StackCube-consistent; NOT the paper's Nd=8), K=2, Nb≈512. BOTH arms share a byte-identical warm-start bootstrap (P4_REUSE_INIT_CKPT)
+# and the SAME frozen held-out eval (seed 7777, >=200 eps); the only difference is
+# the demo-acquisition rule.
+#
+# Arms:
+#   diff_dagger — native diffusion-loss CDF query; corrects the first uncertain run.
+#   p4_top3 + p4.subtask.collect=hybrid — the V3 HYBRID: the LLM DECIDES per round
+#     between SELECT (on-policy correct one cited REAL charger-insertion failure) and
+#     BRIDGE (prescribe a middle-ground charger+socket layout solved by the
+#     motion-planner expert). TEXT-ONLY (use_vlm:false) per the render lesson.
+#
+# Run order (de-risked): diff_dagger FIRST per seed (submit_plug_baseline.sh, 1 GPU,
+# no LLM) → builds run_<seed>/shared_baselines/init_ckpt.pth; then the hybrid
+# (submit_plug_hybrid.sh, 2 GPUs text-only) reuses that EXACT bootstrap.
+
+n_runs: 2
+initial_demos: 100         # warm-start in the STEEP region of the rel_joint_pos sweep
+                           # (N=50/100/200/400 = 0.19/0.24/0.28/0.31; 50→100 is the steepest
+                           # per-demo segment ~0.10/100). N=100 (~0.24) is off the floor with
+                           # headroom to the ~0.37 ceiling — each DAgger demo matters most here,
+                           # the OPPOSITE of StackCube's saturated N=200 warm-start.
+budget: 100                # Nf=100 corrective-demo budget (paper Plugging)
+demos_per_round: 1
+target_sr: 1.0             # run to budget (PlugCharger won't hit 100%); read demos-to-X% off the curve
+max_rounds: 200
+max_steps: 550             # match plugcharger_state.yaml max_episode_steps (long search demos)
+heldout_n: 100             # per-DEMO curve (Nd=1) gives ~100 eval points/seed, so the rolling-mean /
+                           # AUC over many points controls the per-point noise far better than a few
+                           # high-eps points would. Matches StackCube (heldout_n=100, Nd=1). The saved
+                           # per-round checkpoints can be RE-EVALUATED at higher eps post-hoc for the
+                           # final figures (tools/reeval_final.py).
+seed: 1                    # overridden per-job by the launcher
+
+nd_retrain: 1              # APPLES-TO-APPLES: both methods add ONE demo/round, so BOTH retrain from
+                           # scratch after EVERY demo (per-demo SR curve). Matches StackCube (nd=1).
+                           # Deliberately NOT the paper's Nd=8 — for comparing demo-SELECTION rules,
+                           # per-demo resolution + suite-consistency beats paper-faithfulness here.
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 20          # heldout_n(200) % eval_num_envs(20) == 0
+rollout_episodes: 60
+max_episodes_per_arm: 8000
+
+methods: ["diff_dagger", "p4_top3"]
+
+environments: ["PlugCharger-v1"]
+
+p4_select:
+  n_cand: 6                # candidate rollouts/round (also p4_top3's)
+
+baselines:
+  # batch_multiplier=5 → N_b = num_train_timesteps(100)*5 = 500 ≈ paper Plugging 512.
+  # The hybrid's detector is forced IDENTICAL to this (orchestrator copies
+  # alpha/patience/batch_multiplier onto the p4 detector) so the only difference
+  # between the arms is WHICH failure is corrected — apples-to-apples.
+  diff_dagger: {alpha: 0.99, patience: 2, batch_multiplier: 5}
+  safe_dagger: {tau: 0.1}
+  dropout_dagger: {tau: 0.1, p: 0.9, N: 10, d: 0.1}
+  ensemble_dagger: {M: 5, tau: 0.1, chi: 0.05}
+  thrifty_dagger: {alpha_h: 0.1, gamma: 0.99, M: 5, q_epochs: 50}
+  stagger: {}
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 5
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  # ── V3 HYBRID knobs (read inside run_p4_top3_arm via hp["subtask"]) ──
+  subtask:
+    collect: hybrid          # hybrid ⇒ LLM decides SELECT vs BRIDGE each round
+    signal: diffusion        # detection signal (same as diff_dagger)
+    use_vlm: true            # FULL P4 pipeline — the VLM analyzing rendered failure frames is a
+                             # CORE part of the method (3-GPU: VLM+LLM+orch). Renders ⇒ h100-safe;
+                             # h200 to be confirmed by the VLM smoke. (text-only is only an ablation.)
+    max_clusters: 4          # silhouette k-sweep ceiling over the round's failures
+    snap_eps: 0.02           # prescribed charger within this (m) of a member ⇒ SELECT it
+                             # (charger x-range is ~7 cm, tighter than StackCube's cubes)
+    memory_gamma: 0.6        # cross-round coverage-rotation recency decay
+    memory_sigma: 0.03       # coverage-rotation Gaussian width (m)

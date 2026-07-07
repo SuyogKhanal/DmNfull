@@ -26,6 +26,8 @@ import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+
 from .descriptor import load_failure_descriptor, FailureDescriptor
 from .clustering import cluster_failures, ClusterResult, Cluster
 from .diversity import farthest_point_select
@@ -57,6 +59,16 @@ class SubtaskPlanner:
         #   "teleport" (v1) — always anchored-perturbation reset (ablation).
         self.collect_mode = str(self.cfg.get("collect", "hybrid"))
         self.signal_mode = str(self.cfg.get("signal", "diffusion"))
+        # Clustering feature space (image-based runs only):
+        #   "geometric" (default) — the 6-D tee/contact descriptor.
+        #   "visual"   — R3M(ResNet18) over each failure's rendered key-frames
+        #                (start/t*/end), numpy-PCA reduced, then clustered. The
+        #                prescription/reset geometry is unchanged either way.
+        self.cluster_features = str(self.cfg.get("cluster_features", "geometric"))
+        self.embed_model = str(self.cfg.get("embed_model", "r3m"))
+        self.embed_pool = str(self.cfg.get("embed_pool", "concat"))
+        self.embed_pca_dim = int(self.cfg.get("embed_pca_dim", 16))
+        self._embedder = None    # lazily built FrameEmbedder (visual mode only)
         # hybrid knobs: a pose within snap_eps of a member counts as SELECTing it;
         # a BRIDGE pose may sit up to bridge_max_* from its nearest cited member.
         self.snap_eps = float(self.cfg.get("snap_eps", 0.02))
@@ -136,6 +148,11 @@ class SubtaskPlanner:
                                      "(degrades to p4_top3 fresh-tee)"})
             return
 
+        # IMAGE-based runs: attach R3M visual-embedding cluster features (falls
+        # back to geometric on any encoder/frame failure). State runs skip this.
+        if self.cluster_features == "visual":
+            self._attach_visual_embeddings(descs, rnd)
+
         cr = cluster_failures(descs, max_k=self.max_k)
         self._cr = cr
         # Memory-rotated target cluster (Fix-1 + Suyog's cross-round doubt).
@@ -180,6 +197,56 @@ class SubtaskPlanner:
                 range(len(descs)), key=lambda i: descs[i].peak_loss, reverse=True)[:cap]],
             "cluster_secs": self.tele.toc("cluster"),
         })
+
+    def _attach_visual_embeddings(self, descs: List[FailureDescriptor], rnd: int) -> None:
+        """Embed each failure's rendered key-frames with R3M, PCA-reduce the
+        round's set, and write the reduced vector onto desc.visual_embedding so
+        clustering+diversity operate in visual space. Best-effort: ANY problem
+        (no encoder, missing frames for some failures) leaves visual_embedding
+        None → cluster_feature() returns the geometric feature → the round
+        clusters geometrically. Never raises."""
+        self.tele.tic("embed")
+        try:
+            from .embedding import FrameEmbedder, pca_reduce
+            if self._embedder is None:
+                self._embedder = FrameEmbedder(model_name=self.embed_model,
+                                               pool=self.embed_pool)
+            raw, idx, missing = [], [], []
+            for i, d in enumerate(descs):
+                paths = [d.frame_paths[k] for k in ("start", "peak", "end")
+                         if d.frame_paths.get(k)]
+                vec = self._embedder.embed_failure(paths) if paths else None
+                if vec is None:
+                    missing.append(d.episode_id)
+                else:
+                    raw.append(vec); idx.append(i)
+            # Require EVERY failure embedded so the round clusters in one space.
+            if missing or len(raw) < 1:
+                self.tele.event(rnd, "visual_embed", {
+                    "status": "fallback_geometric",
+                    "reason": ("encoder_unavailable" if self._embedder.load_error
+                               else f"frames_missing_for_episodes={missing}"),
+                    "n_embedded": len(raw), "n_failures": len(descs),
+                    "load_error": self._embedder.load_error,
+                    "embed_secs": self.tele.toc("embed")})
+                return
+            M = np.asarray(raw, dtype=float)
+            red = pca_reduce(M, k=self.embed_pca_dim)
+            if red.ndim != 2 or red.shape[0] != len(raw):
+                raise ValueError(f"pca_reduce returned {red.shape} for {len(raw)} failures")
+            for j, i in enumerate(idx):
+                descs[i].visual_embedding = [float(v) for v in red[j]]
+            self.tele.event(rnd, "visual_embed", {
+                "status": "ok", "model": self.embed_model, "pool": self.embed_pool,
+                "raw_dim": int(M.shape[1]), "reduced_dim": int(red.shape[1]),
+                "n_failures": len(descs),
+                "frame_paths": {d.episode_id: d.frame_paths for d in descs},
+                "embed_secs": self.tele.toc("embed")})
+        except Exception as exc:  # never break a round on the embedder
+            self.tele.event(rnd, "visual_embed", {
+                "status": "error_fallback_geometric",
+                "error": f"{type(exc).__name__}: {exc}",
+                "embed_secs": self.tele.toc("embed")})
 
     # ── hook B ────────────────────────────────────────────────────────────
     def round_context(self, rnd: int) -> Dict[str, str]:

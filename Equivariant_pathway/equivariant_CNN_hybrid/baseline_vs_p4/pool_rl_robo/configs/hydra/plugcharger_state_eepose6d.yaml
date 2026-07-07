@@ -1,0 +1,168 @@
+# plugcharger_state.yaml — SUITE-LOCAL fork-style Hydra config for PlugCharger-v1.
+#
+# Replicates the Diff-DAgger paper's Table IV "Plugging" row (Abs Pose), on the
+# fork's PlugCharger env + panda motion-planner expert. Mirrors stackcube_state.yaml
+# structure so make_policy / make_dataset / the diffusion stack line up.
+#
+# PAPER-FAITHFUL (Table IV "Plugging"):
+#   * action_space = ee_pose_6d ("Abs Pose": absolute end-effector pose, 6D rotation
+#     representation, Zhou 2019). action_dim = 10 = 3 pos + 6 rot6d + 1 gripper.
+#       - The fork's compute_ee_pose_from_qpos returns a 7-wide (pos+quat) arm pose
+#         with NO gripper → the absolute ee path would be gripperless (dim 9), unable
+#         to grasp the charger. The suite recorder (_RecordingEnv) appends the gripper
+#         command so action_ee_pose is 8-wide → the dataset's 8-wide branch yields
+#         dim 10, and post_process_action / transform_action carry the gripper through
+#         (use_gripper). Decode runs single-step Jacobian-pinv IK (compute_ik).
+#   * To=1 (obs_horizon), Tp=64 (pred_horizon), Ta=8 (action_horizon).
+#   * Pred target = V-obj → prediction_type = v_prediction.
+#   * Td=64 denoising steps for BOTH train (num_train_timesteps) and inference
+#     (num_inference_steps) — contact-rich; StackCube used 16.
+#   * alpha=0.99, K=2 (patience), Nb=512 = num_train_timesteps(64) * batch_multiplier(8).
+#   * Training: 300 epochs, max_train_steps=30000, batch 64, lr 1e-4 AdamW, from
+#     scratch every N_d (Ni=20 / Nf=100 / Nd=8 live in config_plug_hybrid.yaml).
+#
+# proprio_dim = 30 = agent_qpos(9) + extra_tcp_pose(7) + extra_charger_pose(7) +
+#   extra_receptacle_pose(7). goal_pose is EXCLUDED (it is a deterministic Rz(pi) of
+#   receptacle_pose, redundant — the StackCube-analogous choice; cubeB_pose was the
+#   target there too). proprio_dim sets the UNet global_cond_dim (latent_dim=0) so it
+#   MUST equal the summed obs-key dims (verified by the normalizer-gen step).
+#
+# NOTE (sweep-gate): if BC can't learn under ee_pose_6d (the untested-in-this-suite
+# single-step IK can't track the 5 mm / 0.2 rad insertion), the fallback is
+# rel_joint_pos (action_dim 8, what the KAG specifies + StackCube validated). The
+# prediction_type=v_prediction vs epsilon is the second knob to revisit (StackCube
+# switched to epsilon because v_prediction was too weak for its multimodal demos).
+
+env_id: PlugCharger-v1
+obs_mode: state_dict
+control_mode: pd_joint_pos
+render_mode: rgb_array
+max_episode_steps: 550     # the strengthened spiral+tilt search insert makes demos
+                           # LONG: measured 377-460 steps (mean 398) for a full
+                           # grasp→align→search→seat. The policy/eval horizon must fit
+                           # that (550 = 460 max demo + margin) or successful rollouts
+                           # truncate. (Eval is correspondingly costlier than StackCube.)
+num_init_ep: 20            # paper Ni (orchestrator uses config_plug_hybrid initial_demos)
+
+obs_keys: [agent_qpos, extra_tcp_pose, extra_charger_pose, extra_receptacle_pose]
+proprio_dim: 30
+latent_dim: 0
+action_space: ee_pose_6d   # paper "Abs Pose"
+action_dim: 10             # 3 pos + 6 rot6d + 1 gripper
+device: cuda
+obs_horizon: 1             # To=1 (fork hardwires global_cond_dim=proprio_dim, not *obs_horizon)
+pred_horizon: 64           # Tp=64
+action_horizon: 8          # Ta=8
+prediction_type: v_prediction   # paper "V-obj" (Table IV)
+
+dataset_dir: assets/plugcharger
+normalizers_path: assets/normalizers/PlugCharger-v1_normalizers.pth
+save_file_dir: assets/plugcharger/results
+
+max_train_steps: 30000
+epoch: 300
+train_freq: 4
+wait_timestep: 0
+chkpt_dir: ${save_file_dir}
+
+dataset:
+    _target_: dataset.datasets.TimeSeriesDataset
+    dataset_path: []
+    load_count: 0
+    obs_keys: ${obs_keys}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    validation_ratio: 0.0
+    device: ${device}
+
+env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 1
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.02
+
+eval_env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 100
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.0
+
+# Motion-planner expert: load_expert() returns MotionPlannerExpert (no instantiate).
+# Only action_space + max_episode_steps are read by the arms / demo bookkeeping.
+# action_space=joint_pos: the planner steps ABSOLUTE arm qpos (+gripper); the dataset
+# then derives the ee_pose_6d training target from the recorded action_ee_pose.
+expert:
+    action_space: joint_pos
+    max_episode_steps: 600     # demo keep-filter (10 <= total <= this); search demos
+                               # reach ~460 steps, so leave headroom above that
+    success_mode: true
+    device: ${device}
+
+policy:
+    _target_: agents.diffusion_policy.DiffDAggerPolicy
+
+    model:
+        _target_: model.unet1d.ConditionalUnet1D
+        input_dim: ${action_dim}
+        global_cond_dim: null
+        diffusion_step_embed_dim: 256
+        down_dims: [256, 512, 1024]
+        kernel_size: 5
+        n_groups: 8
+
+    obs_keys: ${obs_keys}
+    proprio_dim: ${proprio_dim}
+    latent_dim: ${latent_dim}
+    action_dim: ${action_dim}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    vision_model: r3m
+    frozen_encoder: false
+    obs_encoder_group_norm: true
+    spatial_softmax: true
+
+    num_inference_steps: 64          # Td=64 (no DDIM subsampling: == num_train_timesteps)
+    noise_scheduler:
+        _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+        num_train_timesteps: 64      # Td=64 (paper Plugging)
+        beta_start: 0.0001
+        beta_end: 0.02
+        beta_schedule: squaredcos_cap_v2
+        prediction_type: ${prediction_type}
+    optim:
+        _target_: torch.optim.AdamW
+        lr: 0.0001                   # paper 1e-4
+        weight_decay: 0.000001
+        betas: [0.95, 0.999]
+        fused: true
+    scheduler:
+        _target_: diffusers.optimization.get_scheduler
+        name: cosine
+        num_warmup_steps: 500
+
+    ### DAgger
+    alpha: 0.99
+    batch_multiplier: 8     # N_b = num_train_timesteps(64) * 8 = 512 (paper Plugging)
+    num_per_batch: 1
+    patience: 2             # K=2 (paper Plugging)
+    patience_window: ${policy.patience}
+
+train:
+    accelerator: "auto"
+    devices: 1
+    train_steps: null      # set at runtime by sim_bridge.train_policy (epoch*len//bs, capped)
+    train_bs: 64           # paper batch 64 (StackCube used 256 for lower variance)

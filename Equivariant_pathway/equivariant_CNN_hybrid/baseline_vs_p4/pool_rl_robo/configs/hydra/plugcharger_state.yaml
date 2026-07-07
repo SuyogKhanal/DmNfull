@@ -1,0 +1,150 @@
+# plugcharger_state.yaml — SUITE-LOCAL Hydra config for PlugCharger-v1 (rel_joint_pos).
+#
+# PIVOT (2026-06-19): the paper-faithful Abs-Pose / ee_pose_6d config caps BC at
+# ~0.25-0.30 heldout SR (sweeps + Ta tuning exhausted: more demos, epsilon, and
+# action_horizon all fail to lift it). Root cause = the fork's single-step Jacobian
+# IK in the ee path can't track PlugCharger's 5 mm / 0.2 rad insertion — consistent
+# with the ManiSkill team's note that ee-pose trajectory conversion fails for
+# precise contact-rich tasks, and with DP scoring ~0% on PlugCharger in the RDT
+# benchmark. The ee_pose_6d config is archived at plugcharger_state_eepose6d.yaml.
+#
+# We pivot to rel_joint_pos (joint-space, NO IK), the action space StackCube reached
+# 0.65 with, using the SAME proven policy recipe (epsilon, Td=100/infer=16, Tp=16).
+# Both arms share this (action-space-agnostic comparison), so the head-to-head stays
+# fair. Realistic expectation: ~0.4-0.5 SR on PlugCharger (tight insertion), a usable
+# comparison regime vs the ~0.3 ee_pose_6d ceiling. The DAgger-loop knobs (Ni/Nf/Nd/
+# alpha/K/Nb) stay paper-faithful in config_plug_hybrid.yaml.
+#
+# action_dim = 8 = 7 arm joints + 1 gripper (TimeSeriesDataset rel_joint_pos path
+#   subtracts agent_qpos[:7] from action_joint_pos, keeps gripper absolute).
+# proprio_dim = 30 = agent_qpos(9) + extra_tcp_pose(7) + extra_charger_pose(7) +
+#   extra_receptacle_pose(7); sets the UNet global_cond_dim (latent_dim=0).
+
+env_id: PlugCharger-v1
+obs_mode: state_dict
+control_mode: pd_joint_pos
+render_mode: rgb_array
+max_episode_steps: 550     # the strengthened spiral+tilt search insert makes demos
+                           # long (377-460 steps); the policy/eval horizon must fit it
+num_init_ep: 20
+
+obs_keys: [agent_qpos, extra_tcp_pose, extra_charger_pose, extra_receptacle_pose]
+proprio_dim: 30
+latent_dim: 0
+action_space: rel_joint_pos   # joint-space (no IK) — the StackCube-proven action space
+action_dim: 8                 # 7 arm joints + 1 gripper
+device: cuda
+obs_horizon: 1
+pred_horizon: 16              # StackCube-proven (was 64 for the failed ee_pose_6d row)
+action_horizon: 8            # Ta=8 (Ta=8 was best in the ee_pose_6d Ta sweep too)
+prediction_type: epsilon      # canonical low-dim DP (StackCube needed this over v_prediction)
+
+dataset_dir: assets/plugcharger
+normalizers_path: assets/normalizers/PlugCharger-v1_normalizers.pth
+save_file_dir: assets/plugcharger/results
+
+max_train_steps: 30000
+epoch: 300
+train_freq: 4
+wait_timestep: 0
+chkpt_dir: ${save_file_dir}
+
+dataset:
+    _target_: dataset.datasets.TimeSeriesDataset
+    dataset_path: []
+    load_count: 0
+    obs_keys: ${obs_keys}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    validation_ratio: 0.0
+    device: ${device}
+
+env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 1
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.02
+
+eval_env:
+    _target_: gymnasium.make
+    id: ${env_id}
+    num_envs: 100
+    obs_mode: ${obs_mode}
+    control_mode: ${control_mode}
+    render_mode: ${render_mode}
+    max_episode_steps: ${max_episode_steps}
+    enable_shadow: true
+    sim_backend: gpu
+    robot_init_qpos_noise: 0.0
+
+# Motion-planner expert (load_expert returns MotionPlannerExpert; no instantiate).
+# action_space=joint_pos: the planner steps ABSOLUTE arm qpos (+gripper); the dataset
+# derives the rel_joint_pos training target from the recorded action_joint_pos.
+expert:
+    action_space: joint_pos
+    max_episode_steps: 600     # demo keep-filter; search demos reach ~460 steps
+    success_mode: true
+    device: ${device}
+
+policy:
+    _target_: agents.diffusion_policy.DiffDAggerPolicy
+
+    model:
+        _target_: model.unet1d.ConditionalUnet1D
+        input_dim: ${action_dim}
+        global_cond_dim: null
+        diffusion_step_embed_dim: 256
+        down_dims: [256, 512, 1024]
+        kernel_size: 5
+        n_groups: 8
+
+    obs_keys: ${obs_keys}
+    proprio_dim: ${proprio_dim}
+    latent_dim: ${latent_dim}
+    action_dim: ${action_dim}
+    action_space: ${action_space}
+    obs_horizon: ${obs_horizon}
+    pred_horizon: ${pred_horizon}
+    vision_model: r3m
+    frozen_encoder: false
+    obs_encoder_group_norm: true
+    spatial_softmax: true
+
+    num_inference_steps: 16          # DDIM subsamples the 100-step train chain
+    noise_scheduler:
+        _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+        num_train_timesteps: 100     # StackCube-proven (V-obj/16 was too weak)
+        beta_start: 0.0001
+        beta_end: 0.02
+        beta_schedule: squaredcos_cap_v2
+        prediction_type: ${prediction_type}
+    optim:
+        _target_: torch.optim.AdamW
+        lr: 0.0001
+        weight_decay: 0.000001
+        betas: [0.95, 0.999]
+        fused: true
+    scheduler:
+        _target_: diffusers.optimization.get_scheduler
+        name: cosine
+        num_warmup_steps: 500
+
+    ### DAgger
+    alpha: 0.99
+    batch_multiplier: 5     # N_b = num_train_timesteps(100) * 5 = 500 ≈ paper Plugging 512
+    num_per_batch: 1
+    patience: 2             # K=2 (paper Plugging)
+    patience_window: ${policy.patience}
+
+train:
+    accelerator: "auto"
+    devices: 1
+    train_steps: null
+    train_bs: 256          # StackCube-proven low-dim DP batch

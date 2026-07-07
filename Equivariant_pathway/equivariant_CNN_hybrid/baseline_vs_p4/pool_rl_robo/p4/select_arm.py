@@ -463,11 +463,16 @@ def _collect_prescribed_demo(reposition_env, expert, cfg, pres, seed):
     motion-planner expert to completion → one corrective demo. pres=None ⇒ random
     layout (the --no-llm / env-sampled fallback). Returns (ep_tds, success, steps,
     applied_config)."""
-    base = reposition_env.unwrapped       # StackCubeStartEnv (set_prescription lives here)
+    base = reposition_env.unwrapped       # *-Start env (set_prescription lives here)
     if pres is None:
         base.clear_prescription()
         applied = {"cubeA_xyz": None, "cubeB_xyz": None}
-    else:
+    elif "charger_xyz" in pres:           # PlugCharger layout (charger + receptacle)
+        applied = base.set_prescription(
+            charger_xyz=pres["charger_xyz"], receptacle_xyz=pres["receptacle_xyz"],
+            charger_zrot=pres.get("charger_zrot"),
+            receptacle_zrot=pres.get("receptacle_zrot"))
+    else:                                 # StackCube layout (cubeA + cubeB)
         applied = base.set_prescription(
             cubeA_xyz=pres["cubeA_xyz"], cubeB_xyz=pres["cubeB_xyz"],
             cubeA_zrot=pres.get("cubeA_zrot"), cubeB_zrot=pres.get("cubeB_zrot"))
@@ -526,6 +531,41 @@ def _stackcube_descriptor(env, cfg, cand):
         return None
 
 
+def _plugcharger_descriptor(env, cfg, cand):
+    """V3-hybrid (PlugCharger): replay a failed candidate's recorded actions to its
+    t* and snapshot the charger/receptacle/grasp state (the clustering descriptor).
+    PlugCharger analogue of ``_stackcube_descriptor``: charger (dynamic, graspable)
+    ↔ cubeA, receptacle (kinematic, target) ↔ cubeB. Returns None on any failure."""
+    from .plugcharger_hybrid import PlugChargerFailureDescriptor, yaw_from_quat_wxyz
+    try:
+        env.reset(seed=int(cand["seed"]))
+        env.set_action_space(cfg.action_space)
+        t_star = min(int(cand["t_star"]), len(cand["exec_actions"]))
+        for i in range(t_star):
+            env.step({"action": cand["exec_actions"][i]})
+        base = env.unwrapped
+        cP = base.charger.pose.p.reshape(-1)[:3].detach().cpu().numpy().tolist()
+        cQ = base.charger.pose.q.reshape(-1)[:4].detach().cpu().numpy().tolist()
+        rP = base.receptacle.pose.p.reshape(-1)[:3].detach().cpu().numpy().tolist()
+        rQ = base.receptacle.pose.q.reshape(-1)[:4].detach().cpu().numpy().tolist()
+        try:
+            g = base.agent.is_grasping(base.charger)
+            grasp = 1.0 if float(torch.as_tensor(g).reshape(-1)[0].item()) > 0.5 else 0.0
+        except Exception:
+            grasp = 0.0
+        return PlugChargerFailureDescriptor(
+            episode_id=int(cand["seed"]), seed=int(cand["seed"]),
+            peak_loss=float(cand.get("peak_disc", 0.0)),
+            t_star=int(cand["t_star"]), T=max(1, int(cand.get("n_steps", 1))),
+            charger_xyz=[float(v) for v in cP], charger_zrot=yaw_from_quat_wxyz(cQ),
+            receptacle_xyz=[float(v) for v in rP], receptacle_zrot=yaw_from_quat_wxyz(rQ),
+            grasp=grasp, cand=cand)
+    except Exception as exc:
+        print(f"[p4_top3|hybrid] plugcharger descriptor build failed "
+              f"({type(exc).__name__}: {exc})", flush=True)
+        return None
+
+
 def _hybrid_text_analysis(planner, cand):
     """Text-only failure analysis for the StackCube hybrid — NO env.render(). The
     suite policy env is built headless (no render camera), so VLM frame rendering
@@ -534,15 +574,21 @@ def _hybrid_text_analysis(planner, cand):
     is driven by the cube cluster geometry + the prescriber decision context, so the
     VLM analysis is only qualitative seasoning — derive a coarse root_cause/phase
     from the cube + grasp state at t* instead."""
-    from .stackcube_hybrid import StackCubeHybridPlanner
     d = planner._member_by_episode_id(int(cand.get("seed", -1))) if planner else None
     prog = int(cand.get("t_star", 0)) / max(1, int(cand.get("n_steps", 1)))
     if d is None:
         return {"root_cause": "approach_failure", "phase": "pre_grasp",
                 "rationale": "text-only (no descriptor)"}
+    # primary-xy + label is cubeA (StackCube) or charger (PlugCharger); _select_feasible
+    # is a @staticmethod so type(planner).<> matches the hardcoded StackCube call exactly.
+    if getattr(d, "cubeA_xyz", None) is not None:
+        pxy, label = d.cubeA_xyz, "cubeA"
+    else:
+        pxy, label = getattr(d, "charger_xyz", [0.0, 0.0, 0.0]), "charger"
+    feasible = type(planner)._select_feasible(d) if planner is not None else True
     if d.grasp > 0.5:
         rc, ph = "placement_error", "placement"
-    elif not StackCubeHybridPlanner._select_feasible(d):
+    elif not feasible:
         rc, ph = "contact_instability", "transport"
     elif prog < 0.5:
         rc, ph = "grasp_failure", "grasp"
@@ -550,7 +596,7 @@ def _hybrid_text_analysis(planner, cand):
         rc, ph = "approach_failure", "pre_grasp"
     return {"root_cause": rc, "phase": ph,
             "rationale": (f"text-only: grasp={'yes' if d.grasp > 0.5 else 'no'}, "
-                          f"cubeA=({round(d.cubeA_xyz[0], 2)},{round(d.cubeA_xyz[1], 2)}), "
+                          f"{label}=({round(pxy[0], 2)},{round(pxy[1], 2)}), "
                           f"progress={round(prog, 2)}")}
 
 
@@ -594,7 +640,11 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
     use_vlm = True
     if str(subtask_cfg.get("collect", "")).lower() == "hybrid":
         from .stackcube_hybrid import StackCubeHybridPlanner
-        hybrid_planner = StackCubeHybridPlanner(work_dir=work_dir, cfg=subtask_cfg)
+        from .plugcharger_hybrid import PlugChargerHybridPlanner
+        _PLANNER_FOR = {"StackCube-v1": StackCubeHybridPlanner,
+                        "PlugCharger-v1": PlugChargerHybridPlanner}
+        _PlannerCls = _PLANNER_FOR.get(suite_env_id, StackCubeHybridPlanner)
+        hybrid_planner = _PlannerCls(work_dir=work_dir, cfg=subtask_cfg)
         use_vlm = bool(subtask_cfg.get("use_vlm", False))
     spec = E.task_spec(suite_env_id)
     task_desc = spec.task_description
@@ -602,8 +652,12 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
     client = make_client() if llm_client_on else None
     signal_mode = "diffusion" if spec.expert_kind == "motionplanner" else "discrepancy"
     analyzer = AnalysisClass(client, task_desc, kag_text)
-    prescriber = CubePrescriptionClass(client, task_desc, kag_text,
-                                       max_retries=represcribe_attempts)
+    from .plugcharger_hybrid import ChargerPrescriptionClass
+    _PRESCRIBER_FOR = {"StackCube-v1": CubePrescriptionClass,
+                       "PlugCharger-v1": ChargerPrescriptionClass}
+    _PrescriberCls = _PRESCRIBER_FOR.get(suite_env_id, CubePrescriptionClass)
+    prescriber = _PrescriberCls(client, task_desc, kag_text,
+                                max_retries=represcribe_attempts)
 
     def _calibrate_diffusion(pol):
         if signal_mode != "diffusion":
@@ -774,7 +828,10 @@ def run_p4_top3_arm(*, method: str, env, eval_env, reposition_env, expert, cfg,
         if not fails:
             continue
         if hybrid_planner is not None:
-            descs = [d for d in (_stackcube_descriptor(env, cfg, c) for c in fails)
+            _DESCRIPTOR_FOR = {"StackCube-v1": _stackcube_descriptor,
+                               "PlugCharger-v1": _plugcharger_descriptor}
+            _descriptor = _DESCRIPTOR_FOR.get(suite_env_id, _stackcube_descriptor)
+            descs = [d for d in (_descriptor(env, cfg, c) for c in fails)
                      if d is not None]
             hybrid_planner.set_round(rnd_idx, descs)
             rnd_idx += 1
