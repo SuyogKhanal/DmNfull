@@ -20,16 +20,34 @@ to `$DISTIL_ROOT`-relative (golden rule 8), don't symlink `/weka`.
 
 ## 2. Python env (pinned)
 ```bash
-conda env create -f environment.yml -n distil    # or: pip install -r requirements.txt
+conda env create -f distil/environment.yml -n distil    # or: pip install -r distil/requirements.txt
 conda activate distil
 # heavy deps installed here, not shipped: torch(+CUDA for THIS cluster), robosuite, mani_skill,
 # mujoco, diffusers/policy deps. Match CUDA to HPC-B's drivers, not HPC-A's.
 python -c "import torch; print(torch.cuda.is_available())"   # must be True
 ```
-Vendored custom envs (PushT-v2, robosuite wrappers) import from inside `distil/` — verify:
+
+> ### ⚠ READ `distil/PORTABILITY.md` BEFORE running here — the two host-level gotchas
+> **(a) `robosuite` is v1.5.2 + 8 commits — pin the commit, don't `pip install robosuite==1.5.2`.**
+> On HPC-A `robosuite` is an *editable* install resolving to `/weka/.../diff-dagger-ur5/repo/
+> robosuite` (a git checkout at `v1.5.2-8-g85abee22`). Those 8 commits are on the PUBLIC
+> ARISE `master` (incl. `232ce7d4 "synchronize rendering context for envs"`, which the
+> offscreen VLM render needs), so `robosuite==1.5.2` is **NOT equivalent**. HPC-B installs
+> the exact public commit (already pinned in `distil/requirements.txt` / `environment.yml`):
+> ```bash
+> pip install "git+https://github.com/ARISE-Initiative/robosuite.git@85abee22"
+> python -c "import robosuite,os; print(robosuite.__version__, os.path.dirname(robosuite.__file__))"
+> #   -> 1.5.2 and a path INSIDE HPC-B's own venv/site-packages (NEVER a /weka path)
+> ```
+> **(b) install `scikit-learn==1.6.1`** — clustering (Eq 8) silently falls back to a *different*
+> numpy path without it. The run log must read `sklearn-silhouette(k*=…)`, not `numpy-…`.
+
+Phase-1 (robot-state Lift/Wipe/Door) imports from inside `distil/` — verify:
 ```bash
-python -c "import distil; from distil.envs import pusht, lift, door, wipe, gridworld; print('envs ok')"
+python -c "import distil; from distil.envs import make_env; from distil.experts import make_expert; print('engine ok')"
 ```
+(GridWorld + PushT-v2 vendored envs land in Phase 2; PushT-v2 is a private ManiSkill fork
+that WILL be vendored inside `distil/` — unlike robosuite it is not a public pin.)
 
 ## 3. Secrets — the LLM key (never committed)
 ```bash

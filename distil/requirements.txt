@@ -1,0 +1,37 @@
+# DISTIL pinned dependencies (SETUP_HPC2.md §2). Python 3.9.
+# The LLM is a pure OpenRouter API call -> NO local model weights, NO vllm, NO R3M.
+# A GPU is needed only for the diffusion policy (train + rollout + offscreen render).
+
+# --- torch built for THIS cluster's CUDA. HPC-A = cu121; on HPC-B match the local
+#     driver (install torch SEPARATELY from the right index-url; do NOT copy HPC-A's
+#     build). Listed here for reference, not as a hard pin across clusters. ---
+torch==2.4.1        # +cu121 on HPC-A (weka a100/h100/h200)
+torchvision==0.19.1
+
+# --- diffusion policy ---
+diffusers==0.30.3
+huggingface-hub==0.25.1
+einops==0.8.0
+
+# --- robosuite: MODIFIED-PAST-TAG but PUBLIC. HEAD is v1.5.2 + 8 commits on ARISE
+#     master (== origin/master == 85abee22), incl. "synchronize rendering context for
+#     envs" which the offscreen VLM render needs. `pip install robosuite==1.5.2` is
+#     NOT equivalent (missing those 8 commits) -> pin the commit. See PORTABILITY.md.
+robosuite @ git+https://github.com/ARISE-Initiative/robosuite.git@85abee22
+mujoco==3.2.7
+
+# --- LLM client (OpenRouter, OpenAI-compatible) ---
+openai==2.38.0
+python-dotenv==1.2.1
+
+# --- clustering / numerics / io ---
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.6.1     # silhouette + Agglomerative (Eq 8). Without it, cluster.py
+                        # silently falls back to a numpy single-linkage path -> a
+                        # DIFFERENT clustering than the matrix. Install it everywhere.
+imageio==2.35.1
+pillow==10.4.0
+gymnasium==0.29.1
+pyyaml==6.0.2
+tqdm==4.66.5

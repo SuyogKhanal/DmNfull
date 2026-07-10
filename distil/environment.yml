@@ -1,0 +1,31 @@
+# DISTIL conda env (SETUP_HPC2.md §2):  conda env create -f distil/environment.yml -n distil
+# On HPC-B, match the torch CUDA build to the LOCAL driver (edit the torch line / pip
+# index-url); do NOT copy HPC-A's conda env. The LLM is an OpenRouter API call, so NO
+# vllm / model weights are needed. robosuite is pinned to a PUBLIC commit (see
+# PORTABILITY.md) because HEAD is v1.5.2 + 8 commits on ARISE master.
+name: distil
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      # torch built for the cluster's CUDA (HPC-A = cu121; adjust index-url on HPC-B):
+      #   pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+      - torch==2.4.1
+      - torchvision==0.19.1
+      - diffusers==0.30.3
+      - huggingface-hub==0.25.1
+      - einops==0.8.0
+      - "robosuite @ git+https://github.com/ARISE-Initiative/robosuite.git@85abee22"
+      - mujoco==3.2.7
+      - openai==2.38.0
+      - python-dotenv==1.2.1
+      - numpy==1.26.4
+      - scipy==1.13.1
+      - scikit-learn==1.6.1
+      - imageio==2.35.1
+      - pillow==10.4.0
+      - gymnasium==0.29.1
+      - pyyaml==6.0.2
+      - tqdm==4.66.5
