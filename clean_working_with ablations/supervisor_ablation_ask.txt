@@ -1,0 +1,99 @@
+Right principle to carry over from your last question: **you ablate what you claim or design; you don't ablate what you inherit and hold fixed.** The backbone is safe for exactly that reason. Everything below is stuff you either take credit for or hand-tuned — which is precisely what a hostile reviewer will demand you justify. I'll go tier by tier, and I'll flag each as **dangerous** (a bad result kills a headline claim — you *must* know the answer before they do) or **curiosity** (they'll ask, but a null result doesn't sink you). I'm not going to soften which of your components are at real risk of being shown inert.
+
+## Tier 1 — Component knockouts (submission-critical)
+
+These are the ones where "we removed it and nothing changed" invalidates a contribution bullet. Run these before submission, not in rebuttal.
+
+**Cluster memory off (λ=0).** *Dangerous, highest priority.* Your entire Q2 thesis is that *allocation* converts info-gain into success, and memory (Eq 9) is the allocation mechanism. You have no control isolating it. One flag. If SR barely moves, an entire headline equation is decorative.
+
+**Random-allocation control on the robot tasks.** *Dangerous.* You admit twice that Stagger runs on GridWorld only, so on Push-T and Wipe — where your margins are biggest — nothing separates clustering+memory from *random failure replay*. Stagger is already implemented. If you run one thing, run this. A skeptic's null hypothesis ("correcting a random recorded failure each round already beats the query-gated baselines") is unrebutted until you produce this number.
+
+**Clustering off (greedy / random failure selection).** *Dangerous.* Prescribe from the raw failure set with no mode structure — always target the highest-peak-loss failure, or a random one. This, with the two above, triangulates the whole allocation claim: memory-off tests rotation, clustering-off tests grouping, random-alloc tests both against chance.
+
+**LLM prescription vs. fixed heuristic.** *Dangerous, and this is the sharp one.* Recall what we established: your descriptor (Eq 7) is purely geometric on state runs and frozen R3M on image runs — **neither uses the VLM or LLM output.** The clusters in Figure 5 fall out of geometry. So the FM stack's only job is the *prescription* (targeted-vs-bridge, which failures to cite). Replace that decision with a heuristic (always target the dominant cluster's representative; always bridge its centroid). If the heuristic matches DISTIL, then the high-effort reasoning LLM, its 16k-token budget, and the per-round wall-clock cost you list as a limitation are all unjustified — and contribution (2) loses its most expensive parts.
+
+**VLM off.** *Dangerous.* Feed the reasoning LLM only the geometric descriptor and root-cause labels, no visual frame description. If root-causing and prescription hold up, the "V" in your pipeline is dead weight. This is a distinct knockout from the one above — that tested the LLM's *decision*, this tests whether *visual perception* contributes at all.
+
+## Tier 2 — Component knockouts (rebuttal-tier, have computed)
+
+Compute these and keep them in a drawer. If asked, you drop the table; if not, you saved page space.
+
+**KAG grounding off.** Remove the per-task knowledge graph from the prompt. You explicitly claim KAG "bounds the damage" from weak FMs, and you list KG authoring as a per-task *cost*. If performance is unchanged without it, you're paying that cost for nothing and the robustness claim is empty.
+
+**Bridging off (targeted-only)** on Push-T, Lift, Door. Bridging is a whole equation and half your prescription narrative — but note your biggest headline number (image Wipe +25.7) comes from a setting where **bridging is disabled**. So the burden is already on you to show bridging does anything. If targeted-only matches, drop the contribution.
+
+**Deterministic-fallback-only.** Prescribe the nearest untried failure every round, no LLM. You already reveal ~16% of GridWorld rounds (28/180) hit the fallback — non-trivial. If fallback-only is close to full DISTIL, the LLM isn't earning its keep. Cheap; pairs naturally with the LLM-heuristic ablation.
+
+**Context set S ablation (κ=3).** Knock out each component: the forced target rep, the worst-peak-loss seed, and the farthest-point fill. Does FPS beat random fill? If the context set doesn't change prescriptions, it's a paragraph you can cut.
+
+**Near-dominant constraint |C| ≥ |C\*|−1 off.** Always target the strict dominant cluster. This constraint is what lets rotation reach rare modes; removing it tests whether the rotation story is real or whether you'd win anyway by always hitting the biggest cluster.
+
+**Descriptor feature ablation (Eq 7).** You admit φ is hand-designed. Drop contact distance δ, drop orientation (sinθ, cosθ), drop progress ρ — one at a time, one task. Show each of the six features earns its slot, or a reviewer assumes you fished for them.
+
+## Tier 3 — Sensitivity sweeps (the "you tuned these" defense)
+
+Every hardcoded constant is an accusation waiting to happen. These are cheap-ish and mostly one-task.
+
+**Budget sweep B ∈ {10, 20, 40}**, one task per family. *This one is closer to Tier 1 given Arun's "framework, not a 20-demo instance" reframing.* You now claim "any restricted budget" but test exactly one point. If your advantage only exists at B=20, the framework claim collapses. Report whether the margin grows or shrinks with budget.
+
+**D > 1 demos/round.** Arun flagged the D=1 commitment directly, and you admit it in Limitations ("the loop commits to one demonstration per round"). Expect "ablate D=2, D=3." Have at least one task.
+
+**Memory constants γ, σ, λ** around your 0.6 / 0.06 / 1, one task. You wrote a long justification for why these constants behave differently across tasks (degenerate on GridWorld, nearly-flat on Lift/Door) — which is honest, but it also tells the reviewer these are fragile and unlearned. A small sensitivity grid pre-empts "cherry-picked constants."
+
+**Silhouette k-selection vs. fixed k=3.** If fixed k matches, Eq 8 is unnecessary machinery. (See also the k\* diagnostic below — if silhouette *always* picks 3, this ablation is already lost and you should just fix k.)
+
+**Peak-loss percentile (90 / 95 / 99)** and **VLM frame count (1 vs 3 vs 5).** Both feed the descriptor and the perception step; both are arbitrary-looking numbers.
+
+**Attempts-before-fallback (1 / 3 / 5 / 10)** and **LLM effort (high vs low) / token cap.** You chose high-effort 16k for the LLM and paid for it in wall-clock — a reviewer will ask whether low-effort matches. Tie this to the FM-necessity story.
+
+## Tier 4 — Diagnostics you should just *report* (cheapest, highest ROI)
+
+These aren't ablations — they're numbers already sitting in your logs. Reporting them defuses attacks before they land. Not doing so *invites* them. I'd put these in the appendix regardless.
+
+**Cluster-label agreement.** *This is a real attack on Q3.* Your clusters are geometric; your Figure 5 labels are LLM-derived. So "semantically meaningful modes" is doing sleight of hand unless the LLM root causes actually agree with the geometric partition. Report per-cluster label purity across **all** tasks, not just the pretty Push-T panel. If clusters contain mixed root causes anywhere, the "coherent, well-separated" caption is cherry-picked and a sharp reviewer will say so.
+
+**Distribution of k\* across rounds and tasks.** If silhouette overwhelmingly picks k=3 everywhere, your "adaptive" k-selection is theater and Figure 5's k=3 is not a discovery. Show the spread or concede it.
+
+**Targeted-vs-bridge usage split, per task.** How often is bridging actually chosen? If it's <10%, bridging isn't a real contribution and bridging-off will (correctly) show near-zero effect. Better you report it framed than a reviewer discovers it.
+
+**Failure-count distribution per round.** You skip clustering entirely when N≤3 ("each failure is its own cluster"). As the policy improves, failures get rare — so clustering may be *inactive exactly in late rounds*. If most late rounds have N≤3, your clustering+memory story applies to early training only. This is quietly one of the more damaging seams; know the number.
+
+**Fallback rate per task** (you gave it only for GridWorld) and **feasibility rejection rate.** Directly informs whether the LLM or the deterministic scaffolding is carrying you.
+
+**Compute/wall-clock table.** You list cost as a limitation — so give the number: seconds/round and tokens/round for DISTIL vs. baselines. A practicality-minded reviewer will demand it, and vagueness reads as hiding a bad ratio.
+
+## Tier 5 — Statistical power (not an ablation, but your single biggest rebuttal risk)
+
+I'm putting this here because you asked me not to sugarcoat, and this is the thing most likely to sink you and it isn't a mechanism ablation.
+
+**Your error bars overlap and you admit it.** With 5 seeds (robot) and "one-standard-deviation spreads overlap the best baseline in most cells," your *entire* Q1 claim rests on "consistency of the ranking." A reviewer will say: 10/10 with overlapping variance is not statistical evidence, add seeds. Two moves:
+- **Run the sign test now.** 10/10 clean sweep under a null of coin-flip ranking is p = (1/2)^10 ≈ 0.001. That *helps* you — it converts "overlapping error bars" into a real significance statement about the *aggregate* pattern. Pre-compute it and put it in the text. A paired test across cells (Wilcoxon over the 10 paired means) is the stronger version.
+- **Be ready to add seeds** on the two tasks where the gap matters most (Push-T, Wipe). 5→10 seeds on two tasks is the most likely single rebuttal demand of the entire review.
+
+**Q3 pseudoreplication.** You already confess the robot correlations rest on ~25 outcome points (5 seeds × 5 retrainings) and that demonstrations sharing a retraining share ΔSR. A reviewer will hammer r=0.82–0.89 as inflated by non-independent points. Have the per-checkpoint correlation (the honest ~25-point version) computed and reported, or a mixed-effects treatment. Don't let them derive the smaller effective-n themselves.
+
+**ΔSR measured on the targeted set.** You note per-round ΔSR "runs above the held-out curve's increments" because the before-set is exactly where you observed the targeted failures. That's a measurement-validity concern for Q3 — you're measuring improvement on the set you optimized against. You partly defend it (differenced per retraining, not accumulated), but have the cleaner held-out ΔSR ready.
+
+## Tier 6 — Fairness and generality
+
+**Privileged-information flip.** *Dangerous framing attack.* You frame the "free expert-action access" asymmetry as favoring the baselines. A reviewer will flip it: DISTIL consumes object poses (even on image runs, for the memory centroids), the authored KG, and simulator resets. Are those a *hidden advantage*? The clean control is to run DISTIL's descriptors **without privileged poses on image tasks** (pure R3M, no geometry leak) — you already do image descriptors this way for clustering, but the memory centroids use raw poses on every run including image, which you state. Be ready to argue the exchange is favorable, or show DISTIL survives without the pose channel.
+
+**Policy-agnostic → third policy class.** From last turn: "four architectures" is really two paradigms (classifiers + one diffusion backbone with a swapped encoder). Add one genuinely different policy (Gaussian-MLP BC, or ACT) on one task, or narrow the claim. Rebuttal material.
+
+**Reroll fairness.** When a pool has no failures you reroll (bounded by the episode cap). Does DISTIL thereby see more environment interaction than the baselines per round? If so, that's a resource asymmetry a reviewer can raise. Cheap to report; know it.
+
+**Yaw-blind kernel mis-discount.** You document that on Push-T the planar kernel discounts a differently-oriented mode at the same xy — a known bug. How often does it fire wrongly? A yaw-aware-kernel ablation on Push-T closes it. Curiosity, but it's in your own text so it's fair game.
+
+---
+
+## Triage — what to actually do, given 7 pages and finite compute
+
+**Run before submission (the allocation thesis lives or dies here):** memory-off, random-alloc on robots, clustering-off, LLM-vs-heuristic, VLM-off. Plus the sign test (Tier 5) — it's free and it's your best defense against the overlapping-error-bars attack. Plus the four cheap diagnostics (cluster-label agreement, k\* distribution, bridge/targeted split, failure-count-per-round) in the appendix.
+
+**Compute and keep in a drawer for rebuttal:** KAG-off, bridging-off, fallback-only, budget sweep, D>1, memory-constant sensitivity, descriptor-feature ablation, the per-checkpoint Q3 correlation, the compute table.
+
+**Defend with words / narrow the claim:** policy-agnostic scope, privileged-info exchange, ΔSR-on-targeted-set, real-robot and noisy-expert (all already in Limitations — leave them there but tighten).
+
+The blunt summary: your paper is a nine-component pipeline with **no internal ablations**, and at least five of those components (VLM, reasoning-LLM decision, KAG, memory-on-Lift/Door, silhouette-k) are at genuine risk of being shown inert by a single knockout. Several of these ablations *can* come back negative — that's the point of running them yourself first. If VLM-off or LLM-heuristic matches full DISTIL, you want to discover that in your own logs and reframe the contribution honestly, not have a reviewer discover it and reject you for overclaiming. The allocation thesis (clustering + memory → spread → success) is the one part with a clean, testable causal story; concentrate your compute on proving *that*, and be honest about the rest.
+
+ 
