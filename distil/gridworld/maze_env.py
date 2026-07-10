@@ -103,6 +103,9 @@ class MazeNavEnv(gym.Env):
         self.grid_template[self.grid_template == TILE_FIRE] = TILE_FREE
         for r, c in fire_positions:
             self.grid_template[int(r), int(c)] = TILE_FIRE
+        # sampled layouts carry the goal as a separate coord, not baked into the grid;
+        # paint TILE_GOAL so step()'s `tile==TILE_GOAL` success check actually fires.
+        self.grid_template[int(goal[0]), int(goal[1])] = TILE_GOAL
         self.randomize_start = self.randomize_goal = self.randomize_fire = False
 
     def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[Dict, Dict]:
