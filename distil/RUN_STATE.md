@@ -1,24 +1,51 @@
-# RUN_STATE — DISTIL matrix ledger (08_..md source of truth)
+# RUN_STATE — DISTIL matrix (live ledger)
 
-| task | modality | arm | seed | hpc | jobid | status | result_path |
-|---|---|---|---|---|---|---|---|
-| GridWorld | state | full | 1 | HPC-A | 108981 | submitted | /weka/s226137394/DmNfull/distil/results/GridWorld/state/full/seed1 |
-| GridWorld | state | full | 2 | HPC-A | 108982 | submitted | /weka/s226137394/DmNfull/distil/results/GridWorld/state/full/seed2 |
-| GridWorld | state | full | 3 | HPC-A | 108983 | submitted | /weka/s226137394/DmNfull/distil/results/GridWorld/state/full/seed3 |
-| GridWorld | state | full | 4 | HPC-A | 108984 | submitted | /weka/s226137394/DmNfull/distil/results/GridWorld/state/full/seed4 |
-| GridWorld | state | full | 5 | HPC-A | 108985 | submitted | /weka/s226137394/DmNfull/distil/results/GridWorld/state/full/seed5 |
-| Lift | state | full | 1 | HPC-A | 108986 | submitted | /weka/s226137394/DmNfull/distil/results/Lift/state/full/seed1 |
-| Lift | state | full | 2 | HPC-A | 108987 | submitted | /weka/s226137394/DmNfull/distil/results/Lift/state/full/seed2 |
-| Lift | state | full | 3 | HPC-A | 108988 | submitted | /weka/s226137394/DmNfull/distil/results/Lift/state/full/seed3 |
-| Lift | state | full | 4 | HPC-A | 108989 | submitted | /weka/s226137394/DmNfull/distil/results/Lift/state/full/seed4 |
-| Lift | state | full | 5 | HPC-A | 108990 | submitted | /weka/s226137394/DmNfull/distil/results/Lift/state/full/seed5 |
-| Wipe | state | full | 1 | HPC-A | 108991 | submitted | /weka/s226137394/DmNfull/distil/results/Wipe/state/full/seed1 |
-| Wipe | state | full | 2 | HPC-A | 108992 | submitted | /weka/s226137394/DmNfull/distil/results/Wipe/state/full/seed2 |
-| Wipe | state | full | 3 | HPC-A | 108993 | submitted | /weka/s226137394/DmNfull/distil/results/Wipe/state/full/seed3 |
-| Wipe | state | full | 4 | HPC-A | 108994 | submitted | /weka/s226137394/DmNfull/distil/results/Wipe/state/full/seed4 |
-| Wipe | state | full | 5 | HPC-A | 108995 | submitted | /weka/s226137394/DmNfull/distil/results/Wipe/state/full/seed5 |
-| Door | state | full | 1 | HPC-A | 108996 | submitted | /weka/s226137394/DmNfull/distil/results/Door/state/full/seed1 |
-| Door | state | full | 2 | HPC-A | 108997 | submitted | /weka/s226137394/DmNfull/distil/results/Door/state/full/seed2 |
-| Door | state | full | 3 | HPC-A | 108998 | submitted | /weka/s226137394/DmNfull/distil/results/Door/state/full/seed3 |
-| Door | state | full | 4 | HPC-A | 108999 | submitted | /weka/s226137394/DmNfull/distil/results/Door/state/full/seed4 |
-| Door | state | full | 5 | HPC-A | 109000 | submitted | /weka/s226137394/DmNfull/distil/results/Door/state/full/seed5 |
+Jobs in queue: 45 | completed result.json: 0
+
+| cell | seed | jobid | state | final_SR |
+|---|---|---|---|---|
+| Door_state_full | 1 | 108996 | PENDING | - |
+| Door_state_full | 2 | 108997 | PENDING | - |
+| Door_state_full | 3 | 108998 | PENDING | - |
+| Door_state_full | 4 | 108999 | PENDING | - |
+| Door_state_full | 5 | 109000 | PENDING | - |
+| GridWorld_state_allocation_random | 1 | 109014 | PENDING | - |
+| GridWorld_state_allocation_random | 2 | 109015 | PENDING | - |
+| GridWorld_state_allocation_random | 3 | 109016 | PENDING | - |
+| GridWorld_state_allocation_random | 4 | 109017 | PENDING | - |
+| GridWorld_state_allocation_random | 5 | 109018 | PENDING | - |
+| GridWorld_state_clustering_off | 1 | 109019 | PENDING | - |
+| GridWorld_state_clustering_off | 2 | 109020 | PENDING | - |
+| GridWorld_state_clustering_off | 3 | 109021 | PENDING | - |
+| GridWorld_state_clustering_off | 4 | 109022 | PENDING | - |
+| GridWorld_state_clustering_off | 5 | 109023 | PENDING | - |
+| GridWorld_state_decision_heuristic | 1 | 109024 | PENDING | - |
+| GridWorld_state_decision_heuristic | 2 | 109025 | PENDING | - |
+| GridWorld_state_decision_heuristic | 3 | 109026 | PENDING | - |
+| GridWorld_state_decision_heuristic | 4 | 109027 | PENDING | - |
+| GridWorld_state_decision_heuristic | 5 | 109028 | PENDING | - |
+| GridWorld_state_full | 1 | 109003 | PENDING | - |
+| GridWorld_state_full | 2 | 109004 | PENDING | - |
+| GridWorld_state_full | 3 | 109005 | PENDING | - |
+| GridWorld_state_full | 4 | 109006 | PENDING | - |
+| GridWorld_state_full | 5 | 109007 | PENDING | - |
+| GridWorld_state_memory_off | 1 | 109009 | PENDING | - |
+| GridWorld_state_memory_off | 2 | 109010 | PENDING | - |
+| GridWorld_state_memory_off | 3 | 109011 | PENDING | - |
+| GridWorld_state_memory_off | 4 | 109012 | PENDING | - |
+| GridWorld_state_memory_off | 5 | 109013 | PENDING | - |
+| GridWorld_state_vlm_off | 1 | 109029 | PENDING | - |
+| GridWorld_state_vlm_off | 2 | 109030 | PENDING | - |
+| GridWorld_state_vlm_off | 3 | 109031 | PENDING | - |
+| GridWorld_state_vlm_off | 4 | 109032 | PENDING | - |
+| GridWorld_state_vlm_off | 5 | 109033 | PENDING | - |
+| Lift_state_full | 1 | 108986 | RUNNING | - |
+| Lift_state_full | 2 | 108987 | RUNNING | - |
+| Lift_state_full | 3 | 108988 | RUNNING | - |
+| Lift_state_full | 4 | 108989 | RUNNING | - |
+| Lift_state_full | 5 | 108990 | RUNNING | - |
+| Wipe_state_full | 1 | 108991 | RUNNING | - |
+| Wipe_state_full | 2 | 108992 | RUNNING | - |
+| Wipe_state_full | 3 | 108993 | PENDING | - |
+| Wipe_state_full | 4 | 108994 | PENDING | - |
+| Wipe_state_full | 5 | 108995 | PENDING | - |

@@ -23,7 +23,11 @@ import subprocess
 from pathlib import Path
 
 SEEDS = [1, 2, 3, 4, 5]
-TASKS = ["GridWorld", "Lift", "Wipe", "Door", "PushT"]
+# Submission priority order (05_..md): GridWorld first (cheapest -> fastest COMPLETE
+# allocation-thesis + sign-test signal), then the high-headroom tasks the crown jewel
+# lives on (Wipe, PushT), then Door, then Lift (near-saturated in the paper). Cells are
+# emitted in this order so the cheap/high-value work is submitted first.
+TASKS = ["GridWorld", "Wipe", "PushT", "Door", "Lift"]
 MODALITIES = ["state", "image"]
 
 # arm -> priority tier. 'full' + Tier-1 knockouts are the crown jewel.
@@ -72,8 +76,10 @@ def _cells(priorities, modalities, seeds):
 def _sbatch_cmd(cell, budget, bootstrap_dir, results_dir):
     task, mod, arm, seed = cell["task"], cell["modality"], cell["arm"], cell["seed"]
     out = f"{results_dir}/{task}/{mod}/{arm}/seed{seed}"
-    gpu = task != "GridWorld"
-    part = "gpu,gpu-large" if gpu else "gpu"   # GridWorld is CPU-light; any node ok
+    # every arm can run on any GPU node (GridWorld is CPU-light but has no CPU-only
+    # partition here, so it fills idle GPU slots on ANY partition rather than queuing
+    # behind robots on the 3 a100 nodes).
+    part = "gpu,gpu-large"
     name = f"distil_{task}_{mod}_{arm}_s{seed}"
     env = (f"ALL,TASK={task},MODALITY={mod},ABLATION={arm},SEED={seed},"
            f"BUDGET={budget},OUTPUT_DIR={out},BOOTSTRAP_DIR={bootstrap_dir}/{task}_{mod}")
