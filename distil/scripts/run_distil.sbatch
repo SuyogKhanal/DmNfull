@@ -52,20 +52,21 @@ MODALITY="${MODALITY:-state}"
 ABLATION="${ABLATION:-full}"
 SEED="${SEED:-1}"
 BUDGET="${BUDGET:-20}"
-NUM_INIT="${NUM_INIT:-20}"
+NUM_INIT="${NUM_INIT:-}"          # empty => use the per-task config Ni (Lift 8, Wipe 12, Door 4, GridWorld 20)
 SMOKE="${SMOKE:-0}"
 BOOTSTRAP_DIR="${BOOTSTRAP_DIR:-$ROOT/distil/results/shared_bootstrap}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/distil/results/${TASK}/${MODALITY}/${ABLATION}/seed${SEED}}"
 
 SMOKE_FLAG=""; [ "$SMOKE" = "1" ] && SMOKE_FLAG="--smoke"
+NI_FLAG=""; [ -n "$NUM_INIT" ] && NI_FLAG="--num-init-demos $NUM_INIT"
 
-echo "=== DISTIL run: task=$TASK modality=$MODALITY ablation=$ABLATION seed=$SEED budget=$BUDGET smoke=$SMOKE ==="
+echo "=== DISTIL run: task=$TASK modality=$MODALITY ablation=$ABLATION seed=$SEED budget=$BUDGET Ni=${NUM_INIT:-config} smoke=$SMOKE ==="
 echo "python: $PYTHON_BIN | out: $OUTPUT_DIR"
 nvidia-smi -L || true
 
 "$PYTHON_BIN" -m distil.run \
   --task "$TASK" --modality "$MODALITY" --ablation "$ABLATION" --seed "$SEED" \
-  --budget "$BUDGET" --num-init-demos "$NUM_INIT" \
+  --budget "$BUDGET" $NI_FLAG \
   --bootstrap-dir "$BOOTSTRAP_DIR" --output-dir "$OUTPUT_DIR" $SMOKE_FLAG
 
 echo "=== DONE (exit $?) ==="

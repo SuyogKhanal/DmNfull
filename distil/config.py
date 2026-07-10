@@ -88,9 +88,13 @@ BASE = dict(
 # after takeover, the expert can actually finish. expert_max_steps == env_horizon
 # (the decoupled, generous post-takeover budget).
 TASKS = {
+    # num_init_demos: per-task Ni that leaves round-0 HEADROOM (Ni=20 over-provisioned
+    # the robots -> Lift saturated at round 0). Fewer init demos => real failures for
+    # DISTIL + the allocation ablations to act on.
     "Lift": dict(
         env_horizon=250,             # was 200
         expert_max_steps=250,
+        num_init_demos=8,            # was 20 (saturated)
         ni_sweep=[1, 2, 3, 4, 6, 8, 12],
         final_demos=30,
     ),
@@ -100,6 +104,7 @@ TASKS = {
         # last scattered markers (coverage plateaued ~0.8, success ~0.4).
         env_horizon=500,
         expert_max_steps=500,
+        num_init_demos=12,
         ni_sweep=[4, 8, 12, 16, 20, 28],
         final_demos=60,
         wipe_marker_obs_k=12,
@@ -107,6 +112,7 @@ TASKS = {
     "Door": dict(
         env_horizon=350,             # was 300
         expert_max_steps=350,
+        num_init_demos=4,
         ni_sweep=[2, 4, 6, 8, 12, 16],
         final_demos=40,
     ),
@@ -146,6 +152,9 @@ ABLATIONS = {
     "llm_effort_low":  {"p4.llm_effort": "low"},
 }
 
+# When-to-query baselines (not DISTIL ablations): routed to distil/baselines.py.
+BASELINE_ARMS = {"diffdagger", "safe", "dropout", "ensemble", "thrifty", "stagger"}
+
 
 ROBOT_TASKS = ("Lift", "Wipe", "Door")
 
@@ -178,7 +187,8 @@ def get_config(task: str, modality: str = "state", ablation: str = "full",
     cfg["modality"] = modality
     cfg["ablation"] = ablation
     cfg["budget"] = budget
-    _apply_ablation(cfg, ablation)
+    if ablation not in BASELINE_ARMS:      # baselines are separate arms, not DISTIL flags
+        _apply_ablation(cfg, ablation)
     if smoke:
         cfg.update(dict(
             num_diffusion_iters=8,

@@ -197,8 +197,9 @@ def main():
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--budget", type=int, default=20,
                    help="successful demos added on top of the bootstrap (stop rule)")
-    p.add_argument("--num-init-demos", type=int, default=20,
-                   help="bootstrap size Ni (EXCLUDED from budget)")
+    p.add_argument("--num-init-demos", type=int, default=None,
+                   help="bootstrap size Ni (EXCLUDED from budget); default = per-task config Ni "
+                        "(Lift 8, Wipe 12, Door 4, GridWorld 20)")
     p.add_argument("--bootstrap-dir", type=str, default="results/shared_bootstrap")
     p.add_argument("--output-dir", type=str, default=None)
     p.add_argument("--smoke", action="store_true")
@@ -230,9 +231,9 @@ def main():
         f"ablation={args.ablation} seed={args.seed} budget={args.budget} "
         f"smoke={args.smoke} device={device} =====")
 
-    # smoke shrinks Ni (config's num_init_demos) so the bootstrap is tiny; a full
-    # run uses --num-init-demos (default 20, EXCLUDED from budget).
-    n_init = cfg["num_init_demos"] if args.smoke else args.num_init_demos
+    # Ni: explicit --num-init-demos wins; else the per-task config default (Lift 8,
+    # Wipe 12, Door 4, GridWorld 20; smoke override = 3). EXCLUDED from budget.
+    n_init = args.num_init_demos if args.num_init_demos is not None else cfg["num_init_demos"]
 
     # ── GridWorld branch (equivariant classifier; no robosuite import) ────────
     if cfg["task"] == "GridWorld":
