@@ -58,6 +58,11 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
 
     planner = RobosuiteHybridPlanner(work_dir, task, p4)
     history: List[Dict[str, Any]] = []
+    # Saturation early-stop: if the policy yields NO usable failures for this many
+    # consecutive rounds, the budget can't be spent further (nothing to correct) and
+    # retrain+screen just burns compute. Stop. (Lift is near-saturated -> 0 failures.)
+    sat_patience = int(p4.get("saturation_patience", 4))
+    consec_nofail = 0
 
     for rnd in range(cfg["max_rounds"]):
         t_round = time.time()
@@ -96,11 +101,18 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
         log_fn(f"  [screen] {len(fails)}/{n_screen} failures found")
         descs = [d for d in (build_descriptor(task, env, f) for f in fails) if d is not None]
         if not descs:
-            log_fn("  [screen] no usable failures — budget-free, next round")
+            consec_nofail += 1
             history.append(_record(rnd, ev, n_at_eval, len(fails), None, None, None, None,
                                    None, 0, round(time.time() - t_round, 1)))
             del policy; gc.collect(); torch.cuda.is_available() and torch.cuda.empty_cache()
+            if consec_nofail >= sat_patience:
+                log_fn(f"  [screen] no usable failures for {consec_nofail} consecutive rounds "
+                       f"-> saturated (sr={ev['success_rate']:.3f}); stopping early")
+                break
+            log_fn(f"  [screen] no usable failures — budget-free, next round "
+                   f"({consec_nofail}/{sat_patience} toward saturation stop)")
             continue
+        consec_nofail = 0
 
         planner.set_round(rnd, descs)
         label, confidence, conf_rat, tokens = None, None, "", {}
