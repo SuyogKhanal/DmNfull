@@ -27,12 +27,27 @@ inline). Implement all of them.
   `03_TASKS_AND_ENVS.md` and increase them.
 
 ## 3. LLM backend = OpenRouter API (no local vLLM, no H100/H200)
-- Key: `OPENROUTER_API_KEY` in `.env`. Use the OpenAI-compatible endpoint
-  (`base_url=https://openrouter.ai/api/v1`). Pick an available VLM + a reasoning model on
-  OpenRouter (e.g. a Qwen-VL for perception, a strong reasoner for analysis/decision — verify
-  availability at run time). The client is a plain API call.
-- **Consequence:** no 3-GPU VLM/LLM servers, no `--constraint=gpu-h100|gpu-h200`. Each job needs
-  ~1 GPU only (diffusion-policy train + rollout). Schedules on any partition → faster.
+- Key: `OPENROUTER_API_KEY` in `.env`. OpenAI-compatible endpoint
+  `base_url=https://openrouter.ai/api/v1`. **Pinned models (verified live on OpenRouter):**
+  - **VLM (perception, stage a):** `qwen/qwen3-vl-30b-a3b-instruct` — accepts `image_url` content
+    parts, 262K ctx, non-thinking *Instruct* variant. Effort = low (no thinking).
+  - **Text (stage b analysis + stage c decision):** `qwen/qwen3-32b` at **effort HIGH**.
+  - **Text (aggregator / structured-JSON parsing):** `qwen/qwen3-32b` at **effort LOW**.
+    → the one text model runs at **both** low and high (the user's "qwen3-32b with reasoning
+    effort low and high"), mirroring the old ReasoningClient(high)/PlainClient(low) split.
+- **API + reasoning gotcha (verified against OpenRouter docs):** OpenRouter natively supports BOTH
+  `client.chat.completions.create` (stable) and `client.responses.create` (Responses API, BETA) —
+  **no proxy needed** (the old local-vLLM-proxy requirement is dead). **BUT** `qwen3-32b` is a
+  *binary* thinking-on/off model with **no native low/med/high tiers**; OpenRouter accepts
+  `reasoning={"effort":"high"|"low"}` and silently converts it to a reasoning-token budget
+  (`budget = max(min(max_tokens×ratio, 128000), 1024)`; high≈0.80, low≈0.20). On some providers
+  low and high collapse to the same "thinking on". **To make low-vs-high actually differ, pass an
+  explicit `max_tokens` AND prefer `reasoning={"max_tokens":N}` directly** (decision→large N,
+  aggregator→small N or `{"enabled":false}` for no-think). Exact call shapes in `06_PROMPTS.md`.
+- **Consequence:** no 3-GPU VLM/LLM servers, no `--constraint=gpu-h100|gpu-h200`, and **no local
+  model weights at all** — the LLM is a pure API call. Each job needs ~1 GPU only (diffusion-policy
+  train + rollout); schedules on any partition → faster. **This is also what makes the 2nd HPC
+  trivially portable** (it needs no model weights) — see `08_...md` + `SETUP_HPC2.md`.
 
 ## 4. Geometric-state clustering for IMAGE tasks too — NO R3M
 - The **policy** is image-based (visual obs), but the **descriptor / clustering / LLM config

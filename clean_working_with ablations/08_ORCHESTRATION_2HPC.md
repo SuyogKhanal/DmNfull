@@ -5,6 +5,29 @@ tied to whichever HPC that session is on. Your job is to submit the ablation mat
 when a session on HPC-A has done what it usefully can, **write a handoff `.md`** so a fresh
 session on HPC-B continues seamlessly.
 
+## ⚠ The two HPCs share NO filesystem — git is the transport
+HPC-A is the weka cluster (`/weka/s226137394/...`); **HPC-B is a different cluster that cannot see
+`/weka` at all.** Non-negotiables the consolidated module must respect:
+- **Code reaches HPC-B via `git clone`/`pull`, not `/weka`.** This is the payoff of consolidating
+  into one `distil/` package + pushing to GitHub. The custom envs (PushT-v2, robosuite wrappers)
+  must be **vendored inside `distil/`** so a clone brings them (`04_...md`). **No absolute `/weka`
+  path or import anywhere** — repo-relative root / `$DISTIL_ROOT` (`00` golden rule 8). A single
+  hardcoded path breaks HPC-B silently.
+- **No model weights travel** — the LLM is an OpenRouter API call, so HPC-B needs only the code, a
+  GPU for the diffusion policy, and its own `.env` with `OPENROUTER_API_KEY`. (Biggest portability
+  win of the OpenRouter switch.) Bring-up checklist: **`SETUP_HPC2.md`**.
+- **Byte-identical bootstrap stays LOCAL by partitioning cleanly:** assign each **whole
+  `(task, modality)` cell** — DISTIL + every baseline/ablation + all 5 seeds — to a *single*
+  cluster. Its bootstrap is generated once there and every arm loads it (byte-identical *within the
+  cell*, which is all fairness needs). **Never split one cell's arms across the two clusters** — or
+  you'd compare arms trained on different bootstraps. This is exactly "prioritize + split by
+  task-block, not naive half/half". (If you ever must share a bootstrap across clusters it's a
+  small `.pkl` — commit it or `rsync`/`scp` it.)
+- **Results flow back via git:** HPC-B can't write to `/weka` either. Each cluster writes its own
+  light `result.json`/`config.yaml` leaves and pushes ONLY those (never checkpoints/telemetry) to
+  a results branch; the aggregator (run on HPC-A) `git pull`s both and builds the master table.
+  Commit `RUN_STATE.md` too so both clusters share one ledger.
+
 ## Job model (thanks to OpenRouter)
 - Every run is **one self-contained sbatch job** = one (task, modality, ablation, seed) OR one
   (task, modality, ablation) that loops seeds internally — your call, but **one ablation branch
@@ -25,10 +48,11 @@ Rank the queue, submit high-value first, and rebalance dynamically:
      VLM-off) — the allocation thesis lives here.
    - P2: budget sweep {10,20,40}; Tier-2 drawer ablations.
    - P3: Tier-3 sensitivity sweeps; Tier-4 diagnostics (mostly log-parsing, cheap).
-2. **Split by cost, not by count.** Wipe and PushT jobs are the long poles (500-step episodes /
-   250-step reroll + more rounds). Spread the *expensive* jobs across the two HPCs; don't put all
-   Wipe on one. Estimate per-job wall-clock (rounds × (train + eval + screen + LLM)) and
-   load-balance on that, not on job count.
+2. **Split by cost, not by count — but always by WHOLE cell.** Wipe and PushT are the long poles
+   (500-step episodes / 250-step reroll + more rounds). Spread the *expensive cells* across the two
+   HPCs — e.g. Wipe-state on one, Wipe-image + PushT on the other — but keep every arm/seed of a
+   single `(task,modality)` cell on ONE cluster (bootstrap fairness, above). Estimate per-cell
+   wall-clock (rounds × (train + eval + screen + LLM)) and load-balance on that, not on job count.
 3. **Watch start latency + progress.** Monitor the queue. If a job is **stuck pending** (slow to
    start on this HPC) or is **low priority** (P3) while P0/P1 still need slots, **cancel it** and
    move it to the handoff list rather than let it block the important work.

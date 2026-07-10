@@ -59,6 +59,10 @@ distil/
 ## Consolidation checklist
 - [ ] Single env registry covering GridWorld/Lift/Wipe/Door/PushT × {state, image} with the
       **increased horizons** and a **decoupled expert-takeover budget** (`02_...md` #2).
+- [ ] **Self-contained + portable:** custom envs (PushT-v2, robosuite wrappers) are **vendored
+      inside the module** (not imported from `/weka`), and **no absolute `/weka` path is hardcoded
+      anywhere** (repo-relative root / `$DISTIL_ROOT`) — so `git clone` on the 2nd HPC just works
+      (`08_...md`, `00` golden rule 8). Pin deps in `environment.yml`/`requirements.txt`.
 - [ ] Descriptor is **geometric for all modalities** (no R3M); image only changes the *policy*
       encoder, not the descriptor/clustering (`02_...md` #4).
 - [ ] Clustering/takeover uses the **first-threshold-crossing** step, not argmax (`02_...md` #1).

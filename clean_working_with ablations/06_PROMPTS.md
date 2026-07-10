@@ -1,10 +1,15 @@
 # 06 — LLM prompts (verbatim base + the required confidence addition)
 
-Three stages, all via the OpenAI-compatible **Responses API**
-(`client.responses.create(..., reasoning={"effort": ...}, max_output_tokens=16384)`), now pointed
-at **OpenRouter** (`02_...md` #3). **Effort: VLM = low, ANALYSIS = high, DECISION = high,
-aggregator/structuring = low.** Save the exact prompts used into **each run's output folder**
-(`prompts/`, golden rule 3).
+Three LLM roles over **OpenRouter** (`02_...md` #3). OpenRouter natively supports BOTH the stable
+**Chat Completions** API (`client.chat.completions.create`) and the BETA **Responses** API
+(`client.responses.create`) at `base_url=https://openrouter.ai/api/v1` — **no proxy** (the old
+vLLM-proxy requirement is gone). **Recommended: Chat Completions** (stable; the `reasoning` +
+`image_url` params are best-documented there); the Responses API also works if you keep the
+existing client, but it is BETA (may break, stateless). **Roles / models / effort:** VLM
+(perception) = `qwen/qwen3-vl-30b-a3b-instruct` **low**; ANALYSIS + DECISION = `qwen/qwen3-32b`
+**high**; aggregator/structuring = `qwen/qwen3-32b` **low** (so the text model runs at both low and
+high, per the user's ask). Save the exact prompts **and the resolved model/effort** into **each
+run's output folder** (`prompts/`, golden rule 3).
 
 The cleanest base = the robosuite port `diff-dagger-ur5/diffdagger_rs/p4/prompts.py` — reproduced
 below. The richer fork PushT variants (rolling 5-frame VLM, 5-section analysis) live in
@@ -76,12 +81,41 @@ For the **full BRIDGE pose synthesis** (Eq 10) and the fork's richer prescriptio
 robosuite the planner computes the BRIDGE pose from the cited failures, so the LLM only needs to
 emit SELECT/BRIDGE + cited ids + confidence.
 
-## Effort / model config
-- VLM low; ANALYSIS + DECISION high, `max_output_tokens=16384`. LLM-effort + token-cap are ablation
-  knobs (`05_...md` Tier 3 — tie to the FM-necessity story).
-- Model slugs come from env (`VLM_MODEL_NAME`, `LLM_MODEL_NAME`) — set to OpenRouter slugs
-  (a Qwen-VL for perception, a strong reasoner for analysis/decision). Client:
-  `diff-dagger-ur5/diffdagger_rs/p4/llm.py` (already OpenAI-compatible — only env vars change).
+## Effort / model config (verified against OpenRouter docs)
+- **Pinned slugs** (env `VLM_MODEL_NAME` / `LLM_MODEL_NAME`): VLM `qwen/qwen3-vl-30b-a3b-instruct`;
+  text `qwen/qwen3-32b`. Client base: `diff-dagger-ur5/diffdagger_rs/p4/llm.py` (OpenAI-compatible;
+  change only base_url→OpenRouter, key→`OPENROUTER_API_KEY`, and the two slugs).
+- **`qwen3-32b` is binary thinking-on/off — no native effort tiers.** OpenRouter *accepts*
+  `reasoning={"effort":"high"|"low"}` but converts it to a token budget
+  (`budget=max(min(max_tokens×ratio,128000),1024)`; high≈0.80, medium≈0.50, low≈0.20). Some
+  providers collapse low/high to identical "thinking on". **For a reliable low↔high gap, set an
+  explicit `max_tokens` and prefer `reasoning={"max_tokens":N}`** (DECISION/analysis high → N≈8192;
+  aggregator low → N≈1024 or `reasoning={"enabled":false}` for no-think). Overall cap
+  `max_tokens=16384`. Chat Completions call shape:
+  ```python
+  # analysis / decision (qwen3-32b, HIGH):
+  client.chat.completions.create(model="qwen/qwen3-32b",
+      messages=[{"role":"system","content":SYS},{"role":"user","content":USER}],
+      max_tokens=16384, extra_body={"reasoning": {"max_tokens": 8192}})
+  # aggregator / structuring (qwen3-32b, LOW): extra_body={"reasoning": {"enabled": False}}
+  # VLM (qwen3-vl-30b-a3b-instruct, no reasoning): user content is a list of parts —
+  #   [{"type":"text","text":vlm_prompt(...)},
+  #    {"type":"image_url","image_url":{"url":"data:image/png;base64,<...>"}}, ...one per frame]
+  ```
+  (If you keep the Responses API instead: `client.responses.create(model=..., input=...,
+  reasoning={"effort":...}, max_output_tokens=16384)` — same base_url, BETA.)
+- LLM-effort + token-cap are also ablation knobs (`05_...md` Tier 3 — tie to the FM-necessity
+  story). Log the resolved `{model, reasoning}` per call for the compute table.
+
+## ⚠ Qwen `<think>` parse gotcha (bit us before — cost silent zero-demo rounds)
+Qwen3-32B / Qwen3-VL emit `<think>...</think>` inline in the message content. A strict
+`json.loads` on the analysis/decision output then fails → empty prescription → **0 demos collected
+that round while every API call still returns 200** (heldout SR stays flat, no error). Fixes on
+OpenRouter: (1) pass the unified `reasoning` param — `reasoning={"exclude":true}` (or
+`include_reasoning:false`) returns reasoning in a **separate field**, not inline in `content`, so
+`content` is clean JSON; and/or (2) strip `<think>…</think>` from `content` before `json.loads`
+(regex `re.sub(r"<think>.*?</think>", "", txt, flags=re.S)`). Grep symptom if it recurs:
+`prescribed=0 kept=0 collected=0` with `content` starting `<think>`.
 
 ## Ablation hooks that touch prompts
 - `vlm=off` (`05_...md`): skip stage (a); pass only the geometric descriptor + root-cause to

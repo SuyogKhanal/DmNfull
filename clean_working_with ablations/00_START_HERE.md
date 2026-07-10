@@ -35,9 +35,16 @@ HPCs**, with results aggregated into a clean, inspectable structure.
    per-round **confidence score**; log it.
 5. **One ablation branch = one job.** Every ablation/config is a single self-contained job;
    results land in a predictable path and are auto-aggregated (`09_REPRODUCIBILITY...md`).
-6. **Two HPCs, prioritized split (not naive half/half).** See `08_ORCHESTRATION_2HPC.md`.
-7. **OpenRouter API, no local vLLM, no H100/H200 constraint.** The LLM is an API call; jobs need
-   only ~1 GPU for the diffusion policy. Faster + schedules anywhere.
+6. **Two HPCs that share NO filesystem, prioritized split (not naive half/half).** Code reaches
+   the 2nd cluster via **git** (it cannot see `/weka`); assign whole `(task,modality)` cells per
+   cluster so bootstraps stay local + byte-identical. See `08_ORCHESTRATION_2HPC.md` +
+   `SETUP_HPC2.md`.
+7. **OpenRouter API, no local vLLM, no H100/H200 constraint.** The LLM is an API call
+   (`qwen/qwen3-vl-30b-a3b-instruct` for vision, `qwen/qwen3-32b` for reasoning); jobs need only
+   ~1 GPU for the diffusion policy and **no local model weights**. Faster + schedules anywhere.
+8. **No hardcoded paths / self-contained module.** Nothing may hardcode `/weka/...` or any absolute
+   machine path — use a repo-relative root or `$DISTIL_ROOT`, and **vendor the custom envs inside
+   the module**. The 2nd HPC cannot see `/weka`; one absolute path breaks it there.
 
 ## What is DISTIL (the concept you implement) — full detail in `01_METHOD_DISTIL.md`
 Per round: roll the current policy → detect failures by the policy's own uncertainty → build a
@@ -69,7 +76,10 @@ critical. Everything else is drawer/rebuttal material. `05_ABLATIONS.md` has the
 - `05_ABLATIONS.md` — the supervisor's matrix → config flags + triage + the budget sweep.
 - `06_PROMPTS.md` — verbatim prompts (VLM / analysis / SELECT-BRIDGE decision / confidence).
 - `07_KAG.md` — the per-task KAG documents + renderer.
-- `08_ORCHESTRATION_2HPC.md` — two-HPC prioritized split + handoff-`.md` mechanism + workflows.
+- `08_ORCHESTRATION_2HPC.md` — two-HPC (shared-nothing) prioritized split + git-transport +
+  handoff-`.md` mechanism + workflows.
+- `SETUP_HPC2.md` — copy-paste bring-up checklist for the 2nd cluster (clone → env → `.env` →
+  smoke → run its assigned cells → push results back).
 - `09_REPRODUCIBILITY_AND_AGGREGATION.md` — seeds/bootstrap, results tree, stats (sign test),
   the Tier-4 diagnostics to auto-report, the compute table.
 
