@@ -136,11 +136,42 @@ def _gw_bootstrap(n, bootstrap_dir, log):
     return demos
 
 
+def _run_baseline(cfg, args, out, device, n_init, make_env_fn, make_expert_fn, log):
+    env_h = cfg["env_horizon"]
+    init = _bootstrap(cfg["task"], cfg["modality"], n_init, args.bootstrap_dir,
+                      make_env_fn, make_expert_fn, env_h, log)
+    if args.make_bootstrap:
+        log(f"[make-bootstrap] done: {len(init)} demos")
+        return
+    cfg["num_init_demos"] = len(init)
+    cfg["final_demos"] = len(init) + int(args.budget)
+    if args.max_rounds is None:
+        cfg["max_rounds"] = max(cfg["max_rounds"], 3 * int(args.budget) + 2)
+    if out:
+        _write_config_yaml(cfg, out)
+    from .baselines import run_baseline
+    t0 = time.time()
+    result = run_baseline(cfg, args.ablation, make_env_fn, make_expert_fn, device,
+                          log_fn=log, init_trajs=init)
+    result["wall_sec"] = round(time.time() - t0, 1)
+    result["task"], result["modality"] = cfg["task"], cfg["modality"]
+    result["ablation"], result["seed"] = cfg["ablation"], cfg["seed"]
+    log(f"DONE in {result['wall_sec']}s | final_success={result.get('final_success')}")
+    if out:
+        with open(os.path.join(out, "result.json"), "w") as f:
+            json.dump(result, f, indent=2, default=str)
+        log(f"[write] {os.path.join(out, 'result.json')}")
+
+
 def _run_gridworld(cfg, args, out, device, n_init, log):
     init = _gw_bootstrap(n_init, args.bootstrap_dir, log)
     if args.make_bootstrap:
         log(f"[make-bootstrap] done: {len(init)} GW demos")
         return
+    # enough rounds to actually SPEND the budget (1 demo/round + slack for budget-free
+    # rounds) — else the BASE max_rounds=12 caps GridWorld before the budget is spent.
+    if args.max_rounds is None:
+        cfg["max_rounds"] = max(cfg["max_rounds"], 3 * int(args.budget) + 2)
     if out:
         _copy_kag("GridWorld", out, log)
         _write_config_yaml(cfg, out)
@@ -210,10 +241,16 @@ def main():
 
     from .envs import make_env
     from .experts import make_expert
+    from .config import BASELINE_ARMS
     env_h = cfg["env_horizon"]
     ek = dict(wipe_marker_obs_k=cfg.get("wipe_marker_obs_k", 0))
     make_env_fn = lambda h: make_env(cfg["task"], horizon=h, **ek)
     make_expert_fn = lambda: make_expert(cfg["task"])
+
+    # baseline arm (Safe/Dropout/Ensemble/Thrifty/Stagger/Diff-DAgger) — robot diffusion only
+    if args.ablation in BASELINE_ARMS:
+        _run_baseline(cfg, args, out, device, n_init, make_env_fn, make_expert_fn, log)
+        return
 
     # ── make-bootstrap mode ──────────────────────────────────────────────────
     if args.make_bootstrap:
