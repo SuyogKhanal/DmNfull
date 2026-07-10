@@ -28,28 +28,48 @@ The consolidated module lives at **`DmNfull/distil/`** (one self-contained packa
 - **Portability**: `PORTABILITY.md` + pins (`requirements.txt`/`environment.yml`).
   robosuite = public commit `85abee22`; escnn `1.0.11`.
 
-## 2. What is RUNNING on HPC-A (this cluster)
+## 2. What is RUNNING on HPC-A (this cluster) — PHASE-DISCIPLINED
 
-**P0 crown-jewel wave** — full DISTIL × {GridWorld, Lift, Wipe, Door} × state × 5 seeds
-= 20 jobs, budget 20 (`distil/RUN_STATE.md`). Once one budget=20 job completes cleanly,
-**P1 (Tier-1 knockouts)** fans out = +100 jobs (the allocation thesis, 05_..md #1).
+Phase 1 (consolidate + one smoke) is done. We are now in a MEASURED Phase-2 validation,
+NOT a full blast: HPC-A runs a **seed-1 validation** of GridWorld's allocation thesis
+(full + 5 Tier-1 knockouts, seed 1) + Lift-state (HPC-A's cheap share). Only after the
+seed-1 set validates the full budget=20 loop do we expand GridWorld to 5 seeds. The
+GridWorld full-seed1 gate runs on **CPU** (GridWorld needs no GPU → zero GPU contention).
 
-## 3. 2-HPC RUN split (whole cells only — 08_..md)
+## 3. 2-HPC SPLIT — the actual assignment (whole cells only, 08_..md golden rule 6)
 
-Assign whole `(task, modality)` cells so each cell's byte-identical bootstrap stays
-local. Suggested once the build items are done:
-- **HPC-A**: GridWorld (state+image, CPU-cheap), Lift, Door (state+image).
-- **HPC-B**: **Wipe** (state+image — the long pole, 500-step episodes) + **PushT**
-  (state+image — the other long pole). Generate each cell's bootstrap locally
-  (`--make-bootstrap`), run all arms+seeds of the cell there, push `result.json` back.
+Cost-balanced (COST: GridWorld 1, Lift 3, Door 4, Wipe 6). Each cluster owns WHOLE
+`(task, modality)` cells — never split one cell's arms/seeds across clusters (bootstrap
+fairness). **This is the correction: do NOT run HPC-B's cells on HPC-A.**
 
-Per-cell run command (any partition, 1 GPU, no h100/h200 constraint):
+| cluster | STATE cells it owns | later (image / PushT) |
+|---|---|---|
+| **HPC-A** (weka, this session) | **GridWorld**, **Lift** | GridWorld-image, Lift-image |
+| **HPC-B** (shared-nothing) | **Wipe** (long pole), **Door** | Wipe-image, Door-image, **PushT** (state+image) |
+
+### HPC-B, do this (bring up per `SETUP_HPC2.md`, then run YOUR cells only):
 ```bash
-sbatch --export=ALL,TASK=Wipe,MODALITY=state,ABLATION=full,SEED=1,BUDGET=20,\
-OUTPUT_DIR=distil/results/Wipe/state/full/seed1,\
-BOOTSTRAP_DIR=distil/results/shared_bootstrap/Wipe_state distil/scripts/run_distil.sbatch
+git clone git@github.com:SuyogKhanal/DmNfull.git && cd DmNfull
+git checkout stackcube-hybrid-plugcharger-handoff && export DISTIL_ROOT="$PWD"
+conda env create -f distil/environment.yml -n distil && conda activate distil   # robosuite @85abee22 pin
+cp distil/.env.example .env   # add OPENROUTER_API_KEY (HPC-B's own)
+# generate each owned cell's bootstrap LOCALLY (byte-identical, deterministic), then run all arms:
+for T in Wipe Door; do
+  python -m distil.run --make-bootstrap --task $T --modality state \
+     --bootstrap-dir distil/results/shared_bootstrap/${T}_state
+  for A in full memory_off allocation_random clustering_off decision_heuristic vlm_off; do
+    for S in 1 2 3 4 5; do
+      sbatch --export=ALL,TASK=$T,MODALITY=state,ABLATION=$A,SEED=$S,BUDGET=20,\
+OUTPUT_DIR=distil/results/$T/state/$A/seed$S,\
+BOOTSTRAP_DIR=distil/results/shared_bootstrap/${T}_state distil/scripts/run_distil.sbatch
+    done
+  done
+done
+# push ONLY the light leaves back (never checkpoints/telemetry/frames):
+git add distil/results/**/result.json distil/results/**/config.yaml distil/RUN_STATE.md
+git commit -m "HPC-B: Wipe+Door state results" && git push origin <results-branch>
 ```
-Or drive the whole tier: `python -m distil.matrix --priority P0 P1 --modality state --submit`.
+Aggregation runs on HPC-A after `git pull`ing HPC-B's leaves (`python -m distil.aggregate`).
 
 ## 4. What is STILL TO BUILD (precise specs from the source study)
 
