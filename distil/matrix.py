@@ -81,7 +81,7 @@ def _sbatch_cmd(cell, budget, bootstrap_dir, results_dir):
     # behind robots on the 3 a100 nodes).
     part = "gpu,gpu-large"
     name = f"distil_{task}_{mod}_{arm}_s{seed}"
-    env = (f"ALL,TASK={task},MODALITY={mod},ABLATION={arm},SEED={seed},"
+    env = (f"ALL,CONDA_ENV=diffdagger,TASK={task},MODALITY={mod},ABLATION={arm},SEED={seed},"
            f"BUDGET={budget},OUTPUT_DIR={out},BOOTSTRAP_DIR={bootstrap_dir}/{task}_{mod}")
     return name, [
         "sbatch", "--parsable", f"--job-name={name}",

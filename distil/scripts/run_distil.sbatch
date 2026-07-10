@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-gpu=8
 #SBATCH --mem=32G
 #SBATCH --time=1-00:00:00
-#SBATCH --output=/weka/s226137394/DmNfull/distil/slurm_logs/%x_%j.out
-#SBATCH --error=/weka/s226137394/DmNfull/distil/slurm_logs/%x_%j.err
+#SBATCH --output=distil/slurm_logs/%x_%j.out
+#SBATCH --error=distil/slurm_logs/%x_%j.err
 # ===========================================================================
 # run_distil.sbatch — ONE DISTIL run (task, modality, ablation, seed).
 # The LLM is an OpenRouter API call (no local weights) -> 1 GPU only, ANY
@@ -31,15 +31,18 @@
 # ===========================================================================
 set -eo pipefail
 
-ROOT="${DISTIL_ROOT:-/weka/s226137394/DmNfull}"
+# Portable across clusters: DISTIL_ROOT wins; else the dir sbatch was called from
+# (submit from the repo root). No hardcoded /weka path (golden rule 8).
+ROOT="${DISTIL_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"
 cd "$ROOT"
+mkdir -p distil/slurm_logs
 
-# ── env: Deakin module + conda ──
+# ── env: module + conda (both generic) ──
 if command -v module >/dev/null 2>&1; then module purge || true; module load Anaconda3 || true; fi
-if [ -f /home/s226137394/.bashrc ]; then source /home/s226137394/.bashrc; fi
-CONDA_ENV="${CONDA_ENV:-diffdagger}"
+[ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc"
+CONDA_ENV="${CONDA_ENV:-distil}"     # HPC-A overrides with CONDA_ENV=diffdagger
 if command -v conda >/dev/null 2>&1; then eval "$(conda shell.bash hook)"; conda activate "$CONDA_ENV" || true; fi
-PYTHON_BIN="${PYTHON_BIN:-/home/s226137394/.conda/envs/${CONDA_ENV}/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-python}"   # the activated env's python (portable)
 
 export MUJOCO_GL="${MUJOCO_GL:-egl}"     # offscreen render for the VLM frames (GPU node)
 export DISTIL_ROOT="$ROOT"
