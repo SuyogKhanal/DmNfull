@@ -49,9 +49,9 @@ Two clusters, one ledger (HANDOFF_HPC2 §3, §6). Per-cluster jobids.
 ## HPC-B — Wipe + Door state (rohan), Ni=config, budget=20, Blackwell-excluded
 | cell | seed | hpc | jobid | state | final_SR |
 |---|---|---|---|---|---|
-| Wipe_state_full | 1 | B | 3361395 | SUBMITTED | - |
+| Wipe_state_full | 1 | B | 3361395 | COMPLETED | 0.92 |
 | Wipe_state_full | 2 | B | 3361396 | SUBMITTED | - |
-| Wipe_state_full | 3 | B | 3361397 | SUBMITTED | - |
+| Wipe_state_full | 3 | B | 3361397 | COMPLETED | 0.89 |
 | Wipe_state_full | 4 | B | 3361398 | SUBMITTED | - |
 | Wipe_state_full | 5 | B | 3361399 | SUBMITTED | - |
 | Wipe_state_memory_off | 1 | B | 3361400 | SUBMITTED | - |
