@@ -47,6 +47,10 @@ BASE = dict(
     sweep_eval_episodes=50,
     calib_windows=3000,
     wipe_marker_obs_k=0,            # Wipe: nearest-K remaining-marker obs (0=off)
+    # ── image modality (02_..md #4): only the policy encoder changes; descriptor
+    # stays GEOMETRIC. Per-step offscreen RGB -> spatial-softmax keypoints.
+    image_size=84,                  # render + policy input HxW
+    keypoints=32,                   # spatial-softmax keypoints per frame
     # seeds
     seed=0,
     # ── P4-LLM V3 hybrid (only used in mode=p4_hybrid) ──────────────────────
@@ -176,11 +180,11 @@ def get_config(task: str, modality: str = "state", ablation: str = "full",
     stop threshold final_demos is set to n_init + budget in run.py once n_init is known."""
     assert task in TASKS, task
     assert modality in ("state", "image"), modality
-    if modality == "image":
+    if modality == "image" and task == "GridWorld":
         raise NotImplementedError(
-            f"image modality not built yet (Phase 2): robot tasks need a camera-obs + "
-            f"image-encoder path on the diffusion policy; GridWorld needs the RGB CNN head. "
-            f"The descriptor stays GEOMETRIC either way (02_..md #4). State modality only for now.")
+            "GridWorld image modality (RGB CNN head on the bird-eye obs) not built yet; "
+            "robot tasks (Lift/Wipe/Door) support image via the spatial-softmax encoder. "
+            "The descriptor stays GEOMETRIC either way (02_..md #4).")
     cfg = copy.deepcopy(BASE)
     cfg.update(TASKS[task])
     cfg["task"] = task

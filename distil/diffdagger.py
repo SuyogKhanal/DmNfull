@@ -43,6 +43,8 @@ def build_policy(cfg, normalization, state_dim, act_dim, device):
         patience=cfg["patience"],
         batch_multiplier=cfg["batch_multiplier"],
         num_per_batch=cfg["num_per_batch"],
+        modality=cfg.get("modality", "state"),
+        keypoints=cfg.get("keypoints", 32),
     ).to(device)
 
 

@@ -91,7 +91,7 @@ def cmd_expert_check(cfg, args, log):
     n = args.episodes or 10
     succ, lens, covs = 0, [], []
     for ep in range(n):
-        _, _, success, t = rollout_expert(env, expert, seed=2000 + ep, max_steps=cfg["env_horizon"])
+        _, _, success, t, _ = rollout_expert(env, expert, seed=2000 + ep, max_steps=cfg["env_horizon"])
         succ += int(success); lens.append(t)
         if cfg["task"] == "Wipe":
             covs.append(len(env.raw.wiped_markers) / env.raw.num_markers)

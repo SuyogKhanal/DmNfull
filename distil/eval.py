@@ -10,28 +10,42 @@ import numpy as np
 import torch
 
 
-def make_obs_seq(state_deque, obs_horizon, device):
-    """Stack the last obs_horizon states into a (1, obs_horizon, state_dim) tensor."""
+def frame(env, size):
+    """Current-state offscreen RGB (size,size,3) uint8 for the image modality."""
+    return env.render(height=size, width=size)
+
+
+def make_obs_seq(state_deque, obs_horizon, device, image_deque=None):
+    """Stack the last obs_horizon states (+images) into (1, oh, ...) tensors.
+    image_deque holds (H,W,3) uint8 frames -> (1, oh, 3, H, W) float in [0,1]."""
     states = list(state_deque)[-obs_horizon:]
-    arr = np.stack(states, axis=0)[None]  # (1, oh, Ds)
-    return {"state": torch.as_tensor(arr, dtype=torch.float32, device=device)}
+    obs = {"state": torch.as_tensor(np.stack(states, 0)[None], dtype=torch.float32, device=device)}
+    if image_deque is not None:
+        imgs = np.stack(list(image_deque)[-obs_horizon:], 0).astype(np.float32) / 255.0  # (oh,H,W,3)
+        imgs = np.transpose(imgs, (0, 3, 1, 2))[None]                                     # (1,oh,3,H,W)
+        obs["image"] = torch.as_tensor(imgs, dtype=torch.float32, device=device)
+    return obs
 
 
 @torch.no_grad()
-def policy_rollout(policy, env, *, obs_horizon, act_horizon, seed, device, max_steps):
-    """Run the (pure) policy with receding-horizon action chunking.
+def policy_rollout(policy, env, *, obs_horizon, act_horizon, seed, device, max_steps,
+                   image_size=None):
+    """Run the (pure) policy with receding-horizon action chunking. When image_size
+    is set, also feed the policy an obs_horizon window of rendered frames.
 
-    Returns (success, length, coverage) where coverage is the Wipe marker
-    fraction (or None for tasks without it)."""
+    Returns (success, length, coverage)."""
     s = env.reset(seed=seed)
     dq = deque([s] * obs_horizon, maxlen=obs_horizon)
+    idq = deque([frame(env, image_size)] * obs_horizon, maxlen=obs_horizon) if image_size else None
     success, t = False, 0
     while t < max_steps:
-        obs_seq = make_obs_seq(dq, obs_horizon, device)
+        obs_seq = make_obs_seq(dq, obs_horizon, device, idq)
         actions = policy.get_action(obs_seq)[0].cpu().numpy()  # (act_horizon, act_dim)
         for i in range(act_horizon):
             s, r, done, success, info = env.step(actions[i])
             dq.append(s)
+            if idq is not None:
+                idq.append(frame(env, image_size))
             t += 1
             if done:
                 break
@@ -41,7 +55,7 @@ def policy_rollout(policy, env, *, obs_horizon, act_horizon, seed, device, max_s
 
 
 def evaluate_policy(policy, env, *, num_episodes, obs_horizon, act_horizon, device,
-                    base_seed, max_steps=None, log_fn=None):
+                    base_seed, max_steps=None, log_fn=None, image_size=None):
     """Evaluate on a FIXED set of `num_episodes` seeds [base_seed, base_seed+N).
 
     Keeping base_seed constant across DAgger rounds makes the per-round success
@@ -53,7 +67,7 @@ def evaluate_policy(policy, env, *, num_episodes, obs_horizon, act_horizon, devi
     for ep in range(num_episodes):
         success, t, cov = policy_rollout(
             policy, env, obs_horizon=obs_horizon, act_horizon=act_horizon,
-            seed=base_seed + ep, device=device, max_steps=max_steps,
+            seed=base_seed + ep, device=device, max_steps=max_steps, image_size=image_size,
         )
         n_succ += int(success)
         lens.append(t)

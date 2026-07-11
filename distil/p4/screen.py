@@ -48,21 +48,24 @@ def _first_threshold_crossing(step_losses: List[float], threshold: Optional[floa
 @torch.no_grad()
 def screen_failures(policy, env, *, obs_horizon, act_horizon, seeds, device,
                     max_steps, threshold: Optional[float] = None,
-                    patience: int = 2) -> List[Dict[str, Any]]:
+                    patience: int = 2, image_size=None) -> List[Dict[str, Any]]:
     """Return one candidate dict per FAILED screening episode:
     {seed, exec_actions, t_star(=t_flag anchor/takeover), t_peak, peak_loss,
-     flag_loss, T, flag_source}."""
+     flag_loss, T, flag_source}. image_size>0 => feed the policy rendered frames
+     (the descriptor stays GEOMETRIC — built later from the env snapshot)."""
+    from ..eval import frame
     if threshold is None:
         threshold = getattr(policy, "loss_threshold", None)
     fails: List[Dict[str, Any]] = []
     for seed in seeds:
         s = env.reset(seed=int(seed))
         dq = deque([s] * obs_horizon, maxlen=obs_horizon)
+        idq = deque([frame(env, image_size)] * obs_horizon, maxlen=obs_horizon) if image_size else None
         exec_actions: List[np.ndarray] = []
         step_losses: List[float] = []
         success, done, t = False, False, 0
         while t < max_steps:
-            obs_seq = make_obs_seq(dq, obs_horizon, device)
+            obs_seq = make_obs_seq(dq, obs_horizon, device, idq)
             action_chunk, naction = policy.plan(obs_seq)          # denoise once
             loss = float(policy.uncertainty(obs_seq, naction))    # diffusion-loss score
             acts = action_chunk[0].cpu().numpy()
@@ -70,6 +73,8 @@ def screen_failures(policy, env, *, obs_horizon, act_horizon, seeds, device,
                 a = np.asarray(acts[i], dtype=np.float32)
                 exec_actions.append(a); step_losses.append(loss)
                 s, r, done, success, info = env.step(a); dq.append(s); t += 1
+                if idq is not None:
+                    idq.append(frame(env, image_size))
                 if done:
                     break
             if done:

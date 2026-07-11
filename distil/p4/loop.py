@@ -37,6 +37,7 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
     obs_h, act_h = cfg["obs_horizon"], cfg["act_horizon"]
     eval_seed_base, eval_eps = cfg["eval_seed_base"], cfg["eval_episodes"]
     patience = int(cfg.get("patience_window", 2))
+    img = int(cfg["image_size"]) if cfg.get("modality") == "image" else None
     p4 = dict(cfg.get("p4", {}) or {})
     p4["_seed"] = cfg["seed"]                 # for the planner's random-allocation rng
     n_screen = int(p4.get("screen_episodes", 40))
@@ -72,7 +73,7 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
 
         ev = evaluate_policy(policy, eval_env, num_episodes=eval_eps, obs_horizon=obs_h,
                              act_horizon=act_h, device=device, base_seed=eval_seed_base,
-                             max_steps=env_h)
+                             max_steps=env_h, image_size=img)
         cov = f" coverage={ev['mean_coverage']:.3f}" if "mean_coverage" in ev else ""
         log_fn(f"  [eval] pure-policy success={ev['success_rate']:.3f} "
                f"mean_len={ev['mean_len']:.0f}{cov} (fixed {eval_eps}-ep set)")
@@ -97,7 +98,8 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
         seeds = list(range(screen_base + rnd * n_screen, screen_base + (rnd + 1) * n_screen))
         fails = screen_failures(policy, env, obs_horizon=obs_h, act_horizon=act_h,
                                 seeds=seeds, device=device, max_steps=env_h,
-                                threshold=float(policy.loss_threshold), patience=patience)
+                                threshold=float(policy.loss_threshold), patience=patience,
+                                image_size=img)
         log_fn(f"  [screen] {len(fails)}/{n_screen} failures found")
         descs = [d for d in (build_descriptor(task, env, f) for f in fails) if d is not None]
         if not descs:

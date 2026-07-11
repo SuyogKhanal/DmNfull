@@ -76,7 +76,8 @@ def _logger(path):
     return log
 
 
-def _bootstrap(task, modality, n, bootstrap_dir, make_env_fn, make_expert_fn, env_h, log):
+def _bootstrap(task, modality, n, bootstrap_dir, make_env_fn, make_expert_fn, env_h, log,
+               image_size=None):
     """Byte-identical shared bootstrap per (task, modality): the first arm collects
     n demos (seed_base=0, deterministic) and pickles them; every arm/seed of the cell
     loads that exact file (09_..md)."""
@@ -88,7 +89,7 @@ def _bootstrap(task, modality, n, bootstrap_dir, make_env_fn, make_expert_fn, en
         log(f"[bootstrap] loaded {len(trajs)} shared demos from {path}")
         return trajs
     trajs = collect_demos(make_env_fn(env_h), make_expert_fn(), n, seed_base=0,
-                          max_steps=env_h, log_fn=log)
+                          max_steps=env_h, log_fn=log, image_size=image_size)
     tmp = path.with_suffix(f".tmp{os.getpid()}")
     tmp.write_bytes(pickle.dumps(trajs))
     os.replace(tmp, path)             # atomic publish (no torn read on races)
@@ -245,8 +246,14 @@ def main():
     from .config import BASELINE_ARMS
     env_h = cfg["env_horizon"]
     ek = dict(wipe_marker_obs_k=cfg.get("wipe_marker_obs_k", 0))
+    # image modality: build the env with an offscreen renderer + the task's VLM/policy
+    # camera so the loop can pull per-step RGB frames (descriptor stays geometric).
+    if cfg["modality"] == "image":
+        from .p4.render import TASK_CAMERA
+        ek.update(offscreen=True, render_camera=TASK_CAMERA.get(cfg["task"], "agentview"))
     make_env_fn = lambda h: make_env(cfg["task"], horizon=h, **ek)
     make_expert_fn = lambda: make_expert(cfg["task"])
+    img = int(cfg["image_size"]) if cfg["modality"] == "image" else None
 
     # baseline arm (Safe/Dropout/Ensemble/Thrifty/Stagger/Diff-DAgger) — robot diffusion only
     if args.ablation in BASELINE_ARMS:
@@ -256,13 +263,13 @@ def main():
     # ── make-bootstrap mode ──────────────────────────────────────────────────
     if args.make_bootstrap:
         trajs = _bootstrap(cfg["task"], cfg["modality"], n_init,
-                           args.bootstrap_dir, make_env_fn, make_expert_fn, env_h, log)
+                           args.bootstrap_dir, make_env_fn, make_expert_fn, env_h, log, img)
         log(f"[make-bootstrap] done: {len(trajs)} demos")
         return
 
     # ── full DISTIL run ──────────────────────────────────────────────────────
     init = _bootstrap(cfg["task"], cfg["modality"], n_init,
-                      args.bootstrap_dir, make_env_fn, make_expert_fn, env_h, log)
+                      args.bootstrap_dir, make_env_fn, make_expert_fn, env_h, log, img)
     cfg["num_init_demos"] = len(init)
     # budget = successful demos ADDED on top of the bootstrap (09_..md).
     cfg["final_demos"] = len(init) + int(args.budget)

@@ -269,15 +269,16 @@ class RobosuiteHybridPlanner:
     # ── collect one demo for a spec ──────────────────────────────────────────
     def collect(self, spec: LayoutSpec, env, expert, cfg) -> tuple:
         ms = int(cfg["env_horizon"])
+        img = int(cfg["image_size"]) if cfg.get("modality") == "image" else None
         if spec.mode == "select":
             demo, ok, t = collect_select(env, expert, seed=spec.cand["seed"],
                                          exec_actions=spec.cand["exec_actions"],
-                                         t_star=spec.cand["t_star"], max_steps=ms)
+                                         t_star=spec.cand["t_star"], max_steps=ms, image_size=img)
             return demo, ok, {"len": t}
         demo, ok, t, applied = collect_bridge(env, expert, task=self.task,
                                               x=spec.bridge_xy[0], y=spec.bridge_xy[1],
                                               z=spec.bridge_z, quat=spec.bridge_quat,
-                                              seed=spec.bridge_seed, max_steps=ms)
+                                              seed=spec.bridge_seed, max_steps=ms, image_size=img)
         return demo, ok, {"len": t, "applied": applied}
 
     def note_collect(self, spec: LayoutSpec, ok: bool, meta: Dict[str, Any]) -> None:

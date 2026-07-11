@@ -25,24 +25,29 @@ import numpy as np
 from .bridge import set_object_pose
 
 
-def _run_expert_to_done(env, expert, s, max_steps) -> Tuple[Optional[Dict], bool, int]:
-    """Record (state, action) as the reactive expert finishes from state s."""
-    states, actions = [], []
+def _run_expert_to_done(env, expert, s, max_steps, image_size=None) -> Tuple[Optional[Dict], bool, int]:
+    """Record (state, action[, image]) as the reactive expert finishes from state s."""
+    from ..eval import frame
+    states, actions, images = [], [], []
     success, done, t = False, False, 0
     while not done and t < max_steps:
         a = np.asarray(expert.get_action(env, s), dtype=np.float32)
         states.append(np.asarray(s, dtype=np.float32))
         actions.append(a)
+        if image_size:
+            images.append(frame(env, image_size))
         s, r, done, success, info = env.step(a)
         t += 1
     if not states:
         return None, False, 0
     demo = {"state": np.stack(states), "action": np.stack(actions)}
+    if image_size and images:
+        demo["image"] = np.stack(images)
     return (demo if success else None), success, t
 
 
 def collect_select(env, expert, *, seed: int, exec_actions: List[Any], t_star: int,
-                   max_steps: int) -> Tuple[Optional[Dict], bool, int]:
+                   max_steps: int, image_size=None) -> Tuple[Optional[Dict], bool, int]:
     """Re-roll the failure scene (deterministic replay to t*), then expert corrects."""
     s = env.reset(seed=seed)
     k = int(min(max(0, t_star), len(exec_actions)))
@@ -52,17 +57,17 @@ def collect_select(env, expert, *, seed: int, exec_actions: List[Any], t_star: i
         if done:
             break
     expert.reset(env)
-    return _run_expert_to_done(env, expert, s, max_steps)
+    return _run_expert_to_done(env, expert, s, max_steps, image_size)
 
 
 def collect_bridge(env, expert, *, task: str, x: float, y: float, yaw: float = 0.0,
                    z: Optional[float] = None, quat=None, seed: int,
-                   max_steps: int) -> Tuple[Optional[Dict], bool, int, Dict]:
+                   max_steps: int, image_size=None) -> Tuple[Optional[Dict], bool, int, Dict]:
     """Prescribe a middle-ground object pose, then expert demonstrates the task.
     z/quat carry the full pose for objects that need it (Door frame body)."""
     env.reset(seed=seed)
     applied = set_object_pose(env.env, task, x, y, yaw=yaw, z=z, quat=quat)
     s = env._flatten(env.env._get_observations())        # obs AFTER placement
     expert.reset(env)
-    demo, success, t = _run_expert_to_done(env, expert, s, max_steps)
+    demo, success, t = _run_expert_to_done(env, expert, s, max_steps, image_size)
     return demo, success, t, applied
