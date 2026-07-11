@@ -1,11 +1,7 @@
 # RUN_STATE — DISTIL matrix (live ledger)
 
-Two clusters, one ledger (HANDOFF_HPC2 §3, §6). Per-cluster jobids.
-
-- **HPC-A (weka):** GridWorld (all arms) + Lift-state.
-- **HPC-B (rohan, this session):** Wipe + Door state — WHOLE cells, 6 arms × 5 seeds = 60 jobs.
-
-> Wipe/Door reassigned to HPC-B (HANDOFF §3). Per-task Ni from config (upstream b5485c09): Wipe=12, Door=4. Blackwell node rtxp6000l-f-01 excluded (no cu121 kernels). budget=20.
+Two clusters (HANDOFF §3/§6). HPC-A: GridWorld + Lift. HPC-B (rohan): Wipe/Door state DISTIL (done),
+Door state baselines, Door image DISTIL. Ni=config, budget=20, Blackwell node excluded.
 
 ## HPC-A — GridWorld + Lift (weka)
 | cell | seed | jobid | state | final_SR |
@@ -46,7 +42,7 @@ Two clusters, one ledger (HANDOFF_HPC2 §3, §6). Per-cluster jobids.
 | Lift_state_full | 4 | 108989 | RUNNING | - |
 | Lift_state_full | 5 | 108990 | RUNNING | - |
 
-## HPC-B — Wipe + Door state (rohan), Ni=config, budget=20, Blackwell-excluded
+## HPC-B — Wipe+Door STATE DISTIL (done)
 | cell | seed | hpc | jobid | state | final_SR |
 |---|---|---|---|---|---|
 | Wipe_state_full | 1 | B | 3361395 | COMPLETED | 0.92 |
@@ -109,4 +105,72 @@ Two clusters, one ledger (HANDOFF_HPC2 §3, §6). Per-cluster jobids.
 | Door_state_vlm_off | 3 | B | 3361452 | COMPLETED | 0.99 |
 | Door_state_vlm_off | 4 | B | 3361453 | COMPLETED | 0.92 |
 | Door_state_vlm_off | 5 | B | 3361454 | COMPLETED | 0.97 |
+
+## HPC-B — Door STATE baselines
+| cell | seed | hpc | jobid | state | final_SR |
+|---|---|---|---|---|---|
+| Door_state_diffdagger | 1 | B | 3370652 | COMPLETED | 0.93 |
+| Door_state_diffdagger | 2 | B | 3370653 | RUNNING | - |
+| Door_state_diffdagger | 3 | B | 3370654 | RUNNING | - |
+| Door_state_diffdagger | 4 | B | 3370655 | RUNNING | - |
+| Door_state_diffdagger | 5 | B | 3370656 | RUNNING | - |
+| Door_state_safe | 1 | B | 3370657 | RUNNING | - |
+| Door_state_safe | 2 | B | 3370658 | RUNNING | - |
+| Door_state_safe | 3 | B | 3370659 | RUNNING | - |
+| Door_state_safe | 4 | B | 3370660 | RUNNING | - |
+| Door_state_safe | 5 | B | 3370661 | RUNNING | - |
+| Door_state_dropout | 1 | B | 3370662 | RUNNING | - |
+| Door_state_dropout | 2 | B | 3370663 | RUNNING | - |
+| Door_state_dropout | 3 | B | 3370664 | RUNNING | - |
+| Door_state_dropout | 4 | B | 3370665 | RUNNING | - |
+| Door_state_dropout | 5 | B | 3370666 | RUNNING | - |
+| Door_state_ensemble | 1 | B | 3370667 | RUNNING | - |
+| Door_state_ensemble | 2 | B | 3370668 | RUNNING | - |
+| Door_state_ensemble | 3 | B | 3370669 | RUNNING | - |
+| Door_state_ensemble | 4 | B | 3370670 | RUNNING | - |
+| Door_state_ensemble | 5 | B | 3370671 | RUNNING | - |
+| Door_state_thrifty | 1 | B | 3370672 | RUNNING | - |
+| Door_state_thrifty | 2 | B | 3370673 | RUNNING | - |
+| Door_state_thrifty | 3 | B | 3370674 | RUNNING | - |
+| Door_state_thrifty | 4 | B | 3370675 | RUNNING | - |
+| Door_state_thrifty | 5 | B | 3370676 | RUNNING | - |
+| Door_state_stagger | 1 | B | 3370677 | RUNNING | - |
+| Door_state_stagger | 2 | B | 3370678 | RUNNING | - |
+| Door_state_stagger | 3 | B | 3370679 | RUNNING | - |
+| Door_state_stagger | 4 | B | 3370680 | RUNNING | - |
+| Door_state_stagger | 5 | B | 3370681 | RUNNING | - |
+
+## HPC-B — Door IMAGE DISTIL
+| cell | seed | hpc | jobid | state | final_SR |
+|---|---|---|---|---|---|
+| Door_image_full | 1 | B | 3370700 | RUNNING | - |
+| Door_image_full | 2 | B | 3370701 | RUNNING | - |
+| Door_image_full | 3 | B | 3370702 | RUNNING | - |
+| Door_image_full | 4 | B | 3370703 | RUNNING | - |
+| Door_image_full | 5 | B | 3370704 | PENDING | - |
+| Door_image_memory_off | 1 | B | 3370705 | PENDING | - |
+| Door_image_memory_off | 2 | B | 3370706 | PENDING | - |
+| Door_image_memory_off | 3 | B | 3370707 | PENDING | - |
+| Door_image_memory_off | 4 | B | 3370708 | PENDING | - |
+| Door_image_memory_off | 5 | B | 3370709 | PENDING | - |
+| Door_image_allocation_random | 1 | B | 3370710 | PENDING | - |
+| Door_image_allocation_random | 2 | B | 3370711 | PENDING | - |
+| Door_image_allocation_random | 3 | B | 3370712 | PENDING | - |
+| Door_image_allocation_random | 4 | B | 3370713 | PENDING | - |
+| Door_image_allocation_random | 5 | B | 3370714 | PENDING | - |
+| Door_image_clustering_off | 1 | B | 3370715 | PENDING | - |
+| Door_image_clustering_off | 2 | B | 3370716 | PENDING | - |
+| Door_image_clustering_off | 3 | B | 3370717 | PENDING | - |
+| Door_image_clustering_off | 4 | B | 3370718 | PENDING | - |
+| Door_image_clustering_off | 5 | B | 3370719 | PENDING | - |
+| Door_image_decision_heuristic | 1 | B | 3370720 | PENDING | - |
+| Door_image_decision_heuristic | 2 | B | 3370721 | PENDING | - |
+| Door_image_decision_heuristic | 3 | B | 3370722 | PENDING | - |
+| Door_image_decision_heuristic | 4 | B | 3370723 | PENDING | - |
+| Door_image_decision_heuristic | 5 | B | 3370724 | PENDING | - |
+| Door_image_vlm_off | 1 | B | 3370725 | PENDING | - |
+| Door_image_vlm_off | 2 | B | 3370726 | PENDING | - |
+| Door_image_vlm_off | 3 | B | 3370727 | PENDING | - |
+| Door_image_vlm_off | 4 | B | 3370728 | PENDING | - |
+| Door_image_vlm_off | 5 | B | 3370729 | PENDING | - |
 

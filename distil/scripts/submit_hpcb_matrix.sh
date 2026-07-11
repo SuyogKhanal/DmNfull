@@ -1,17 +1,24 @@
 #!/bin/bash
-# submit_hpcb_matrix.sh — HPC-B (cluster: rohan) launcher for its OWNED state cells:
-# Wipe + Door, all 6 arms x 5 seeds = 60 DISTIL jobs (HANDOFF_HPC2 §3; whole cells only).
-# Each ablation-branch+seed is ONE job. Ni comes from the per-task config (Wipe=12,
-# Door=4 after upstream b5485c09) — NUM_INIT is NOT passed. Per-task bootstrap subdir
-# distil/results/shared_bootstrap/<T>_state holds the byte-identical shared bootstrap.
+# submit_hpcb_matrix.sh — HPC-B (cluster: rohan) launcher for its OWNED cells.
+# Whole cells only (HANDOFF_HPC2 §3); each (task,modality,arm,seed) is ONE job.
+# Ni comes from the per-task config (Wipe=12, Door=4, Lift=8) — NUM_INIT is NOT passed.
+# Bootstrap: per-(task,modality) subdir distil/results/shared_bootstrap/<T>_<MODALITY>/.
 #
-# Usage:
-#   distil/scripts/submit_hpcb_matrix.sh --dry-run     # preview, submit nothing
-#   distil/scripts/submit_hpcb_matrix.sh               # submit for real (needs a real key)
-#   SEEDS="1" distil/scripts/submit_hpcb_matrix.sh     # seed subset (staged submission)
+# Parameterized via env:
+#   TASKS_OVERRIDE   default "Wipe Door"
+#   MODALITY         state | image           (default state)
+#   ARMS_OVERRIDE    default = 6 DISTIL arms; for baselines pass the gate family
+#   SEEDS            default "1 2 3 4 5"
+#   BUDGET           default 20
 #
-# SAFETY: refuses to submit unless OPENROUTER_API_KEY is a real sk-or-... key (4/6 arms
-# need the live LLM; an empty key silently degrades them to the geometric fallback).
+# Examples:
+#   MODALITY=image TASKS_OVERRIDE=Door distil/scripts/submit_hpcb_matrix.sh              # Door image DISTIL (30)
+#   TASKS_OVERRIDE=Door ARMS_OVERRIDE="diffdagger safe dropout ensemble thrifty stagger" \
+#       distil/scripts/submit_hpcb_matrix.sh                                             # Door state baselines (30)
+#   distil/scripts/submit_hpcb_matrix.sh --dry-run                                       # preview
+#
+# SAFETY: DISTIL LLM arms need a real sk-or- key; refuses to submit without one. (Baseline
+# arms don't use the LLM, but the key is present anyway, so the guard is a no-op for them.)
 set -eo pipefail
 
 ROOT="${DISTIL_ROOT:-$PWD}"
@@ -19,33 +26,32 @@ cd "$ROOT"
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 
 TASKS=(${TASKS_OVERRIDE:-Wipe Door})
+MODALITY="${MODALITY:-state}"
 ARMS=(${ARMS_OVERRIDE:-full memory_off allocation_random clustering_off decision_heuristic vlm_off})
 SEEDS=(${SEEDS:-1 2 3 4 5})
 BUDGET="${BUDGET:-20}"
-CONDA_ENV="${CONDA_ENV:-diffdagger}"   # diffdagger already satisfies every pin on rohan
+CONDA_ENV="${CONDA_ENV:-diffdagger}"
 PART="${PART:-gpu}"
 QOS="${QOS:-batch-long}"
-TIME="${TIME:-1-00:00:00}"
-# PORTABILITY §2: torch 2.4.1+cu121 has NO kernels for the Blackwell node
-# (rtxp6000l-f-01 = RTX PRO 6000, sm_100/120) -> "no kernel image". L40S + V100 are fine.
-EXCLUDE="${EXCLUDE:-rtxp6000l-f-01}"
+# image runs render every step -> slower; give them 2 days by default.
+[ "$MODALITY" = "image" ] && DEFTIME="2-00:00:00" || DEFTIME="1-00:00:00"
+TIME="${TIME:-$DEFTIME}"
+EXCLUDE="${EXCLUDE:-rtxp6000l-f-01}"   # Blackwell node: no cu121 kernels (PORTABILITY §2)
 BSROOT="$ROOT/distil/results/shared_bootstrap"
-LEDGER="$ROOT/distil/results/_submitted_hpcb.tsv"
+LEDGER="$ROOT/distil/results/_submitted_hpcb_${MODALITY}.tsv"
 
 # --- key guard ---
 KEY="$(grep -E '^OPENROUTER_API_KEY=' "$ROOT/.env" 2>/dev/null | head -1 | cut -d= -f2-)"
 if [ "$DRY" = "0" ]; then
-  case "$KEY" in
-    sk-or-*) : ;;
-    *) echo "REFUSING: OPENROUTER_API_KEY in $ROOT/.env is not a real sk-or-... key."; exit 2;;
-  esac
+  case "$KEY" in sk-or-*) : ;; *) echo "REFUSING: no real sk-or- OPENROUTER_API_KEY in $ROOT/.env"; exit 2;; esac
 fi
 
-# --- bootstrap presence guard (per-task subdir; Ni is baked into the filename) ---
+# --- bootstrap presence guard (per task,modality; Ni baked into the filename) ---
 for T in "${TASKS[@]}"; do
-  ls "$BSROOT/${T}_state"/${T}_state_ni*.pkl >/dev/null 2>&1 || {
-    echo "MISSING bootstrap for $T at $BSROOT/${T}_state/. Run:"
-    echo "  python -m distil.run --make-bootstrap --task $T --modality state --bootstrap-dir $BSROOT/${T}_state"
+  ls "$BSROOT/${T}_${MODALITY}"/${T}_${MODALITY}_ni*.pkl >/dev/null 2>&1 || {
+    echo "MISSING bootstrap: $BSROOT/${T}_${MODALITY}/${T}_${MODALITY}_ni*.pkl"
+    echo "  gen: python -m distil.run --make-bootstrap --task $T --modality $MODALITY --bootstrap-dir $BSROOT/${T}_${MODALITY}"
+    echo "  (image bootstrap renders frames -> run on a GPU node / EGL, not the login node)"
     exit 3; }
 done
 
@@ -53,12 +59,12 @@ mkdir -p "$ROOT/distil/slurm_logs"
 [ "$DRY" = "0" ] && : > "$LEDGER"
 n=0
 for T in "${TASKS[@]}"; do
-  BOOTSTRAP_DIR="$BSROOT/${T}_state"
+  BOOTSTRAP_DIR="$BSROOT/${T}_${MODALITY}"
   for A in "${ARMS[@]}"; do
     for S in "${SEEDS[@]}"; do
-      OUT="$ROOT/distil/results/$T/state/$A/seed$S"
-      JOBNAME="distil_${T}_${A}_s${S}"
-      EXPORT="ALL,DISTIL_ROOT=$ROOT,CONDA_ENV=$CONDA_ENV,TASK=$T,MODALITY=state,ABLATION=$A,SEED=$S,BUDGET=$BUDGET,OUTPUT_DIR=$OUT,BOOTSTRAP_DIR=$BOOTSTRAP_DIR"
+      OUT="$ROOT/distil/results/$T/$MODALITY/$A/seed$S"
+      JOBNAME="distil_${T}_${MODALITY}_${A}_s${S}"
+      EXPORT="ALL,DISTIL_ROOT=$ROOT,CONDA_ENV=$CONDA_ENV,TASK=$T,MODALITY=$MODALITY,ABLATION=$A,SEED=$S,BUDGET=$BUDGET,OUTPUT_DIR=$OUT,BOOTSTRAP_DIR=$BOOTSTRAP_DIR"
       CMD=(sbatch --parsable --job-name="$JOBNAME" --partition="$PART" --qos="$QOS" --time="$TIME"
            --exclude="$EXCLUDE" --export="$EXPORT" distil/scripts/run_distil.sbatch)
       n=$((n+1))
@@ -66,7 +72,7 @@ for T in "${TASKS[@]}"; do
         echo "[$n] $JOBNAME  (Ni=config, budget=$BUDGET, bootstrap=$BOOTSTRAP_DIR)"
       else
         JID=$("${CMD[@]}")
-        printf "%s\tstate\t%s\t%s\t%s\t%s\n" "$T" "$A" "$S" "$JID" "$OUT" >> "$LEDGER"
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$T" "$MODALITY" "$A" "$S" "$JID" "$OUT" >> "$LEDGER"
         echo "[$n] submitted $JOBNAME -> job $JID"
       fi
     done
