@@ -100,7 +100,7 @@ Two clusters, one ledger (HANDOFF_HPC2 §3, §6). Per-cluster jobids.
 | Door_state_clustering_off | 4 | B | 3361443 | COMPLETED | 0.93 |
 | Door_state_clustering_off | 5 | B | 3361444 | COMPLETED | 0.94 |
 | Door_state_decision_heuristic | 1 | B | 3361445 | COMPLETED | 0.96 |
-| Door_state_decision_heuristic | 2 | B | 3361446 | SUBMITTED | - |
+| Door_state_decision_heuristic | 2 | B | 3361446 | COMPLETED | 0.97 |
 | Door_state_decision_heuristic | 3 | B | 3361447 | COMPLETED | 1.0 |
 | Door_state_decision_heuristic | 4 | B | 3361448 | COMPLETED | 0.98 |
 | Door_state_decision_heuristic | 5 | B | 3361449 | COMPLETED | 0.96 |
@@ -108,5 +108,5 @@ Two clusters, one ledger (HANDOFF_HPC2 §3, §6). Per-cluster jobids.
 | Door_state_vlm_off | 2 | B | 3361451 | COMPLETED | 0.99 |
 | Door_state_vlm_off | 3 | B | 3361452 | COMPLETED | 0.99 |
 | Door_state_vlm_off | 4 | B | 3361453 | COMPLETED | 0.92 |
-| Door_state_vlm_off | 5 | B | 3361454 | SUBMITTED | - |
+| Door_state_vlm_off | 5 | B | 3361454 | COMPLETED | 0.97 |
 
