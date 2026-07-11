@@ -119,10 +119,10 @@ HPC-A: GridWorld + Lift. HPC-B (rohan): Wipe/Door state DISTIL (done), Door stat
 | Door_state_safe | 4 | B | 3370660 | COMPLETED | 0.93 |
 | Door_state_safe | 5 | B | 3370661 | COMPLETED | 0.96 |
 | Door_state_dropout | 1 | B | 3370662 | COMPLETED | 0.94 |
-| Door_state_dropout | 2 | B | 3370663 | RUNNING | - |
+| Door_state_dropout | 2 | B | 3370663 | COMPLETED | 0.96 |
 | Door_state_dropout | 3 | B | 3370664 | COMPLETED | 0.98 |
 | Door_state_dropout | 4 | B | 3370665 | COMPLETED | 0.96 |
-| Door_state_dropout | 5 | B | 3370666 | RUNNING | - |
+| Door_state_dropout | 5 | B | 3370666 | COMPLETED | 0.99 |
 | Door_state_ensemble | 1 | B | 3370667 | RUNNING | - |
 | Door_state_ensemble | 2 | B | 3370668 | RUNNING | - |
 | Door_state_ensemble | 3 | B | 3370669 | RUNNING | - |
@@ -133,24 +133,24 @@ HPC-A: GridWorld + Lift. HPC-B (rohan): Wipe/Door state DISTIL (done), Door stat
 | Door_state_thrifty | 3 | B | 3370674 | RUNNING | - |
 | Door_state_thrifty | 4 | B | 3370675 | COMPLETED | 0.94 |
 | Door_state_thrifty | 5 | B | 3370676 | COMPLETED | 0.95 |
-| Door_state_stagger | 1 | B | 3370677 | RUNNING | - |
-| Door_state_stagger | 2 | B | 3370678 | RUNNING | - |
-| Door_state_stagger | 3 | B | 3370679 | RUNNING | - |
-| Door_state_stagger | 4 | B | 3370680 | RUNNING | - |
-| Door_state_stagger | 5 | B | 3370681 | RUNNING | - |
+| Door_state_stagger | 1 | B | 3370677 | COMPLETED | 0.93 |
+| Door_state_stagger | 2 | B | 3370678 | COMPLETED | 0.91 |
+| Door_state_stagger | 3 | B | 3370679 | COMPLETED | 0.95 |
+| Door_state_stagger | 4 | B | 3370680 | COMPLETED | 0.94 |
+| Door_state_stagger | 5 | B | 3370681 | COMPLETED | 0.94 |
 
 ## HPC-B Door IMAGE DISTIL
 | cell | seed | hpc | jobid | state | final_SR |
 |---|---|---|---|---|---|
 | Door_image_full | 1 | B | 3370700 | RUNNING | - |
 | Door_image_full | 2 | B | 3370701 | RUNNING | - |
-| Door_image_full | 3 | B | 3370702 | RUNNING | - |
+| Door_image_full | 3 | B | 3370702 | COMPLETED | 0.86 |
 | Door_image_full | 4 | B | 3370703 | RUNNING | - |
 | Door_image_full | 5 | B | 3370704 | RUNNING | - |
 | Door_image_memory_off | 1 | B | 3370705 | RUNNING | - |
 | Door_image_memory_off | 2 | B | 3370706 | RUNNING | - |
 | Door_image_memory_off | 3 | B | 3370707 | RUNNING | - |
-| Door_image_memory_off | 4 | B | 3370708 | RUNNING | - |
+| Door_image_memory_off | 4 | B | 3370708 | COMPLETED | 0.87 |
 | Door_image_memory_off | 5 | B | 3370709 | RUNNING | - |
 | Door_image_allocation_random | 1 | B | 3370710 | RUNNING | - |
 | Door_image_allocation_random | 2 | B | 3370711 | RUNNING | - |
