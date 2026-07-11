@@ -139,8 +139,9 @@ def _gw_bootstrap(n, bootstrap_dir, log):
 
 def _run_baseline(cfg, args, out, device, n_init, make_env_fn, make_expert_fn, log):
     env_h = cfg["env_horizon"]
+    img = int(cfg["image_size"]) if cfg["modality"] == "image" else None
     init = _bootstrap(cfg["task"], cfg["modality"], n_init, args.bootstrap_dir,
-                      make_env_fn, make_expert_fn, env_h, log)
+                      make_env_fn, make_expert_fn, env_h, log, img)
     if args.make_bootstrap:
         log(f"[make-bootstrap] done: {len(init)} demos")
         return
@@ -153,7 +154,7 @@ def _run_baseline(cfg, args, out, device, n_init, make_env_fn, make_expert_fn, l
     from .baselines import run_baseline
     t0 = time.time()
     result = run_baseline(cfg, args.ablation, make_env_fn, make_expert_fn, device,
-                          log_fn=log, init_trajs=init)
+                          log_fn=log, init_trajs=init, image_size=img)
     result["wall_sec"] = round(time.time() - t0, 1)
     result["task"], result["modality"] = cfg["task"], cfg["modality"]
     result["ablation"], result["seed"] = cfg["ablation"], cfg["seed"]

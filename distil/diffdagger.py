@@ -135,13 +135,16 @@ def calibrate_ni(cfg, make_env_fn, make_expert_fn, device, log_fn):
 
 
 @torch.no_grad()
-def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, log_fn):
+def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, log_fn,
+                   image_size=None):
     """One DAgger episode. Returns metrics + (optional) intervention trajectory."""
+    from .eval import frame
     obs_horizon = cfg["obs_horizon"]
     s = env.reset(seed=seed)
     expert.reset(env)
     policy.reset_query()
     dq = deque([s] * obs_horizon, maxlen=obs_horizon)
+    idq = deque([frame(env, image_size)] * obs_horizon, maxlen=obs_horizon) if image_size else None
 
     t, done, success, queried = 0, False, False, False
     max_loss = 0.0
@@ -151,7 +154,7 @@ def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, 
     # score its expected diffusion loss (the Diff-DAgger uncertainty), query on
     # the K-patience rule, otherwise execute the first action (receding horizon).
     while t < policy_phase_cap and not done:
-        obs_seq = make_obs_seq(dq, obs_horizon, device)
+        obs_seq = make_obs_seq(dq, obs_horizon, device, idq)
         action_chunk, diff_loss = policy.get_action_and_uncertainty(obs_seq)
         max_loss = max(max_loss, diff_loss)
         if policy.register_and_query(diff_loss):
@@ -160,6 +163,8 @@ def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, 
         a = action_chunk[0, 0].cpu().numpy()
         s, r, done, success, info = env.step(a)
         dq.append(s)
+        if idq is not None:
+            idq.append(frame(env, image_size))
         t += 1
 
     # ---- auto-intervention on timeout (no query, no success) ----
@@ -168,12 +173,14 @@ def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, 
         auto = True
 
     # ---- expert takeover from the current state ----
-    interv_states, interv_actions = [], []
+    interv_states, interv_actions, interv_images = [], [], []
     if (queried or auto) and not success:
         while not done:
             a = np.asarray(expert.get_action(env, s), dtype=np.float32)
             interv_states.append(np.asarray(s, dtype=np.float32))
             interv_actions.append(a)
+            if image_size:
+                interv_images.append(frame(env, image_size))
             s, r, done, success, info = env.step(a)
             dq.append(s)
             t += 1
@@ -181,6 +188,8 @@ def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, 
     traj = None
     if interv_states:
         traj = {"state": np.stack(interv_states), "action": np.stack(interv_actions)}
+        if image_size and interv_images:
+            traj["image"] = np.stack(interv_images)
     return dict(
         success=bool(success), queried=queried, auto=auto, length=t,
         intervention=traj, max_loss=float(max_loss),
@@ -189,7 +198,7 @@ def dagger_episode(policy, env, expert, cfg, *, seed, device, policy_phase_cap, 
 
 
 def run_diffdagger(cfg, make_env_fn, make_expert_fn, device, log_fn=print, ckpt_path=None,
-                   init_trajs=None):
+                   init_trajs=None, image_size=None):
     """Full Diff-DAgger run. `make_env_fn(horizon)` and `make_expert_fn()` build
     fresh env/expert instances. If `init_trajs` is given it is used as the
     initial dataset (e.g. the first Ni demos from a BC-calibration pool);
@@ -214,6 +223,7 @@ def run_diffdagger(cfg, make_env_fn, make_expert_fn, device, log_fn=print, ckpt_
         trajs = collect_demos(
             collect_env, expert, cfg["num_init_demos"],
             seed_base=int(rng.integers(0, 1_000_000)), max_steps=env_horizon, log_fn=log_fn,
+            image_size=image_size,
         )
 
     history = {"round": [], "eval_success": [], "eval_coverage": [], "n_trajs": [],
@@ -231,6 +241,7 @@ def run_diffdagger(cfg, make_env_fn, make_expert_fn, device, log_fn=print, ckpt_
             policy, eval_env, num_episodes=eval_eps,
             obs_horizon=cfg["obs_horizon"], act_horizon=cfg["act_horizon"],
             device=device, base_seed=eval_seed_base, max_steps=env_horizon,
+            image_size=image_size,
         )
         cov_str = f" coverage={ev['mean_coverage']:.3f}" if "mean_coverage" in ev else ""
         log_fn(f"  [eval] pure-policy success={ev['success_rate']:.3f} "
@@ -245,6 +256,7 @@ def run_diffdagger(cfg, make_env_fn, make_expert_fn, device, log_fn=print, ckpt_
             res = dagger_episode(
                 policy, dagger_env, expert, cfg,
                 seed=seed_counter, device=device, policy_phase_cap=env_horizon, log_fn=log_fn,
+                image_size=image_size,
             )
             seed_counter += 1
             n_episodes += 1

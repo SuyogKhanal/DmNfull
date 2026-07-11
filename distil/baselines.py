@@ -101,13 +101,13 @@ def _query(arm, policies, q_head, obs_seq, a_exp, device):
 
 
 def run_baseline(cfg, arm, make_env_fn, make_expert_fn, device, log_fn=print,
-                 init_trajs=None):
+                 init_trajs=None, image_size=None):
     """One baseline arm; same eval/budget as DISTIL. arm in {diffdagger,safe,dropout,
-    ensemble,thrifty,stagger}."""
+    ensemble,thrifty,stagger}. image_size>0 => image-conditioned policy (frames)."""
     from .diffdagger import run_diffdagger
     if arm == "diffdagger":                      # native distil Diff-DAgger loop
         hist = run_diffdagger(cfg, make_env_fn, make_expert_fn, device, log_fn=log_fn,
-                              init_trajs=init_trajs)
+                              init_trajs=init_trajs, image_size=image_size)
         return _wrap_history(hist, cfg, arm)
 
     env_h = cfg["env_horizon"]
@@ -139,7 +139,8 @@ def run_baseline(cfg, arm, make_env_fn, make_expert_fn, device, log_fn=print,
 
         ev = evaluate_policy(policy, eval_env, num_episodes=cfg["eval_episodes"],
                              obs_horizon=obs_h, act_horizon=act_h, device=device,
-                             base_seed=cfg["eval_seed_base"], max_steps=env_h)
+                             base_seed=cfg["eval_seed_base"], max_steps=env_h,
+                             image_size=image_size)
         log_fn(f"  [eval] SR={ev['success_rate']:.3f}")
         n_at_eval = len(trajs)
         if len(trajs) >= final_demos:
@@ -149,7 +150,8 @@ def run_baseline(cfg, arm, make_env_fn, make_expert_fn, device, log_fn=print,
 
         # roll the policy on fresh seeds; the gate decides where the expert takes over.
         demo = _collect_intervention(arm, policies, q_head, env, expert, cfg,
-                                     seed=screen_base + rnd, device=device, log_fn=log_fn, rng=rng)
+                                     seed=screen_base + rnd, device=device, log_fn=log_fn,
+                                     rng=rng, image_size=image_size)
         if demo is not None:
             trajs.append(demo)
         history.append({"round": rnd, "n_demos_at_eval": n_at_eval,
@@ -180,44 +182,54 @@ def _rollout_states(policy, env, obs_h, act_h, seed, device, max_steps):
 
 
 def _collect_intervention(arm, policies, q_head, env, expert, cfg, *, seed, device,
-                          log_fn, rng, max_rollouts=20):
+                          log_fn, rng, max_rollouts=20, image_size=None):
     """Roll the policy; at the first gate-fire step, expert takes over to done -> demo."""
-    from .collect import rollout_expert
+    from .eval import frame
     obs_h, act_h, env_h = cfg["obs_horizon"], cfg["act_horizon"], cfg["env_horizon"]
     policy = policies[0]
     for k in range(max_rollouts):
         s = env.reset(seed=seed + k)
         expert.reset(env)
         dq = deque([s] * obs_h, maxlen=obs_h)
+        idq = deque([frame(env, image_size)] * obs_h, maxlen=obs_h) if image_size else None
         t, done, success = 0, False, False
         if arm == "stagger":                       # random intervention timestep
             fire_at = int(rng.integers(0, max(1, env_h // 2)))
-        states, actions = [], []
         while t < env_h and not done:
-            obs_seq = make_obs_seq(dq, obs_h, device)
+            obs_seq = make_obs_seq(dq, obs_h, device, idq)
             a_exp = np.asarray(expert.get_action(env, s), dtype=np.float32)
             fire = (t >= fire_at) if arm == "stagger" else _query(arm, policies, q_head, obs_seq, a_exp, device)
             if fire:
                 # expert takeover to done -> the corrective demo
-                st, ac, succ, _ = _expert_from(env, expert, s, env_h)
-                if succ and st is not None:
-                    log_fn(f"  [{arm}] intervention at t={t} (rollout {k}) len={len(ac)}")
-                    return {"state": st, "action": ac}
+                demo, succ, _ = _expert_from(env, expert, s, env_h, image_size)
+                if succ and demo is not None:
+                    log_fn(f"  [{arm}] intervention at t={t} (rollout {k}) len={len(demo['action'])}")
+                    return demo
                 break
             a_nov = policy.get_action(obs_seq)[0, 0].cpu().numpy()
             s, r, done, success, info = env.step(a_nov); dq.append(s); t += 1
+            if idq is not None:
+                idq.append(frame(env, image_size))
     return None
 
 
-def _expert_from(env, expert, s, max_steps):
-    states, actions, done, success, t = [], [], False, False, 0
+def _expert_from(env, expert, s, max_steps, image_size=None):
+    """Expert takeover from state s to done. Returns (demo|None, success, len); demo =
+    {state, action[, image]} (image frames aligned with each recorded state)."""
+    from .eval import frame
+    states, actions, images, done, success, t = [], [], [], False, False, 0
     while not done and t < max_steps:
         a = np.asarray(expert.get_action(env, s), dtype=np.float32)
         states.append(np.asarray(s, dtype=np.float32)); actions.append(a)
+        if image_size:
+            images.append(frame(env, image_size))
         s, r, done, success, info = env.step(a); t += 1
     if not states or not success:
-        return None, None, success, t
-    return np.stack(states), np.stack(actions), success, t
+        return None, success, t
+    demo = {"state": np.stack(states), "action": np.stack(actions)}
+    if image_size and images:
+        demo["image"] = np.stack(images)
+    return demo, success, t
 
 
 def _wrap_history(hist, cfg, arm):
