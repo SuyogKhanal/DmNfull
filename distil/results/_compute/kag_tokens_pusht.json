@@ -1,0 +1,15 @@
+{
+  "task": "PushT",
+  "modality": "image",
+  "tokenizer": "/weka/s226137394/models/Qwen3-32B",
+  "method": "exact tokenization, with the SERVING tokenizer (the HF tokenizer the vLLM server loads for the served text model), of the verbatim block _kag_block(format_kag_for_prompt(KAG)) that the pipeline splices into every KAG-carrying prompt; cross-checked by a paired prompt-token diff (same prompt rendered with and without the KAG block)",
+  "kag_text_path": "/weka/s226137394/DmNfull/Equivariant_pathway/equivariant_CNN_hybrid/baseline_vs_p4/pool_rl_robo/p4/kag/PushT-v1.kag.txt",
+  "kag_chars": 5035,
+  "kag_tokens": 1433,
+  "kag_tokens_text_only": 1374,
+  "kag_tokens_paired_diff": {
+    "analysis": 1431,
+    "prescription": 1471
+  },
+  "note": "kag_tokens is the per-CALL cost; per-round cost = kag_calls * kag_tokens, where kag_calls is counted from the run's own d5_events.jsonl (kag_in_prompt==true). The VLM prompts carry no KAG block. The paired diffs differ slightly per prompt type because each builder also emits a short KAG-conditional instruction line; the spliced block itself is kag_tokens."
+}

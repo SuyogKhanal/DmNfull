@@ -1,0 +1,85 @@
+The load-bearing principles (these drive most of the edits)
+1. Frame everything as a general framework; specific numbers are just one instance. This is his single most repeated point. A framework is general — you take one instance and run it. B=20, D=1 demo/round, the 5 tasks, the specific thresholds — those are one configuration you tested, not the framework itself. If you write your contribution as "works at a 20-demonstration budget," a reviewer reads it as "only works at 20." Instead: "works under any fixed/restricted budget," and B=20 is the instance you validated. Same logic applies to the algorithm, the questions, and any hardcoded component. Rule of thumb he gave: use the symbol in the method/algorithm, give the concrete value only in Setup.
+2. The Method section must contain only your novelty. Anything standard — the BC objective, dataset aggregation, the generic query-gate template, the silhouette criterion, A*/BFS, even the Diff-DAgger rule — is not yours. Citing it inside "Method" doesn't fix it; listing it under the Method heading still signals ownership, and reviewers skim. His exact warning: a reviewer reading fast sees standard equations under your Method and concludes "half of this is copied, where's the novelty?" So common material goes up to Related Work / a Mathematical Background, or is explicitly framed as "we follow standard practice" / "for completeness." His analogies: you use integration without explaining who invented it; you mention SVM as a classifier you use, not as if you're deriving it.
+3. Abstract everything swappable. Don't hardcode a specific technique as if the method depends on it. His example: don't say "K-means," say "a clustering step C, instantiated here as agglomerative clustering (could also be K-means, etc.)." That way the framework "involves clustering," not "requires K-means." Note this one is easy for you — you already use agglomerative, so you just present it as one instantiation of a generic clustering step. The tradeoff he flagged: more generality invites "did you ablate the alternatives?" You do the top ablations only and defer the rest to reviewer requests.
+4. Read your own paper adversarially. His framing: read it as if a stranger wrote it, criticize every word, "assume this guy is a bullshit guy." Reading it as the author (who knows the intent) is why you didn't catch that you use "mode" in two conflicting senses.
+5. Space discipline. You're at the ceiling and every line counts (see the page-limit note at the end). This is why he's hunting dangling words and fat captions.
+
+Abstract
+
+"Setting" is used before it's defined. He read top-to-bottom, hit "(five per setting)," and nothing before it told him what a setting is. Define it: a setting = a task under one observation modality (state or image). Then "ten task–modality settings" reads cleanly, and "(five per setting)" clearly means five baselines per setting (six distinct across the two settings). Right now this collides in the reader's head with "5 tasks" — and it collided in yours too during the convo. Separate the two ideas explicitly: 5 tasks × 2 modalities = 10 settings; 5 baselines compared within each.
+Expand DISTIL in full at first mention, and bold the acronym letters. Write it as Demonstration DISTILlation — bold the D of Demonstration and the "ISTIL" inside Distillation, so the reader sees where the acronym comes from. ("Sample-Efficient Imitation Learning" is the descriptor, not part of the acronym, so no bolding there.) Double-check the exact letters render as D-I-S-T-I-L.
+Bold only in the abstract, not the title. The title is already in bold face, so the acronym highlighting wouldn't be visible there anyway; leave the title plain. He raised underlining as an alternative some people use, then dropped it — you were right to worry it might clash with AAAI style. Bold is enough.
+Break up the long final sentence. The closing sentence chains three claims (highest success rate / highest info gain / Pearson r). Split into separate sentences.
+Fix the "prescription confidences that predict realized policy improvement" phrasing — you flagged it yourself as unclear.
+Don't enumerate every framework component in the abstract. State the main problem you solved; you don't owe the reader each module here.
+
+
+Figure 1 (teaser)
+Minor, and he said so ("taking it from 98% to 99%, not make-or-break"): the caption opens with "An LLM diagnoses…" but LLM appears nowhere in the title. If you can reword so LLM isn't the very first thing the teaser foregrounds, do; if not, leave it.
+
+Introduction
+
+Re-expand all abbreviations at first use here too. The abstract is treated as a standalone unit, so definitions there don't carry into the body. First instance in the intro = expand again.
+Don't open a paragraph with "This is wasteful under the constraint that binds." He's never seen a strong paper start a paragraph on a bare "This is…" (the referent is also vague — "what is this?"). Fold it into the preceding paragraph or reword to something like "The aforesaid gating is wasteful under the binding constraint…".
+Remove the Figure 2 reference from the intro. Figure 2 is your architecture/method figure — it belongs in Method and should be referenced only there. Two related rules: (a) a figure should sit on the same page as its first reference or the immediately next page, never two pages later, and Figure 2 currently drifts; (b) if a reference isn't essential to the point, don't make it. Referencing the method figure in the intro is avoidable, so drop it. Keep Figure 1 in the intro.
+Stop repeating "20-demonstration budget." You acknowledged it appears many times. It's fine to state, but not repeatedly, and especially not in the intro. Tie this to principle #1 — reframe the contribution as "any fixed budget," B=20 as the tested instance.
+The mode / modality collision. "Failure modes" (your clusters) and "modalities" / "state-and-image modes" are both being called "mode." This confused him immediately. Pick distinct words — e.g., keep "failure modes" and always say "modality" (or "observation setting") for state/image — and sweep the whole paper for it.
+Naming the two arms (deferred). He asked whether you can formally name the two prescription arms — "which mode to correct" (targeted correction) and "where to start" (bridging). You mentioned you'd had names and removed them. He also poked at "bridge": a bridge connects two ends, but you connect two or three failures, so "consolidate" or "compress" might fit better. Left open — decide later, not urgent.
+
+
+Related Work
+Too short — expand it. This is also the destination for the common material you're pulling out of Method (below).
+
+Method — the biggest structural change
+Walk the equations and separate yours from standard:
+
+Eq 1 (BC objective) — common.
+Eq 2 (per-step loss as a self-uncertainty signal) — existing; it's the Diff-DAgger idea.
+Eq 3 (dataset aggregation + retrain) — common DAgger.
+Eq 4 (generic query-gate template) — not yours.
+Eq 5 (Diff-DAgger's query rule) — this is literally a baseline's rule; he directly asked why it's sitting in your Method.
+Eqs 6–10 — your loop: peak-loss step (6), featurization (7), silhouette-k (8, but note silhouette itself is a standard criterion), cluster memory (9, genuinely novel), bridging/KAG-workspace-bound placement (10, novel). He also noted the first two equations "look primitive" — don't dwell on them.
+
+Concrete moves:
+
+Pull "Baseline Query Rules" out of Method. Baselines are published work; their mechanics are background. Your Method should start at "The DISTIL Loop."
+Create a "Baselines" subsection in Experiments instead: "From these methods we compare against SafeDAgger, DropoutDAgger, EnsembleDAgger, ThriftyDAgger, Stagger, Diff-DAgger," one qualitative line each on what it does.
+Drop the baselines' specific hyperparameters (τ=0.1, p=0.9, χ=0.05, α=0.99, etc.) — those are their numbers. Describe qualitatively: "SafeDAgger gates on X, DropoutDAgger on Y, Diff-DAgger on its diffusion loss, DISTIL on …".
+Shorten the first two baseline paragraphs and don't over-claim on existing machinery. Add a "for completeness, we restate the common query template" framing so it's clear you're not claiming it. Your defense in the convo — "I'm describing them collectively, not claiming it" — is exactly the resolution he accepted: if you're describing standard practice, say "we also follow this," which neutralizes the ownership problem.
+Cite the standard algorithms you merely use — A* / BFS for the corridor validity check. Even "just using it" warrants a citation to acknowledge the source.
+
+
+Algorithm 1
+
+It reads like a compressed Method section, not an algorithm. His test: an imitation-learning reader who skips your prose should still get the gist of the whole method from the algorithm alone.
+It's too wordy (step 5 especially). Break dense steps into separate, atomic steps so the flow is visible — e.g., "VLM describes frames" as its own step 4, "retrain f_θ on D_r" as its own line at step 6. You noted you tried a notation-heavy version with Claude and it became unreadable; the fix isn't more symbols, it's more, shorter steps.
+Remove "B=20" from the loop header — use "for r = 1 to B."
+"One demonstration per round" (judgment call). He probed whether D=1 is a fixed part of the framework or a configurable parameter. If it's fixed, fine, but then consider whether generalizing to D demos/round buys you a more generic framework — at the cost of inviting "ablate D=2, D=3." His steer: decide deliberately; don't leave it ambiguous.
+
+
+Experiments / Setup
+
+Q1 and the questions should say "budget B," with B=20 defined in Setup. Same parameterize-then-specify move.
+Setup holds all concrete values (B, D, thresholds, seeds).
+"Equation 10 gives the Push-T mechanism" is wrong as written. Eq 10 is general — the KAG workspace bound applies to every task, each with its own parameter values (Lift, Door, etc.). Reword so the equation reads as general and Push-T is just one parameterization, not the mechanism itself.
+Define ΔSR where it first appears. He couldn't find its definition on first pass. State plainly: ΔSR = change in the policy's success rate on the round-level rollout evaluation (the 20-layout pool on GridWorld; the round's 60 rollout episodes on robot). Note he corrected your "ground level" → "round level"; make sure the text says round-level.
+Seed counts — standardize if you can. 9 seeds on GridWorld vs 5 on robot forces extra explanation. His point is about verbosity: a constant configuration ("5 seeds across all tasks") is cleaner to write than per-task seed counts. If you drop GridWorld to 5 to match, use 5 random seeds — no cherry-picking — and check the numbers land in the same ballpark.
+
+
+Figures and captions
+
+Figure 3, Wipe (image) — the non-plateau risk. GridWorld and Door curves saturate, so they're defensible (no further gain possible). But on Wipe, DISTIL and a baseline are both still rising at demo 20. A hostile reviewer can ask: what happens between 20 and 25 — does the baseline catch up or cross? You have no proof it plateaus. Your options: run a few more demos to show the plateau, or lean on the already-clear final gap (89.6 vs 95.3). Judgment call, but be ready for the question.
+Trim Table 2's caption and Figure 4's caption — both are too long.
+Dangling words. ("Latka" = hanging, and yes, keep it in English so the transcript catches it.) A single word spilling onto its own line wastes a full line: "plateau" at the end of the Figure 3 caption, "next steps"/"steps" at the end of Limitations, and he expects more scattered around. Tighten the wording to reclaim those lines.
+
+
+Headings
+Q3 subsection: no semicolon. "Confidence as an Improvement Predictor; Discovered Modes" — replace the semicolon with a colon (if you're defining) or a hyphen: e.g., "Discovered Modes — Confidence as an Improvement Predictor." He's never seen a semicolon in a heading.
+
+Page limit, Limitations, and the supplementary workflow
+
+The page rule: 7 pages of content + up to 2 pages of references. Your question — "if my references are under 2 pages, can I spill into content?" — the answer is no. If the venue meant "9 total including references" they'd have said so; "7 + 2" means content is capped at 7 regardless of how short your references are. This is why all the space-saving matters.
+Limitations — check whether AAAI requires it in the main paper. If not explicitly required, consider moving it (or part of it) to the supplementary to buy space.
+Point to the supplementary for extra experiments. Before the Conclusion (or right after Q2/Q3), add a one-liner: "Additional experiments in supplementary A.1 / A.2 / A.3." That line does double duty — it lets you offload results, and it tells a future reader (arXiv, your GitHub, or the AAAI-hosted supplementary if accepted) that an appendix exists and where to look. AAAI hosts supplementary as a separate file; they don't merge it into the main PDF.
+The workflow he wants during revision: keep the appendix in the same file as the main paper while you and your supervisors are reviewing, so cross-references resolve and, more importantly, so they can see everything and tell you what to pull up into the main paper or push down. You split it only at submission: trim the main paper to the 9-page limit, submit the appendix as a separate supplementary file. His closing line was basically "if you don't give us the full document, we can't engage with it" — so don't send him a trimmed version to review.

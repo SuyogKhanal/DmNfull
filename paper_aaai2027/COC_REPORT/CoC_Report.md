@@ -1,0 +1,2256 @@
+\begin{titlepage}
+\centering
+\includegraphics[width=0.80\textwidth]{A2I2_Logo_Stacked_2025_Keyline.png}\\[2.2cm]
+{\Large\bfseries Confirmation of Candidature Report}\\[0.35cm]
+{\large Deakin University}\\
+{\large Deakin Applied Artificial Intelligence Initiative (A2I2)}\\[1.9cm]
+{\LARGE\bfseries Leveraging Large Language Models\\[0.2cm] for Sample-Efficient Imitation Learning}\\[2.2cm]
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+\textbf{Candidate} & Suyog Khanal\\
+\textbf{Student identifier} & s226137394\\[0.6em]
+\textbf{Supervisors} & Associate Professor Santu Rana\\
+                     & Dr Arun Kumar Anjanapura Venkatesh\\[0.6em]
+\textbf{Candidature start date} & 13 November 2025\\
+\textbf{Confirmation of Candidature date} & 13 August 2026\\
+\textbf{Planned thesis submission} & November 2028\\
+\end{tabular}
+\vfill
+\end{titlepage}
+
+\tableofcontents
+
+\newpage
+
+
+# Executive summary
+
+Imitation learning converts expert demonstrations into a policy, and the demonstration is the one input whose cost does not fall. Compute is bought and architectures are downloaded, while every trajectory still has to be produced by a person or by a scripted oracle, one at a time. The binding constraint on a realistic deployment is a fixed budget of $B$ demonstrations that has to be spent well. Interactive imitation learning, the family of methods descended from dataset aggregation [79], spends that budget on a single decision. Its members differ only in the scalar signal that decides *when* to hand control to the expert: a learned safety classifier [101], the spread of a Monte-Carlo dropout ensemble [65], ensemble variance [66], a novelty and risk estimate under a target switching rate [35], or a diffusion policy's own per-step training loss [47]. Two further decisions are left unclaimed. Which failure to correct, and where the corrective demonstration should begin.
+
+This programme claims that a large language model, given a structured description of how the policy is failing together with an explicit statement of what the environment permits, can make those two decisions, and that making them raises the information content of each demonstration under a restricted budget. The language model is not a controller and is never placed in the robot's control loop. It reads a summary of the policy's own failures and returns a request for one specific demonstration. Aim 1 realises the claim as a framework named after the title of its paper, **D**emonstration D**I**stillation for **S**ample-**E**fficient **I**mitation **L**earning, and that framework is DISEIL.
+
+Each round, DISEIL rolls out the current policy, reduces each failed rollout to a six-dimensional geometric descriptor of the state at which the policy first became unreliable, and partitions the round's failures into failure modes. A cross-round memory penalises the modes that have recently been corrected, so that one persistent mode cannot absorb the whole budget. A language model then prescribes the $D$ demonstrations of the round inside the selected mode, with $D = 1$ in the validated instance. The prescription is screened twice before any expert time is spent on it, once against a store of explicit environmental constraints, and once against the current policy, because a scenario the policy can already solve teaches it nothing.
+
+A setting is one task under one observation modality. DISEIL was evaluated on five tasks, a 5×5 grid-world, Push-T [17, 90] and the Lift, Wipe and Door manipulation tasks [102], each under state and image observations, which gives ten settings. Every setting compares DISEIL against five methods: four published query gates of the DAgger family in all settings, with Diff-DAgger as the fifth on the robot tasks, where the policy is a diffusion policy, and Stagger, an unpublished uniform-random allocation control implemented in this project, as the fifth on the grid-world. Nine seeds were run on the grid-world and five on the robot tasks. DISEIL attains the best mean success rate in all ten settings. The mean margin over the strongest competing method in each setting is 3.7 points. The two observation modalities of a task share the expert, the reward structure and the reset distribution, so the ten settings are not ten independent experiments, and the claim of record is the conservative one: collapsed to five task means the sweep holds at five wins from five, with a one-sided sign test at $p = 0.031$ and a paired $t$-test at $t(4) = 4.15$, $p = 0.014$.
+
+The ablations locate the advantage. Removing the partition costs 4.01 success-rate points over the eight settings that have headroom (Wilcoxon $p = 0.008$) while the per-demonstration information gain on the same eight settings does not fall (mean change $+0.06$, Wilcoxon $p = 0.25$), which establishes that a demonstration can be individually informative and jointly redundant with the one collected in the round before. Replacing the prescription model with a deterministic heuristic costs 1.08 points, and removing the vision-language model costs 1.01, both of which lie inside the seed standard deviation of the corresponding full run. The reason is structural. The partition is geometric and consumes no output from any foundation model, so by the time the language model is called, the decision that matters has already been made. Aim 2 supplies the selector with the input it lacks, which is a record of the demonstrations already collected.
+
+Aim 2 gives the selector a memory of what it has already taught. A captioner inverts the mapping that vision-language-action models learn, turning a trajectory's observations and its executed actions back into language, and the captions accumulate into a coverage record that a new failure is checked against before a demonstration is requested. Aim 3 turns that record outward. Demand for a skill is shared across tasks and embodiments, and a demonstration is priced against the resource that is actually scarce outside simulation, which is a teacher's time, so that a generalist policy can ask a non-expert human for exactly the demonstrations it lacks.
+
+The Aim-1 instantiation carries two known defects, and this report states each of them at the point where it arises. The memory's Gaussian kernel width is a single global constant and is mis-scaled for the tasks whose reset ranges are narrow, so the kernel is degenerate on the four GridWorld and Door settings and the memory term is close to inert there; a per-task width is the identified fix and it has not yet been run. The Lift task saturates at 100.0 ± 0.0 under DISEIL, with neither headroom nor seed variance, so it carries no information about any mechanism and is excluded from every mechanism claim in this report, including this one.
+
+The Aim-1 manuscript was submitted to the AAAI 2027 main track in July 2026. Aim 2 targets CoRL 2027 and Aim 3 targets CoRL 2028, with thesis submission in November 2028.
+
+---
+
+# 1. Introduction and research vision
+
+## 1.1 The demonstration is the scarce resource
+
+Imitation learning turns expert demonstrations into a policy. The earliest working system fitted a network to logged pairs of camera image and steering angle and drove a vehicle with the result [73], and the framework that generalises it fits a policy to logged expert state-action pairs [2, 5]. Model capacity and observation richness have grown since. The premise has not: somebody, at some point, produced the demonstrations.
+
+Every other input to that pipeline has become cheap. Compute is bought. Simulators are free and run faster than real time. Architectures and pre-trained encoders are downloaded. The demonstration is the one input whose cost has not fallen, because it is produced by a person operating a robot one trajectory at a time, or by a scripted oracle written by an engineer who first had to solve the task by hand. Collecting demonstrations at scale is a logistics problem in its own right, and the projects that have done it read as such: a distributed teleoperation platform and a year of coordinated collection across dozens of institutions [42, 60]. The number of demonstrations available to a given project is bounded by something other than the researcher's willingness to wait.
+
+That bound would not matter if demonstrations did not help, and they do. Imitation-learning performance follows a scaling relationship in the number of demonstrations and in their diversity [51]. The demonstration is therefore both the input that most improves the policy and the input that is hardest to obtain, which is what makes it the binding cost of the whole enterprise. The constraint in a deployment setting is a budget of $B$ demonstrations that must be spent well.
+
+The budget is the object this thesis is built on, so it is worth naming its parts once and keeping the names. A *budget* $B$ is the total number of demonstrations the expert will supply over the run. Demonstrations are acquired in rounds, $D$ of them per round, and the policy is retrained after each round. $B$ and $D$ are symbols throughout the method and the algorithm; the particular values validated in this work appear only in the experimental setup, because the framework does not depend on them.
+
+Under a fixed $B$, the quantity that can still be raised is the *information content of each demonstration*: how much of what the policy does not yet know is contained in the one trajectory the expert is about to record. The claim this programme develops and tests is that a large language model, given a structured description of how the policy is failing and an explicit statement of what the environment permits, can raise it.
+
+![](../figures/Teaser_Diagram.pdf)
+
+**Figure 1. The demonstration-distillation loop.** A policy trained on a small demonstration set fails repeatedly on the same configurations. Those failures are summarised and read by a language model, which prescribes the configuration at which the next demonstration should be collected. The expert supplies one demonstration at that configuration, the demonstration is added to the training set, and the policy is retrained. Each turn of the loop spends a single unit of the demonstration budget, so the decision the loop makes is which configuration is worth one unit.
+
+## 1.2 What interactive imitation learning answers, and what it leaves open
+
+A policy cloned offline from expert data is trained on the expert's state distribution and deployed on its own, and the two distributions come apart as soon as the learner's actions determine what it sees next [85]. Small action errors move the learner off the demonstrated manifold, where its errors are larger, and the error compounds over the horizon [78]. Dataset aggregation removes the compounding by labelling the states the learner actually visits: roll out the current policy, ask the expert what to do at the states it reached, add those labels to the training set, retrain, repeat [79]. The interactive branch of imitation learning that grew out of this is now a field with its own taxonomy of feedback types [14].
+
+Its members share one skeleton and differ in one component. The skeleton is roll out, decide whether to hand control to the expert, aggregate the expert's labels, retrain. The component that differs is the scalar signal that opens the gate. SafeDAgger trains a classifier to predict when the policy is about to deviate from the expert by more than a tolerance [101]. DropoutDAgger reads the spread of a Monte-Carlo dropout ensemble over the novice's action [65]. EnsembleDAgger reads the variance of an ensemble of independently trained policies and combines it with the discrepancy between novice and expert action [66]. ThriftyDAgger combines a novelty estimate with a learned risk estimate and calibrates the pair against a target switching rate [35]. Diff-DAgger reads the diffusion policy's own per-step training loss, which is available for free and requires no second model [47]. Section 2.3 gives the family as instances of one template.
+
+Every one of those gates answers the same question, which is *when* to ask the expert for help. Three consequences follow from answering only that question, and they are the opening this programme works in.
+
+A per-state gate cannot see a batch. It fires on the state in front of it. Given twenty rollouts that all failed, it has no representation in which two of them are the same mistake and a third is a different one, so it cannot tell a redundant correction from a novel one. Under an unbounded budget this costs nothing, because every failure is eventually labelled. Under a budget of twenty demonstrations it is the whole problem.
+
+A per-state gate has no memory across rounds. Nothing in the signal records that the region it is firing on was already corrected in the previous round and the round before that. One failure that persists can therefore absorb a large share of a small budget, while a failure that occurs less often is never reached.
+
+A per-state gate inherits the state that tripped it. The corrective demonstration begins wherever the policy happened to be when the signal crossed the threshold, and that state is frequently one the policy has already ruined: the object has been knocked out of reach, or the gripper has closed on nothing. The expert then spends the demonstration recovering from a situation that would not arise under a competent policy, rather than teaching the behaviour that would have avoided it.
+
+So *when* is one decision, and it is one of three. The other two are unclaimed: *which* failure to correct, and *where* the corrective demonstration begins.
+
+Choosing a demonstration is not the same problem as choosing a data point, and the distinction matters because a large literature already chooses data points. Active learning scores an unlabelled example by an acquisition function and pays for its label [36, 84]. Coreset and diversity selection cover a representation space instead of chasing uncertainty [3, 83]. Demonstration curation retrieves sub-trajectories from a corpus that has already been collected [64]. All of them select from an existing pool. The framework proposed here prescribes a demonstration that does not exist yet, and then has an expert produce it, which is why those methods appear in this report as background and not as baselines. The word *distillation* in the title of the Aim-1 paper carries the same distinction and should not be read as the dataset-distillation sense, in which a collected dataset is compressed into a smaller synthetic one that trains as well [13]. Dataset distillation compresses data that exists. Demonstration distillation decides which demonstration to collect next.
+
+## 1.3 Central idea and thesis statement
+
+A language model is not a controller in this work. A large language model is a model over token sequences; it does not close a control loop here, it does not output torques, and it is never in the path between an observation and an action at execution time. It is the component that reads a structured summary of the policy's own failures, together with an explicit statement of what the environment permits, and returns a request for one specific demonstration.
+
+The division of labour follows from what these models are measured to be good at. Language and vision-language models name causes reliably when they are handed structured evidence: a vision-language model can summarise a robot's experience and say why an episode failed, and can be trained specifically to reason over manipulation failures [22, 55]. They are unreliable at metric and spatial reasoning from pixels alone [15, 28], and their proposals must be grounded in what the robot can actually do before they are acted on [1]. The framework is built around both findings. The model is handed a low-dimensional geometric descriptor of each failure instead of raw pixels alone, the partition of failures into modes is computed geometrically and not by the model, and every prescription the model emits is checked against an explicit store of environmental constraints and revised until it is feasible. What is left to the model is the decision that structured evidence supports, which is what kind of correction the selected region of the failure distribution needs, and where the demonstration that supplies it should begin.
+
+The thesis statement is one sentence. *Language models can raise the information content of each demonstration under a restricted budget, and raising it is what makes imitation learning sample-efficient.*
+
+The framework that tests this at the first of three levels is DISEIL, named after the title of the paper that reports it, *Demonstration Distillation for Sample-Efficient Imitation Learning*.
+
+## 1.4 Research questions
+
+The programme traces a single quantity, the value of one demonstration, through the three levels at which it can be raised. Table 1 states the three levels, and the three research questions are its three rows.
+
+| Aim | What the selector reasons over | What it decides | Level at which the value of a demonstration is raised |
+|---|---|---|---|
+| Aim 1 (DISEIL) | this round's failures, partitioned into failure modes, plus the environment's explicit constraints | which failure mode to correct, and where the corrective demonstration begins | within a round |
+| Aim 2 (reverse vision-language-action model) | the same failures, plus a language index of everything the policy has already been taught | whether a failure is a genuine coverage gap or a re-teaching of material the dataset already holds | across the dataset |
+| Aim 3 (demonstration demand) | the coverage of a skill inventory shared across tasks, embodiments and teachers, priced against human time | which demonstration to buy next, from whom, and what it is worth | across tasks and teachers |
+
+**Table 1. One quantity, three levels.** Each aim raises the information content of a demonstration at a different level and inherits the limitation the previous aim's evaluation exposed.
+
+**RQ1.** Under a fixed budget $B$, does choosing which failure mode to correct and where the corrective demonstration begins yield a policy with a higher final success rate than choosing only when to intervene? The question is answerable by holding the interactive loop, the policy class, the expert and the evaluation protocol fixed and varying only the demonstration-acquisition rule, which is the design of the Aim-1 experiments reported in Chapter 4.
+
+**RQ2.** Can the demonstration selector be given a model of what it has already taught, by inverting the mapping that vision-language-action models learn so that an executed trajectory is turned into language rather than language into an action, and does selection driven by a coverage gap beat selection driven by the failure in front of the policy? The forward mapping takes vision and language to an action [11, 43, 69]. Aim 2 inverts it, so that a trajectory's frames and its executed actions produce a language description that accumulates into a memory of what the dataset contains. Chapter 5 states the question, the method and the experiment that decides it.
+
+**RQ3.** Can demonstration demand be made explicit, priced against a teacher's time, and satisfied across tasks and embodiments, so that a generalist policy asks a non-expert human for exactly the demonstrations it lacks? Generalist policies already pool demonstration *supply* across many robots and many tasks [70]. No framework holds the *demand*: an explicit ledger of the skills a policy is short of, priced against the minutes of human time each request would cost. Cost-sensitive querying is standard where the query is a label for a datum that already exists [84], and the minutes a demonstration takes to produce are recorded by the large collection efforts [42]; neither prices a demonstration that has not been collected. Chapter 6 proposes one.
+
+The three questions compose. Aim 1's selector reasons about the failure in front of it and knows nothing about the dataset behind it, which is the limitation Aim 2 exists to remove. Aim 2's memory is task-local and its supplier is a scripted expert who is always available and identically priced, which is the limitation Aim 3 exists to remove. Each aim is the correction to the defect the previous aim's own evaluation exposed, and the report earns that claim in Chapter 7 by tracing the same quantity through all three.
+
+## 1.5 Contributions to date
+
+The work completed at the time of this report is Aim 1. Its contributions are the following, each traceable to a section.
+
+1. **A demonstration-acquisition framework that allocates a fixed budget across discovered failure modes.** DISEIL localises each failed rollout at its flagged step $t^\star$, the first step at which the policy's per-step loss crosses an out-of-distribution threshold and stays across it, reduces that step to a six-dimensional geometric descriptor, partitions the round's failures into failure modes, rotates the target mode across rounds under a memory of what has already been corrected, and prescribes the configuration at which the next demonstration begins. The framework requires only that the policy expose a per-step loss, so the same loop runs on a multilayer perceptron, on a convolutional network and on a diffusion policy without modification. Section 4.4.
+
+2. **A prescription that is verified before expert time is spent on it, by two distinct checks.** A prescription is checked for feasibility against a knowledge-augmented graph that stores the environment's explicit constraints, with violations returned to the model for revision until a feasible prescription is produced. Separately, the prescribed scenario is rolled out under the current policy, and a scenario the policy already solves is revised, because it would teach nothing. Sections 4.4.4 and 4.5.
+
+3. **An evaluation over five tasks under two observation modalities, against six demonstration-acquisition baselines, five of which apply in any one setting.** DISEIL attains the best mean final success rate in all ten settings, with a mean margin of 3.71 points (standard deviation 2.05) over the strongest baseline in each setting. The ten settings are not ten independent experiments, so the claim of record is the conservative one: collapsed to five task means the sweep is five out of five, one-sided sign test $p = 0.031$, paired $t(4) = 4.15$, $p = 0.014$. Section 4.9.
+
+4. **Evidence that the mechanism is the allocation, and that per-demonstration information gain does not license the claim on its own.** Over the eight settings that have headroom, removing the partition costs 4.01 success-rate points on average (Wilcoxon $p = 0.008$, the floor of the test at $n = 8$) and retains 11.3% of the margin over the best baseline, while the per-demonstration information gain of the ablated system does not fall (mean change $+0.06$, Wilcoxon $p = 0.25$). Greedy worst-loss selection collects demonstrations that are individually informative and jointly redundant, because information gain measured on one demonstration carries no term for its overlap with the demonstration collected in the previous round. Sections 4.10 and 4.14.2.
+
+5. **An ablation programme of fifteen studies and five diagnostics, two of whose findings reduce the framework's own claims.** Each of the framework's language-model components is worth about one success-rate point (replacing the prescription model with a heuristic costs 1.08 points, and removing the vision-language model costs 1.01), because the allocation decision is made by a geometric descriptor before either model is called. The memory kernel width is mis-scaled for the narrow-reset tasks, so the kernel is degenerate on the four GridWorld and Door settings and the memory is close to inert there, and the identified fix has not yet been run. The advantage is largest where the budget is smallest, rising from 2.68 points at a budget of 40 demonstrations to 10.35 points at a budget of 10. Sections 4.14 and 4.15.
+
+6. **A manuscript reporting Aim 1**, submitted to the AAAI 2027 main track in July 2026. Section 4.17.
+
+## 1.6 Scope and constraints
+
+All experiments in this programme to date are conducted in simulation. Five tasks are used: a 5×5 GridWorld with three obstacles and a start-to-goal objective; Push-T [17, 26], implemented here as ManiSkill3's PushT-v1 [90]; and Lift, Wipe and Door on a UR5 and UR5e in RoboSuite [102]. Each task is run under two observation modalities, state and image, and one task under one observation modality is called a *setting*. Five tasks and two modalities give ten settings. The word *mode* is reserved for failure modes, which are the clusters the framework discovers, and is never used for an observation modality.
+
+The experts differ by task and none of them is a person, other than on GridWorld, where the expert is human. Lift, Wipe and Door use scripted oracles. Push-T uses a policy trained by proximal policy optimisation (PPO), a standard reinforcement-learning algorithm [82], so the Push-T expert is learned rather than scripted, and Section 4.8.1 states the expert for each task. On GridWorld, A\* and breadth-first search check that a prescribed configuration admits a valid path from start to goal [20, 31]; they are the feasibility and path-validity checker and never the expert. The human cost that the thesis is ultimately about is therefore modelled in Aims 1 and 2 and not measured, and Aim 3 is where it is measured.
+
+Results are reported over nine seeds on GridWorld and five seeds on each robot task. The counts differ, and the asymmetry is stated wherever seeded results are reported.
+
+No human-subject data has been collected at any point in the programme so far. The only stage at which human participants enter is the Aim-3 teaching study, which will be submitted for Deakin human-research ethics approval before any participant is recruited. Chapter 9 sets out the position in full.
+
+## 1.7 Report outline
+
+Chapter 2 reviews the background the programme rests on: behaviour cloning and covariate shift, dataset aggregation and the interactive loop, the query gates of the DAgger family presented as instances of one template, the policy classes used here, the standard machinery this work uses without claiming (agglomerative clustering, the silhouette criterion, farthest-point selection, A\* and breadth-first search), language and vision-language models as reasoners in robotics, structured environmental knowledge, demonstration selection and active learning, and vision-language-action models. It closes on three open problems, one per aim.
+
+Chapter 3 states the research programme as a whole: one question in three stages, and the matched-comparison design by which each stage is validated.
+
+Chapter 4 is Aim 1 and the core of the report. It formalises the problem, presents the DISEIL framework and its architecture, gives the experimental setup, reports the comparison against six baselines over the ten settings, develops the information-gain argument, and works through the ablation programme on three primary settings. It closes on what the ablations changed in the framework and on the limitations they exposed, one of which is the motivation for Aim 2.
+
+Chapter 5 is Aim 2. It states the limitation Aim 1 leaves, proposes the inversion of the vision-language-action mapping as a coverage memory of what the policy has been taught, sets out the method and the architecture, and names in advance the single experiment that decides whether language does causal work in the selection loop or is a readable veneer on it.
+
+Chapter 6 is Aim 3. It makes demonstration demand an explicit, priced and transferable object, renders a demand into a request a non-expert human can satisfy, and states the evaluation, including the human study that is the first point in the programme at which people enter.
+
+Chapter 7 shows the coherence of the three aims by tracing the value of one demonstration through all of them, records which components of Aim 1 survive into Aims 2 and 3, and states the contingencies that apply if an aim's decisive experiment returns a negative result.
+
+Chapter 8 gives the project plan, the milestone table and the Gantt chart through to thesis submission in November 2028. Chapter 9 addresses ethics. Chapter 10 records the higher-degree research training completed. Chapter 11 states what has been established, what is under way, and the next concrete step.
+
+---
+
+# 2. Background and literature review
+
+The chapter states the material the programme uses and does not claim, and it locates the three aims inside the literature they extend. It opens with the imitation-learning formulation and the failure of offline cloning that motivates every interactive method, then gives the dataset-aggregation loop and the family of query gates built on top of it. Those gates are both the baselines against which Aim 1 is measured and the exact point at which the programme departs from prior work, so they are treated at length and qualitatively. The chapter then covers the policy classes the framework is run on, the clustering and search routines it uses unmodified, the evidence on what language and vision-language models are and are not reliable at, structured environmental knowledge as a constraint store, demonstration selection and active learning, and vision-language-action models.
+
+The behaviour-cloning objective, the aggregate-and-retrain skeleton, the generic query-gate template, the silhouette criterion, farthest-point selection, A\* and breadth-first search all appear here, once, with attribution, and are flagged as standard practice. They are not re-derived in the Aim-1 chapter, which is reserved for what is new. Abbreviations are expanded at first use in this chapter and are used in short form thereafter.
+
+## 2.1 Imitation learning and behaviour cloning
+
+A task is modelled as a finite-horizon Markov decision process, or a partially observed one when the learner sees images instead of privileged simulator state,
+
+$$\mathcal{M} = \big(\mathcal{S},\ \mathcal{A},\ P(s' \mid s, a),\ R(s,a),\ H\big),
+\qquad
+\pi_\theta : \mathcal{S} \to \Delta(\mathcal{A}),$$
+
+with $\mathcal{S}$ the state space, $\mathcal{A}$ the action space, $P$ the transition kernel, $R$ the reward, $H$ the horizon, and $\pi_\theta$ the learner's policy with parameters $\theta$. An expert $\pi^\star$ supplies trajectories, and the demonstration set is the collection of state-action pairs those trajectories contain,
+
+$$\mathcal{D} = \big\{ (s_t, a_t) \ : \ a_t = \pi^\star(s_t) \big\}.$$
+
+Behaviour cloning fits the policy to that set by supervised learning [5, 73]:
+
+$$\theta^\star = \arg\min_\theta \ \mathbb{E}_{(s,a) \sim \mathcal{D}} \Big[\, \mathcal{L}_{\mathrm{BC}}\big(\pi_\theta(\cdot \mid s),\, a\big) \,\Big],$$
+
+with $\mathcal{L}_{\mathrm{BC}} = -\log \pi_\theta(a \mid s)$ where the action space is discrete and $\mathcal{L}_{\mathrm{BC}} = \lVert \pi_\theta(s) - a \rVert_2^2$ where it is continuous. The reduction is old and it works: the first system of this kind steered a road vehicle from camera input through a three-layer network trained on logged human driving [73], and the formulation was later given as a named framework [5] and surveyed as one branch of learning from demonstration [2, 71].
+
+The reduction carries one defect, and every method in this report exists because of it. Supervised learning assumes the training and test inputs are drawn from the same distribution. In imitation learning they are not. The policy is trained on the states the expert visits, and at deployment it visits the states its own actions produce. Any error moves the learner off the expert's state distribution, the next prediction is made on an input the training set under-represents, and the error grows. The statistics literature calls the mismatch covariate shift [85]; the imitation-learning consequence is quantitative. If the cloned policy incurs supervised loss $\epsilon$ under the expert's state distribution, its cost over a horizon $H$ can grow as $O(H^2 \epsilon)$, and the quadratic term is not an artefact of a loose bound but a property of the offline reduction. Allowing the learner to be corrected on the states it actually reaches removes it, leaving a bound linear in the horizon [78, 79].
+
+The problem was visible in the first system. A policy trained only on a good driver's centred trajectory never observes a recovery from the road edge, because a good driver never produces one. Pomerleau's remedy was to synthesise the missing data: each camera image was shifted and rotated laterally, and the steering label was corrected to the command that would return the vehicle to the centre [74]. Noise injection into the expert's control stream is the modern off-policy version of the same idea, in which the demonstrations are deliberately perturbed so that the expert is recorded recovering from small deviations [46].
+
+The objective above is fixed for the whole programme, and it is fixed for every method compared. Neither Aim 1 nor either of the later aims changes the loss that is minimised, the optimiser, or the policy architecture. They change which demonstrations enter $\mathcal{D}$.
+
+## 2.2 Dataset aggregation and the interactive loop
+
+Dataset aggregation, introduced as DAgger, corrects covariate shift by moving the labelling effort onto the learner's own state distribution [79]. In round $r$ the current policy $\pi_{\theta_r}$ is rolled out, the expert is asked for its action at the states the rollout visits, those labelled pairs are added to the dataset, and the policy is refitted to the whole aggregate:
+
+$$\mathcal{D}_{r+1} = \mathcal{D}_r \ \cup\ \big\{ (s,\, \pi^\star(s)) \ : \ s \sim d_{\pi_{\theta_r}} \big\},
+\qquad
+\theta_{r+1} = \arg\min_\theta \ \mathbb{E}_{\mathcal{D}_{r+1}} \big[ \mathcal{L}_{\mathrm{BC}} \big],$$
+
+where $d_{\pi_{\theta_r}}$ is the state distribution induced by rolling out the round-$r$ policy. The analysis casts the loop as online learning against an adversarially chosen sequence of state distributions, so that a no-regret supervised learner attains a performance bound linear in the horizon rather than quadratic [79]. Variants replace action agreement with the expert's cost-to-go as the aggregation signal, which lets the learner be told how much a mistake costs rather than only that it was a mistake [80, 88].
+
+The loop has become a field rather than a single algorithm, with a taxonomy of feedback types and of who initiates the handover [14]. Human-gated variants give the decision to the person: the human watches the rollout and takes control when they judge it necessary, which removes the need for a machine-readable uncertainty signal at the cost of continuous human attention [41]. Data collected during an intervention has a different value from data collected on-policy, and can be reweighted accordingly, or used as the substrate of a deployment-time learning system in which the robot runs, a human intervenes, and the intervention becomes training data [54, 61].
+
+One cost is the reason the rest of this chapter exists. The aggregation step as originally stated asks the expert to label every state the learner visits. An expert who must answer at every step of every rollout is an expert whose time scales with the number of rollouts, and outside simulation that expert is a person. The interactive loop trades the compounding-error problem for an expert-effort problem, and the query-efficient variants below are the field's answer to the second problem.
+
+Aim 1 keeps this skeleton without modification, and so does every method it is compared against. The rollout, the aggregation and the retraining are shared. The only free variable is how the round's new demonstration is chosen, and holding everything else fixed is what makes the comparison a comparison.
+
+## 2.3 The query gates of the DAgger family
+
+Query-efficient interactive imitation learning replaces the ask-at-every-state rule with a gate. At each visited state the method computes a scalar score, compares it against a threshold, and hands control to the expert at the first state where the comparison fires:
+
+$$\mathrm{Query}(s_t) = \mathbf{1}\big[\ \mathrm{score}(s_t) \ \gtrless \ \tau \ \big],
+\qquad
+t^\star = \min \{\, t \ : \ \mathrm{Query}(s_t) = 1 \,\}.$$
+
+The expert then takes over from $t^\star$ and completes the episode, and the expert's segment is the round's new demonstration. The published methods differ in one place only: what they put in $\mathrm{score}(\cdot)$. The template is worth stating explicitly, because it makes the family's shared limitation legible, and because Aim 1's claim is that the template is answering one of three questions and leaving the other two unanswered.
+
+SafeDAgger learns an auxiliary safety classifier that predicts, from the current observation, whether the policy's action will deviate from the expert's by more than a tolerance, and hands over when the classifier predicts a large deviation. The classifier is trained on the policy's own rollouts, so the gate is a learned model of where the policy is unsafe rather than a direct measurement of it [101].
+
+DropoutDAgger reads the spread of the policy's own action distribution under Monte-Carlo dropout. Several stochastic forward passes are drawn at the visited state, and the expert is called when the sampled actions stop concentrating near the expert's action [65]. The signal is imported from the Bayesian deep-learning literature, where dropout at inference time is interpreted as approximate posterior sampling [29].
+
+EnsembleDAgger replaces the dropout samples with an ensemble of independently trained policies and reads their variance, which it calls doubt. The gate opens on high doubt or on a large discrepancy between the ensemble mean and the expert's action, so that the epistemic term and the safety term each have an arm [66]. Ensembles are the second canonical deep-uncertainty estimator and, like dropout, are used here as published [45].
+
+ThriftyDAgger adds a second quantity to novelty. Alongside the ensemble doubt it trains an estimate of task risk, a value function predicting the probability that the episode will fail from the current state and action, and it opens the gate on either. Both thresholds are set as quantiles of the observed distributions, calibrated so that the method hands over at a target switching rate, which is what makes the method budget-aware [35]. A related design reduces the number of context switches by using asymmetric thresholds for handing over and handing back, so that control does not oscillate between learner and expert [34]; it is context here and not a baseline.
+
+Diff-DAgger reads the learner's own training loss. For a diffusion policy the per-step denoising loss on a state-action pair is a usable score of how far that pair lies outside the training distribution, so the method thresholds it at a quantile of the training-loss distribution, recalibrated at each retrain, and hands over when the loss stays in the tail for a run of consecutive steps [47]. Using the diffusion loss as an uncertainty signal is Diff-DAgger's idea. Aim 1 uses that same per-step loss, both to localise a failure within a rollout and to measure the information content of an acquired demonstration, and it also compares against Diff-DAgger as a baseline. Both facts are stated plainly wherever the signal appears.
+
+A uniform-random control completes the comparison, and it is a control on the *which* decision and not on the *when* decision. Referred to in this report as Stagger, it holds no gate, no score and no threshold. Each round it draws one of the round's recorded failures uniformly at random and has the expert correct it, so it is a uniform-random *allocation* control and not a query gate. It is not a published method: it is a floor implemented in this project, and it is never labelled as a member of the DAgger family. Its purpose is to establish what an uninformed allocation of the same expert effort buys, so that any margin a gated method reports can be read against a random one.
+
+| Gate | Scalar signal the gate reads | What opens the gate |
+|---|---|---|
+| SafeDAgger [101] | learned safety classifier predicting policy-expert deviation | predicted deviation exceeds tolerance |
+| DropoutDAgger [65] | spread of Monte-Carlo dropout action samples | too few samples agree with the expert |
+| EnsembleDAgger [66] | ensemble variance (doubt) and mean action discrepancy | either term exceeds its threshold |
+| ThriftyDAgger [35] | ensemble novelty and a learned task-risk estimate | either term exceeds a budget-calibrated quantile |
+| Diff-DAgger [47] | the policy's own per-step denoising loss | the loss stays in the tail of the training-loss distribution |
+| *Uniform-random allocation control (Stagger)* | *none* | *no gate: one recorded failure of the round, drawn uniformly at random, is corrected* |
+
+**Table 2.** The five published query gates of the DAgger family, presented as instances of one template: a scalar score, a threshold and a handover. The methods differ only in the score. The uniform-random control in the last row is not a published method and is not a member of the family. It has no gate at all: it answers the *which* question by drawing one recorded failure at random, and it is listed separately so that it is never mistaken for a query gate.
+
+Descriptions here are qualitative by design. The thresholds, ensemble sizes, sample counts and calibration constants that each published method specifies are not reproduced, and the implementation choices made when these gates were re-implemented for the comparison, including the cases where a learned auxiliary predictor is replaced by a direct oracle signal, are recorded with the experimental setup in the Aim-1 chapter.
+
+The three properties of the template set out in Section 1.2 are properties of the form of $\mathrm{score}(\cdot)$ and not of any one choice of it. The gate maps one visited state to one scalar, so it holds no representation in which two failures are the same mistake and a third is a different one. Nothing in $\mathrm{score}(\cdot)$ carries across rounds, so a persistent failure mode can absorb the entire budget. And the gate inherits the state that tripped it, so the corrective demonstration starts wherever the score happened to cross the threshold. Each of the five published gates answers *when* to hand over, and answers it well. Neither *which* of a batch of failures to correct nor *where* the corrective demonstration should begin is answered by any of them.
+
+## 2.4 Uncertainty estimation and the limits of a scalar
+
+The gates read their signals from the deep-uncertainty literature, and the three families of signal are worth separating because their limitations are shared. Monte-Carlo dropout treats dropout at inference as approximate posterior sampling and reads the spread of the resulting predictions [29]. Deep ensembles train several independent members and read their disagreement, which is simpler to implement and generally better calibrated [45]. Density-style signals score how far an input lies from the training distribution, and the per-step denoising loss of a diffusion policy is one such score: a state-action pair the model has not seen produces a high reconstruction error, which is what makes it usable as a query trigger [47].
+
+All three produce a number attached to a state. A number attached to a state is enough to decide whether that state is a problem. It is not enough to decide whether that state's problem is the same problem as another state's, because two scalars can be equal for entirely different reasons and can differ while describing one underlying failure. The comparison the DAgger family cannot make is a comparison *between* failures, and no refinement of the scalar supplies it. What supplies it is a representation in which failures are points rather than magnitudes, which is where clustering, and the standard machinery of Section 2.6, enter the programme.
+
+## 2.5 Policy classes and why the framework does not depend on them
+
+Explicit regression onto expert actions is a poor fit for demonstration data whose action distribution has several peaks. Where two different actions are both correct at a state, a network trained under a squared-error loss learns their average, and the average may be correct under neither of the two actions. Energy-based and generative formulations of the policy fit such distributions instead of averaging them [26]. Denoising diffusion probabilistic models are the generative family that has proved most usable for this [33]. Applied to trajectories they give a planner [40], and applied to short action sequences conditioned on recent observations they give the visuomotor diffusion policy that is the learner for the robot tasks in this programme [17]. The conventions for training such policies on offline human-style manipulation data, including observation encoders and the treatment of action chunks, follow the empirical study that established them [62].
+
+A diffusion policy is trained by noising the clean action target $x_0 = a$ over $K$ steps and learning to reverse the corruption,
+
+$$x_k = \sqrt{\bar\alpha_k}\, x_0 + \sqrt{1 - \bar\alpha_k}\, \epsilon,
+\qquad \epsilon \sim \mathcal{N}(0, I),$$
+
+with the network trained to predict the noise, or an equivalent reparameterisation of it, and the resulting per-pair denoising loss written $L_{\mathrm{dif}}(s, a)$. Evaluated at the state the policy visited and the action it executed, that loss gives a per-step signal along a rollout,
+
+$$\ell_t = L_{\mathrm{dif}}\big(s_t,\, a_t\big).$$
+
+The quantity $\ell_t$ is the one Diff-DAgger thresholds [47], and the one Aim 1 uses to localise the step at which a rollout goes wrong.
+
+The framework is stated over any policy $f_\theta$ that exposes a per-step loss at a visited state under the executed action. A multilayer perceptron trained with cross-entropy on a discrete grid exposes one. A convolutional network on grid images exposes one. A diffusion policy exposes one, in the form above. Nothing else about the policy enters the loop: not its architecture, not its action parameterisation, not whether the observation is a state vector or an image. The programme is therefore run on all three policy classes, and the framework is never described as a method for diffusion policies, because the diffusion policy is one instantiation of the requirement and not the requirement itself.
+
+## 2.6 Standard machinery this work uses and does not claim
+
+Five routines are used unmodified. Each is named here, cited, and flagged as standard, so that the Aim-1 method chapter can use them without appearing to claim them.
+
+The partition step is generic. Aim 1 groups a round's failures into failure modes with a clustering step $\mathcal{C}$, instantiated as agglomerative clustering under Ward's linkage [93]. The choice is one instantiation and not a commitment: k-means [56] or any other partition method that returns a labelling and a set of centroids would serve, and the framework is stated over $\mathcal{C}$ and not over the particular algorithm.
+
+The number of clusters is chosen by the silhouette criterion, which scores a partition by comparing, for each point $i$, its mean distance $a(i)$ to the other members of its own cluster against its mean distance $b(i)$ to the members of the nearest other cluster,
+
+$$s(i) = \frac{b(i) - a(i)}{\max\{a(i),\, b(i)\}},$$
+
+and takes the mean over points [81]. The criterion is used exactly as published, with no modification, and the number of clusters is the value that maximises the mean silhouette over a bounded range.
+
+Diversity selection within a cluster is farthest-point, or k-centre, selection: given a set already chosen, add the candidate whose minimum distance to that set is largest, and repeat [24]. The greedy rule is standard and is used as such.
+
+Path validity on the discrete grid task is checked with A\* [31] and breadth-first search [20]. Their role must be stated precisely, because it is easy to misread. They verify that a prescribed grid configuration admits a valid path from the start cell to the goal cell around the obstacles, which is a feasibility check on the prescription. They are never the expert. The GridWorld expert is a human, and the demonstrations on that task are human trajectories.
+
+Clustering, the silhouette computation and the feature standardisation that precedes them are taken from a standard library implementation [72].
+
+One further point of ownership is settled here and not left to the method chapter, because an earlier version of this work got it wrong. Pre-trained visual representations for manipulation, of which R3M is the one used here [68] and masked visual pre-training [75] and value-implicit pre-training [57] are the alternatives that were available, supply the visual encoder for the image-modality policies. They do not supply the features that are clustered. Clustering in this programme is geometric in every run, under both observation modalities, over a low-dimensional descriptor of the robot and object configuration at the flagged step. The frozen-embedding-plus-projection branch that once handled the image modality has been retired, and it does not appear anywhere in this report. The evidence that settles the question is reported with the Aim-1 ablations.
+
+## 2.7 What language and vision-language models are and are not reliable at
+
+Large language models, which are autoregressive models over text, and vision-language models, which condition the same generation on images, have been used in robotics in several distinct roles, and the distinctions matter because they determine which capability this programme is depending on.
+
+As planners, language models decompose a natural-language instruction into a sequence of steps over a fixed repertoire of learned skills. The decomposition is only useful if it is grounded in what the robot can actually do, which is why the influential version of the idea scores each candidate skill by the product of the language model's likelihood that the skill is useful and a value function's estimate that the skill will succeed from the current state [1]. As programmers, they write executable code against a perception and control interface, so that the plan is a program with loops and conditionals rather than a flat list [50, 87]. Multimodal variants take sensor observations directly into the language model's embedding space, so that the plan is conditioned on what the robot sees rather than on a textual scene description produced by another module [21]. As designers of objectives, they write reward functions and cost maps that a downstream optimiser consumes, which is the setting in which a language model's output is a specification and never an action [38, 58, 98].
+
+Failure reasoning and self-correction matter more directly to this programme. Failure reasoning comes first. A vision-language model given a summary of a robot's execution, in the form of a small number of frames and a record of what happened, can name the cause of a failure, and the naming is accurate enough to drive a recovery [55]. A model trained specifically on manipulation failures does better than a general one, which is evidence that the capability is a learnable perceptual skill rather than an emergent accident [22]. The second is self-correction. Closed-loop textual feedback improves an embodied planner, because a plan that fails can be revised when the failure is described back to the model that wrote it [37], and verbal self-critique with iterative refinement is by now an established pattern in its own right [59, 86]. A language model can also be calibrated to recognise when it does not know, and to ask a human instead of guessing [77], which is the direct precedent for the request interface proposed in Aim 3.
+
+Against those capabilities stands a well-documented weakness. Vision-language models are unreliable at metric and spatial reasoning from pixels alone. They mistake relative depth, distance and size, and they fail on spatial-relation questions that a human answers instantly [15, 28]. The failure is not a matter of model scale; it is a property of how these models are trained, and it is measured as such on purpose-built benchmarks.
+
+The two findings together dictate a design commitment, and the commitment is inherited by the Aim-1 method without further argument. The model is reliable at naming a cause when it is handed structured evidence, and unreliable at recovering geometry from an image. It is therefore handed the geometry, in the form of a low-dimensional numeric descriptor and an explicit store of what the environment permits, and it is asked for the thing it is good at. The model that reads frames and the model that writes the prescription are open-weight instruction-tuned models [4, 96]. Neither ever emits a robot action. In this programme a language model is a component that reads a structured summary of the policy's failures and returns a request for a demonstration, and it is not a controller.
+
+## 2.8 Structured environmental knowledge and constraint grounding
+
+Retrieval-augmented generation conditions a language model's output on passages fetched from an external store, so that the model's factual claims are anchored in retrievable text rather than in its parameters [48]. Graph-structured retrieval organises the store instead of treating it as a flat pile of passages, which improves queries whose answer is spread across many documents [23]. Robot knowledge bases predate both and do something different again: they hold explicit, queryable, symbolic knowledge about objects, actions and the environment, and a robot's planner asks them questions instead of reading them as text [91].
+
+The knowledge-augmented graph used in Aim 1 belongs to the third tradition. It stores explicit environmental constraints as structured key-value entries: workspace bounds, reachability limits, the ranges within which objects may be placed and spawned, and the limits of the controller. A prescription is checked against those entries during verification, and no passage of the store is retrieved into the model's context as evidence in the manner of retrieval-augmented generation.
+
+The pattern in which it is used is established. A language model's proposal can be handed to an external checker, and the checker's verdict returned to the model as feedback: a plan can be validated by a symbolic planner [53], and the propose-verify-revise cycle can be iterated until the proposal passes [16]. Aim 1's feasibility loop is an instance of that pattern. The prescription model proposes a demonstration configuration; the constraints that bear on it are retrieved from the knowledge-augmented graph; the configuration is checked against them; if a constraint is violated, the violation is returned to the model as feedback and a revised configuration is requested; the loop repeats until a feasible configuration is produced. Saying so makes the mechanism legible to a reader who has seen it before, and it makes clear that the feasibility check is not the novel part of the method.
+
+A second check in Aim 1 has no precedent in the list above and must not be conflated with the first. Before expert time is spent, the prescribed configuration is rolled out under the current policy. If the current policy already solves it, the prescription carries no information and the configuration is revised. The nearest relatives in the literature are methods that choose start states by what the learner can and cannot yet do, in particular reverse curriculum generation, which grows the start-state distribution outward from states the learner already handles [27], and reset-learning work in which an auxiliary policy returns the system to states from which learning can continue [25]. They are the intellectual neighbours of the solvability check and they do not perform it. The two checks are presented separately in the method chapter, and they are separate mechanisms: one asks whether the environment permits the prescribed configuration, the other asks whether the prescribed configuration would teach the policy anything.
+
+## 2.9 Demonstration selection, curation and active learning
+
+Active learning studies which unlabelled point to send to an oracle. An acquisition function scores each candidate and the highest-scoring one is labelled, and the survey of acquisition functions is the standard entry point [84]. Two families are relevant here. Uncertainty-style acquisition scores a candidate by how unsure the model is about it, of which expected information gain, formalised as the mutual information between the label and the model parameters, is the Bayesian version [36]. Coverage-style acquisition ignores uncertainty and instead selects a subset that covers the representation space, on the argument that a model trained on a good cover of the input distribution generalises to the rest of it; the core-set formulation makes that argument precise and solves it with a greedy k-centre rule [83]. Batch acquisition needs both, because a batch of individually uncertain points can be a batch of near-duplicates, and combining an uncertainty term with a diversity term is the standard remedy [3]. The observation that individually informative selections can be jointly redundant recurs in this report as an empirical finding about the Aim-1 framework itself.
+
+Within imitation learning, the corresponding literature is about curating demonstration data. Sub-trajectory retrieval selects segments from an existing corpus that resemble the target task and trains on them, which turns a large heterogeneous dataset into a task-relevant one at consumption time [64]. Data quality in imitation learning has been characterised directly, and the finding that demonstrations differ in value, so that more data is not automatically better data, is the premise the whole programme rests on [6]. Diverse and partly suboptimal demonstrations can be exploited and not discarded [99], and the mixture weights over data sources in large-scale training can be optimised and not set by hand [32]. Performance itself follows a scaling relationship in the number of demonstrations and in their diversity, which is what licenses the claim that a demonstration has a measurable marginal return [51].
+
+| Approach | What it selects over | Where the data comes from |
+|---|---|---|
+| Active learning acquisition [36, 84] | unlabelled points | an existing unlabelled pool |
+| Core-set and diversity selection [3, 83] | points in a representation space | an existing unlabelled pool |
+| Sub-trajectory retrieval [64] | segments of collected trajectories | an existing demonstration corpus |
+| Data-mixture optimisation [32] | source datasets | existing datasets |
+| Dataset distillation [13] | synthesised training examples | compressed from an existing dataset |
+| DAgger-family gates [47, 79] | the timestep at which to hand over | the rollout the policy just produced |
+| Aim 1 | the configuration of a demonstration that does not exist | the expert, after the request is issued |
+
+**Table 3.** Selection methods by what they choose and where the data they choose from comes from. Every method above the rule selects from something that already exists. Aim 1 specifies a demonstration that has not been collected, and an expert then produces it, which is why the coverage and curation literature is background to this programme and not a set of baselines for it.
+
+The distinction in the table is the reason none of these methods is a baseline in Aim 1. An acquisition function ranks candidates in a pool. A retrieval method ranks segments in a corpus. Both presuppose that the data exists and that the only question is which of it to use. Aim 1 answers a different question: given that the policy is failing in a particular way, what demonstration should be collected next, from an expert who has not yet been asked. The demonstration does not exist until the request is made, so there is no pool to rank, and a coverage criterion over a pool cannot be evaluated.
+
+One neighbour needs to be distinguished by name, because the title of the Aim-1 paper uses the word. Dataset distillation compresses a large training set into a small synthetic one that trains a model to comparable accuracy, by matching training trajectories or gradients [13]. The operation runs after collection and operates on data that is already held. Demonstration distillation, in the sense used in this programme, runs before collection and decides which demonstration to acquire next. The two share a word and share no mechanism.
+
+## 2.10 Vision-language-action models
+
+A vision-language-action model maps an image observation and a natural-language instruction to a robot action, and is trained end to end on demonstration data. The line began with a transformer trained on a large corpus of real robot episodes [10] and continued by initialising the same mapping from a vision-language model pre-trained on web data, so that semantic knowledge acquired from images and text transfers into control [11]. Open reproductions followed, trained on pooled cross-embodiment data and released with weights, which made the class of model available to laboratories that cannot collect at that scale [43, 69]. The pooling itself is a research object: a collaboration assembled demonstration data from many robots and many laboratories into a single corpus and showed that policies trained on the pool transfer across embodiments [70]. Later variants change the action decoder, replacing autoregressive token prediction with flow matching to emit continuous action chunks at high rate [8], and the generalist-agent line trains one network across tasks and embodiments with the same supervised recipe [9, 76].
+
+Language has also been used as an intermediate representation inside the mapping. One design predicts a short language motion primitive from the instruction and the observation and then predicts the action from the primitive, which gives a hierarchy in which the middle layer is human-readable [7]. Another emits an explicit chain of embodied reasoning steps, including sub-tasks and object positions, before emitting the action [100]. In both, the language is produced on the way to an action and is consumed by the action decoder.
+
+Every model in this section maps vision and language to an action. Aim 2 inverts the mapping.
+
+## 2.11 Open problems and the gap this programme addresses
+
+Three gaps follow from the sections above, and each corresponds to one aim.
+
+The first is a gap in the interactive loop. The published query gates decide when to hand control to the expert, and they decide it from a scalar attached to a single state. Selection methods from active learning and dataset curation decide which item to take from a pool that already exists. Between the two lies a decision nobody makes: given a round's worth of failures, which failure mode should receive this round's demonstration, and from which configuration should that demonstration begin. Aim 1 makes that decision, and the report's central empirical question is whether making it raises the final success rate under a fixed budget.
+
+The second is a gap in what the selector knows. A gate reads the current state. A failure-reasoning model reads the current episode. Neither holds any representation of the training set that has been assembled so far, so neither can tell a genuinely novel failure from one the dataset already covers several times over. Under a restricted budget, a demonstration spent re-teaching material the policy has already been shown is a demonstration lost. Aim 2 gives the selector a memory of what it has already taught, indexed in language, by inverting the vision-language-action mapping so that executed trajectories are described and not generated.
+
+The third is a gap in what a demonstration is taken to cost. Aims 1 and 2 count demonstrations, which is the right accounting in simulation, where a demonstration is a call to a motion planner and every call costs the same. Cross-embodiment pooling has made demonstration *supply* a shared object [70], and cost-sensitive acquisition is standard where the queries are labels for data that already exists [84], but no framework holds demonstration *demand*: an explicit statement of which skills a policy is short of, priced against the time of the person who would have to produce them, and shared across the tasks and embodiments over which those skills recur. Aim 3 constructs that object and issues the resulting requests to a person.
+
+---
+
+# 3. The research programme
+
+## 3.1 One question in three stages
+
+The programme asks one question, and the three aims answer it at three levels of resolution. The question is what a single expert demonstration is worth, and how that worth can be raised, given that the demonstration is the input whose cost does not fall when compute is bought or a simulator is downloaded. Under a fixed budget of $B$ demonstrations, the lever is the information content of each one.
+
+Aim 1 raises that quantity within a round. The framework partitions the current policy's failures into failure modes over a geometric descriptor, rotates the target mode under a cross-round memory, and prescribes the configuration at which the next corrective demonstration begins, subject to a feasibility check against a store of the environment's explicit constraints and a check that the current policy cannot already solve the prescribed scenario. The two decisions it claims, which failure to correct and where the demonstration starts, are the two the DAgger family leaves unmade.
+
+Aim 2 raises the quantity across the dataset. The Aim-1 selector holds no representation of the demonstrations it has already collected, so it cannot distinguish a genuine coverage gap from a re-teaching of material the training set already holds. A captioner that inverts the vision-language-action mapping turns each executed trajectory into language, the captions accumulate into a memory of what the policy has been taught, and the selector reasons over a coverage gap and not over a local failure.
+
+Aim 3 raises the quantity across tasks and teachers. The Aim-2 memory is task-local and its supplier is a scripted expert who is always available, always correct, and charges the same for every request. Aim 3 makes demonstration demand an explicit, transferable, priced object, and issues the resulting request to a person whose time is the real budget.
+
+Each aim is the correction to the limitation the previous aim's own evaluation exposed. That is the sense in which the three papers compose into one thesis, and Chapter 7 discharges the claim by tracing the same quantity through all three.
+
+## 3.2 Methodology and validation strategy
+
+The programme's method of validation is the matched comparison, and it is the same at every stage. The interactive loop, the policy class, the expert, the retraining schedule and the frozen held-out evaluation set are held fixed, and the only quantity that varies between arms is the rule by which the round's demonstration is chosen. Holding everything else fixed is what licenses attributing a difference in final success rate to the acquisition rule, and it is why the published query gates are re-implemented inside this project's own loop and are not compared against their reported numbers.
+
+Four commitments follow from that design and are honoured throughout the report.
+
+Evidence is reported at the level at which it was measured. A setting is one task under one observation modality, and the two modalities of a task share the expert, the reward structure and the reset distribution, so the settings of a task are correlated by construction. Aggregate claims are therefore made on the collapsed task means, which is the conservative reading, and the setting-level result is given beside it rather than instead of it.
+
+A component is claimed only where an ablation supports it. The Aim-1 ablation programme was designed to be able to retire components of the framework, and Section 4.15 records the two it retired. The same discipline applies forward: Chapter 5 names, before the experiment is run, the single ablation that decides whether language does causal work in the Aim-2 selector, and pre-commits to the interpretation of a negative result.
+
+A task with no headroom is evidence about nothing. Lift saturates at 100.0 ± 0.0 under the framework in both modalities, and a null result on a saturated task cannot discriminate between a component that does nothing and a component whose effect cannot be observed. Lift is retained in the sweep, because dropping it would be selective reporting, and it is excluded from every mechanism claim.
+
+Symbols carry the framework and values carry the instance. The budget $B$, the per-round acquisition count $D$ and the policy $f_\theta$ appear as symbols in the method and in the algorithm. The values at which they were validated appear once, in the experimental setup, because the framework is defined for any fixed restricted budget and the reported instance is one point in that family.
+
+---
+
+# 4. Aim 1. DISEIL, demonstration distillation for sample-efficient imitation learning
+
+## 4.1 Motivation and problem statement
+
+A practitioner who holds a fixed allowance of demonstrations faces a question the scaling relationship of Section 1.1 does not answer. Policy performance rises with the number and the coverage of the demonstrations a policy is trained on [51], and the allowance cannot grow, so the only open question is what each demonstration in it should contain.
+
+The whole of Aim 1 is an answer to that question. Write $B$ for the number of demonstrations the expert will supply beyond an initial set, and $D$ for the number acquired in one round of interaction, so that the loop runs for $B/D$ rounds. Neither symbol carries a value in this section. The framework is defined for any fixed, restricted budget and any per-round acquisition count, and the values at which it was validated appear once, in the experimental setup. What the framework maximises, under that fixed budget, is the information content of each demonstration: informally, how much of the policy's remaining error a demonstration can remove, and formally, the policy's per-step loss on the demonstration measured before it is trained on it. The argument that this quantity means what it appears to mean is made in Section 4.10, and it depends on the initial demonstration count, which is set in Section 4.8.4.
+
+The policy is any function $f_\theta$ that maps an observation to an action and exposes a per-step loss $\ell_t$ at a state-action pair. The requirement stops there. A multilayer perceptron on a discrete grid, a convolutional network on grid images and a diffusion policy on a manipulator [17] all satisfy it, and all three are used in the experiments. The framework is a way of spending a demonstration budget, and the only thing it asks of the learner is a loss it can read, which is what allows one loop to run on a discrete grid policy and on a continuous manipulation policy without modification.
+
+## 4.2 The gap in the DAgger family
+
+Every published method of the DAgger family shares the skeleton of Section 2.2 and differs in the scalar signal that opens the gate, and Section 2.3 gives the five gates as instances of one template. What matters here is the consequence. Each gate answers *when* to ask the expert for help, and answering only that question leaves the gate unable to compare two failures with each other, unable to remember that a region was corrected in the previous round, and obliged to begin the corrective demonstration at whatever state tripped the threshold. So *when* is one decision of three, and the other two are unclaimed: *which* failure to correct, and *where* the corrective demonstration begins.
+
+The adjacent literature does not claim them either. Active learning selects which point to label, but from a pool of points that already exist [36, 84]. Coreset and diversity methods cover a representation space, again by selecting from what has been collected [3, 83]. Demonstration curation retrieves sub-trajectories from an existing corpus [64], and dataset distillation compresses a dataset that has already been gathered into a smaller synthetic one [13]. None of these prescribes a demonstration that does not exist yet and then has an expert produce it, which is the operation this framework performs and the reason it is called demonstration distillation.
+
+## 4.3 Problem formulation
+
+The interactive loop skeleton is shared by every method compared in this chapter, and it is stated in Chapter 2 and is not re-derived here [79]. What follows fixes the notation and isolates the one component that differs between methods.
+
+The policy $f_\theta$ is trained on an initial demonstration set $\mathcal{D}_0$ by behaviour cloning. Rounds are indexed by $r$. At the start of round $r$ the policy is rolled out on a fresh pool of episodes drawn from the task's reset distribution, and the episodes it fails are collected into the round's failure set. The only requirement placed on the policy is that it expose a per-step loss at its own executed action,
+
+$$\ell^{(i)}_t \;=\; \mathcal{L}\big(f_\theta,\; s^{(i)}_t,\; a^{(i)}_t\big), \tag{1}$$
+
+where $i$ indexes an episode, $s_t$ is the observation at step $t$ and $a_t$ is the action the policy itself executed. For a diffusion policy $\mathcal{L}$ is the denoising loss, which is what Diff-DAgger uses as its gate signal [47]; for a discrete policy it is the negative log-likelihood of the executed action. The failure set of the round is
+
+$$\mathcal{F}_r \;=\; \big\{\, f_i \;=\; (\tau_i,\; \ell^{(i)}_{1:T_i}) \;:\; \tau_i \text{ is a failed rollout of } f_\theta \,\big\}, \qquad N \;=\; |\mathcal{F}_r|, \tag{2}$$
+
+with $\tau_i$ the trajectory and $T_i$ its length. Success is measured on a frozen held-out evaluation set that no method sees during acquisition, and the same set is used for every method.
+
+Each round ends by acquiring $D$ demonstrations from the expert and aggregating them,
+
+$$\mathcal{D}_r \;=\; \mathcal{D}_{r-1} \,\cup\, \{d_{r,1},\dots,d_{r,D}\}, \qquad \theta_r \;=\; \arg\min_\theta\ \mathbb{E}_{(s,a)\sim\mathcal{D}_r}\big[\mathcal{L}_{\mathrm{BC}}\big], \tag{3}$$
+
+and the loop stops when the budget is exhausted, that is when $|\mathcal{D}_r| - |\mathcal{D}_0| = B$. Retraining is from scratch, at a per-task cadence, and follows standard practice.
+
+Every method in this chapter instantiates the same three-part acquisition rule. Writing $A$ for the rule, a round's acquisition is fully specified by
+
+$$A \;=\; \big(\underbrace{t^\star}_{\text{when}},\; \underbrace{C_{\mathrm{tgt}}}_{\text{which}},\; \underbrace{\xi}_{\text{where}}\big), \tag{4}$$
+
+where $t^\star$ is the step at which the expert takes over, $C_{\mathrm{tgt}}$ is the failure mode the round is spent on, and $\xi$ is the specification of the state from which the corrective demonstration begins. The DAgger family fixes the second and third components trivially: $C_{\mathrm{tgt}}$ is whichever rollout tripped the gate first, and $\xi$ is the state the rollout was already in. DISEIL computes all three. The rest of the method is a description of how the second and third are computed, and nothing else in the loop is changed, which is what makes the comparison a controlled one.
+
+## 4.4 The DISEIL framework
+
+The framework has four stages, run once per round: perceive the round's failures, partition them into failure modes, prioritise one mode against a memory of what has already been corrected, and prescribe the $D$ demonstrations the expert is asked to supply. $B$ and $D$ are symbols throughout this section and throughout the algorithm, and the values at which the framework was validated appear in the experimental setup of Section 4.8.3, where the choice of $D$ is justified and measured in ablation A12. Figure 1 is the loop in outline. Standard machinery is used inside three of the four stages and is flagged as standard where it appears. The novelty is the pairing of a cross-round memory over failure modes with a within-round prescription that is verified against an explicit model of what the environment permits.
+
+### 4.4.1 Perceive
+
+The first act of a round is to say where each failure went wrong, and to say it in two languages at once: a geometric one, which the partition will use, and a natural one, which the prescription will use. The two descriptions are computed from the same step of the same episode, and they never mix. Clustering is geometric for every run, under both observation modalities. There is no visual-embedding branch anywhere in the framework, and the earlier version of the method, which clustered image runs in a frozen visual-representation space reduced by principal components, has been retired on the evidence of ablation A10, reported with the other design-choice studies in Section 4.14.3. A pre-trained visual representation is still used, but only as the encoder of the image-modality *policy* [68], and it supplies no feature to the partition.
+
+**The flagged step.** Each failure is anchored at a single step $t^\star_i$, defined as the first step at which the per-step loss crosses an out-of-distribution threshold $\eta$ and stays across it for $K$ consecutive steps,
+
+$$t^\star_i \;=\; \min\Big\{\, t \;:\; \ell^{(i)}_u > \eta \ \ \text{for all } u \in [\,t,\, t+K\,] \,\Big\}, \qquad \text{with } t^\star_i \leftarrow \arg\max_t \ell^{(i)}_t \ \text{if no crossing occurs}. \tag{5}$$
+
+The threshold is a quantile of the training-loss distribution, recalibrated at every retrain, which is the Diff-DAgger construction used unchanged [47]. The choice of the *first* crossing rather than the loss peak is a deliberate departure from the obvious definition, and it was made for a practical reason recorded in the implementation's failure-screening code, whose own note gives the measurement: in a failing episode the peak arrives late (on Door, at a median of 0.91 of the episode length), so an expert who takes over at the peak inherits a badly corrupted state and has almost no episode left in which to correct it. The first crossing is early, the state is less corrupted, and the expert has budget to work with.
+
+**The geometric descriptor.** Each failure is reduced to a six-dimensional vector $\phi_i \in \mathbb{R}^6$ computed from the privileged simulator state at $t^\star_i$. For the manipulation tasks the canonical form is
+
+$$\phi_i \;=\; \big[\, p_{x},\; p_{y},\; \sin\theta,\; \cos\theta,\; \rho_i,\; \delta_i \,\big], \qquad \rho_i = \frac{t^\star_i}{T_i}, \qquad \delta_i = \big\|\, p^{\mathrm{tcp}}_i - p^{\mathrm{obj}}_i \,\big\|_2, \tag{6}$$
+
+where $(p_x, p_y)$ is the planar position of the task-relevant object, $\theta$ its yaw (entered through its sine and cosine so that the wrap at $\pm\pi$ does not create a false distance), $\rho_i$ the fraction of the episode completed before the failure was flagged, and $\delta_i$ the distance between the end-effector and the object at the flagged step. For the discrete grid task the same six slots are filled with the agent's cell, its signed offset to the goal, its progress, and the Manhattan distance remaining. Where a task randomises no yaw, the two orientation slots carry the task's own state variables in their place. Table 4 gives the instantiation actually used for each task.
+
+| Task | The six components of $\phi$ |
+|---|---|
+| GridWorld | agent cell $(2)$, signed offset to goal $(2)$, progress, Manhattan distance to goal |
+| Push-T | block planar position $(2)$, $\sin\theta$, $\cos\theta$, progress, end-effector-to-block distance |
+| Lift | cube planar position $(2)$, progress, gripper-to-cube planar distance, gripper height above cube, grasp indicator |
+| Door | door-frame position $(2)$, frame yaw, normalised hinge angle, end-effector-to-handle distance, progress |
+| Wipe | remaining-dirt centroid $(2)$, proportion wiped, end-effector-to-centroid distance, fraction of markers remaining, progress |
+
+**Table 4.** The six-dimensional geometric descriptor, per task. The descriptor is computed from the privileged simulator state at the flagged step and is the same under both observation modalities. Where a task randomises no object yaw, the two orientation slots carry the task's own state variables in their place.
+
+The width of the descriptor is not a free choice made to fit the results. Ablation A10 scores descriptors of two to twelve dimensions on the mean silhouette of the clusters they produce, a criterion with no dependence on success rate, and finds an inverted U with a single interior maximum at six dimensions in all ten settings. The descriptor is small because the failure sets are small, and the two facts are connected by distance concentration: adding weakly informative dimensions to a distance computation over a few dozen points pushes all pairwise distances toward each other and makes the merge order of the clustering arbitrary.
+
+**The perceptual and causal description.** In parallel with the descriptor, three rendered frames of the failing episode, at its start, at $t^\star_i$ and at its end, are passed to a vision-language model [4], which returns a short spatial account of what went wrong. A second, text-only reasoning model then converts that account into a root cause and a trajectory phase, drawn from a closed taxonomy that is stored in the task's knowledge-augmented graph rather than invented by the model. The literature supports this division of labour precisely. Vision-language models are competent at naming a cause when they are given structured evidence [22, 55] and unreliable at metric and spatial reasoning from pixels alone [15, 28]. The framework therefore asks them for the cause, and computes the geometry itself.
+
+### 4.4.2 Partition
+
+The round's failures are partitioned into failure modes by a generic clustering step $\mathcal{C}$ applied to the standardised descriptors,
+
+$$\tilde{X}_i \;=\; \frac{\phi_i - \mu}{\sigma_\phi}, \qquad \{C_1,\dots,C_{k^\star}\} \;=\; \mathcal{C}\big(\tilde{X},\, k^\star\big), \qquad k^\star \;=\; \arg\max_{k \in [2,\,k_{\max}]} \operatorname{sil}(k), \tag{7}$$
+
+with $k_{\max} = \max(2, \min(6, N-1))$. The step is generic by design: agglomerative clustering is the instantiation used here [93], k-means or any other partition method would serve [56], and the number of modes is selected by the silhouette criterion, which is standard and is used unmodified [72, 81]. The framework claims the *presence* of a partition step, not its implementation.
+
+Each mode carries three quantities that the later stages consume: its centroid in the raw pose coordinates, its mean peak loss $\bar{L}_C$, and a representative $\mathrm{rep}(C)$, defined as the member nearest the cluster mean in the standardised feature space. The dominant mode $C^\star$ is the one with the most members, ties broken by mean peak loss.
+
+The partition has two seams, and they belong here. When fewer than four failures remain, the silhouette sweep is skipped and each failure becomes its own singleton, so in the late rounds of a budget the partition is inactive and the round is allocated by the fallback rule described below. The frequency of that event, and its consequences, are measured (diagnostics D2 and D4). The modes the partition discovers are also geometric, so they recover cause only to the extent that configuration determines cause; the measured agreement between a geometric mode and a root cause is 0.78 to 0.93 (diagnostic D1), and the framework's claim about semantic modes is qualified by that number wherever it is made.
+
+![](../figures/clustering_modes_pushT.pdf)
+
+**Figure 2. The failure modes discovered on Push-T (image).** Each row holds three rollouts assigned to one mode by clustering the six-dimensional geometric descriptor at the flagged step, annotated with the block's orientation error and the distance between the end-effector and the block. The three row labels, *not-well-aligned* (M0), *no-contact* (M1) and *badly-rotated* (M2), are the majority root-cause labels of the members, drawn from the Push-T knowledge graph's own failure-mode vocabulary by the naming pipeline of Section 4.4.5, and they are not coined for the figure. The partition recovers behaviourally distinct failures: the block is brought to the goal region and left almost fully inverted, with the pusher still on it (top row, orientation error 162 to 169 degrees at a contact distance of 0.06 to 0.08 m); the arm never establishes a working contact and the block is barely moved (middle row, orientation error 102 to 120 degrees, contact distance 0.08 to 0.11 m); and the block is pushed but abandoned at a moderate orientation error and far from the end-effector (bottom row, orientation error 37 to 84 degrees, contact distance 0.15 to 0.18 m). The modes are found from geometry alone, under both observation modalities, with no visual embedding.
+
+### 4.4.3 Prioritise
+
+This stage makes the pair of decisions the framework owns. The first chooses which mode this round's demonstration is spent on. The second chooses which failures are shown to the prescription model as evidence.
+
+**The cluster memory.** Left to itself, a rule that always targets the largest or the highest-loss mode will target the same mode round after round, because one demonstration rarely removes a mode outright. The framework keeps a memory $\mathrm{Mem}$ of the centroids of every mode it has already corrected, tagged with the round in which the correction happened, and penalises a candidate mode in proportion to how recently and how closely it has been corrected,
+
+$$P_{\mathrm{mem}}(c) \;=\; \sum_{(r_i,\, c_i)\, \in\, \mathrm{Mem}} \gamma^{\,\max(0,\; r - r_i)} \, \exp\!\left(-\,\frac{\|c - c_i\|_2^2}{2\sigma_{\mathrm{mem}}^2}\right), \tag{8a}$$
+
+$$C_{\mathrm{tgt}} \;=\; \arg\max_{C \,:\, |C| \,\ge\, |C^\star| - 1} \Big(\, \bar{L}_C \;-\; \lambda\, P_{\mathrm{mem}}\big(c_C\big) \,\Big). \tag{8b}$$
+
+The recency discount $\gamma$ lets a mode become eligible again once the policy has moved on, the kernel width $\sigma_{\mathrm{mem}}$ sets how far the penalty reaches in the workspace, and the weight $\lambda$ sets how hard it pushes; values are given in the setup. The constraint $|C| \ge |C^\star| - 1$ keeps the target within one member of the dominant mode, so the memory rotates the target across the failure distribution without ever letting it wander onto a mode that barely exists. Setting $\lambda = 0$ removes the memory entirely and recovers a plain highest-loss rule, which is the memory-off ablation.
+
+One property of this term must be stated where the term is defined, and not buried in the ablations. The kernel width $\sigma_{\mathrm{mem}}$ is a single global constant, and the tasks do not share a spatial scale. On Door, whose reset range is on the order of a centimetre, and on GridWorld, whose centroids are in grid-cell units, the kernel is degenerate at every width swept in ablation A13: it either saturates near one or collapses to an identical-centroid indicator, and in both cases the penalty is applied almost uniformly and is arithmetically close to no penalty at all. The memory is therefore measurably active on the four Push-T and Wipe settings, whose reset distributions are wide, and the kernel is degenerate on the four GridWorld and Door settings. On the two Lift settings the kernel does discriminate at the narrowest swept width, and its effect on the success rate is unobservable because the framework is already at the ceiling there, so Lift measures nothing either way. A per-task $\sigma_{\mathrm{mem}}$, expressed as a fraction of that task's own reset range, is the identified fix, and it has not been run. The global constant is a limitation of this instantiation.
+
+Nothing in the literature does quite this. Coverage-driven selection over a representation space [83], batch acquisition that mixes uncertainty with diversity [3] and the reweighting of intervention data [54, 61] are the nearest relatives, and none of them is a cross-round memory over discovered failure modes.
+
+**The context set.** The prescription model is not shown every failure in the target mode. It is shown a small set $S$ of cited failures, capped at $\kappa$ members and built by three rules,
+
+$$S_0 \;=\; \big\{\mathrm{rep}(C_{\mathrm{tgt}})\big\} \cup \big\{\arg\max_i \mathrm{peak}_i\big\}, \qquad S \;\leftarrow\; S \cup \Big\{ \arg\max_{i \,\notin\, S} \ \min_{j \in S} \ \big\| \tilde{X}_i - \tilde{X}_j \big\|_2 \Big\} \ \ \text{until } |S| = \kappa. \tag{9}$$
+
+The representative of the target mode is forced into the set, because without it the model can be asked to fix a mode of which it has seen no example. The worst-loss failure is seeded next. The remaining slots are filled by farthest-point selection, which is standard [24] and is used here to make the cited failures span the mode rather than crowd its loss peak. Ablation A9 removes each rule in turn and finds the ordering the mechanism predicts, with the forced representative the most damaging to remove.
+
+### 4.4.4 Prescribe
+
+The prescription model [96] receives the target mode's anchor geometry, the cited failures in $S$ with their root-cause labels, and the rendered constraints of the task, and returns the round's request for $D$ demonstrations, together with an integer confidence score and a one-line rationale for it. Each requested demonstration takes one of two forms.
+
+A **targeted correction** names one cited failure. That exact episode is re-instantiated, and the expert takes over at the flagged step and completes it. The mode is tight, or one failure clearly stands for it, and the demonstration is the correction of that failure on-policy.
+
+A **bridging placement** names two or three cited failures and asks for a new configuration positioned between them, from which the expert demonstrates a complete episode. Bridging changes the environment's configuration instead of selecting a recorded episode, and it is what allows a prescription to be easier than any failure it addresses: when a mode lies far outside anything the current policy can solve, a targeted correction is a large distributional jump, and a bridged one is a step the policy can absorb. On the tasks whose graph admits the arm, the prescription logs record bridging in 19% to 28% of accepted prescriptions on Push-T, 18% to 19% on Lift and 21% to 30% on Door (diagnostic D3), so the arm is exercised. The logs also record bridged prescriptions on GridWorld and Wipe, where the paragraph below states that the arm should not exist; that contradiction is unresolved and is reported in Section 4.16.9.
+
+Which of the two arms exists is a property of the task, and the framework reads that property from the knowledge store instead of hard-coding it. Wipe randomises a path of dirt markers rather than the pose of a single object, so there is no object pose to place in a middle ground; the task's graph declares the task targeted-only and the second arm is removed from the prompt.
+
+**Feasibility verification against the knowledge-augmented graph.** A prescription is a request for a configuration of the world, and a language model asked for a configuration will sometimes ask for one the world cannot produce: an object outside the reachable set, a pose outside the spawn range, a grid layout with no path from start to goal. The knowledge-augmented graph (KAG) is the store that makes such a request checkable. It holds explicit environmental constraints as structured key-value knowledge, not as prose: workspace bounds, object and spawn ranges, reachability, controller limits, the success predicate, and the task's failure-mode and phase vocabulary. It is not a document store to be retrieved from in the manner of retrieval-augmented generation [23, 48]; it is closer to the explicit, queryable environment and action knowledge of a robot knowledge base [91], and it is queried during verification.
+
+Verification is a loop, and it is the mechanism of Equation 10. The prescription model proposes; the constraints are retrieved from the graph; a map $g$ turns the proposal into a concrete reset specification $\xi$; the specification is checked against the retrieved constraints; and if a constraint is violated the violation is returned to the model as feedback, which proposes again:
+
+$$
+\begin{aligned}
+\mathrm{cmd}^{(j)} &= \mathrm{LLM}\big(\, A,\ S,\ \mathcal{K},\ \text{violation}(\xi^{(j-1)}) \,\big), \qquad \xi^{(j)} \;=\; g\big(\mathrm{cmd}^{(j)}\big), \\[2pt]
+V(\xi) &= \mathbf{1}\big[\, \xi \in \mathcal{W}_{\mathcal{K}} \,\big] \;\wedge\; \mathbf{1}\big[\, \mathrm{reachable}_{\mathcal{K}}(\xi) \,\big] \;\wedge\; \mathbf{1}\big[\, \mathrm{valid\text{-}path}_{\mathcal{K}}(\xi) \,\big], \\[2pt]
+\xi^\star &= \xi^{(j)} \ \ \text{for the first } j \le J_{\max} \text{ with } V\big(\xi^{(j)}\big) = 1, \qquad \text{else } \xi^\star = \text{nearest untried failure},
+\end{aligned}
+\tag{10}
+$$
+
+where $\mathcal{K}$ is the task's graph, $\mathcal{W}_{\mathcal{K}}$ its workspace bounds, and the conjuncts of $V$ are the constraints the graph actually stores for that task. On the manipulation tasks the reachability and workspace conjuncts are box constraints on the object pose, padded from a measurement of the simulator's own reset sampler, so a prescribed configuration can never leave the task's native reset distribution. On the grid task the constraint is not a box at all but a path-validity predicate: the prescribed layout must place start, goal and obstacles on distinct in-grid cells and must admit an obstacle-free path from start to goal, and that predicate is decided by breadth-first search [20], with A\* available for the same purpose [31]. Neither search is ever the expert. The GridWorld expert is a human, and the search is the checker that decides whether the human can be asked for a demonstration at all.
+
+A failed attempt consumes no budget, because the budget counts demonstrations collected, not prescriptions proposed. After $J_{\max}$ attempts the round falls back to the deterministic rule of taking the nearest untried recorded failure, which is a correction the environment is guaranteed to be able to instantiate. The propose-verify-revise pattern is not new in itself: a language model's proposal has been checked by an external planner and the planner's verdict returned as feedback [53], and the check has been iterated to convergence [16]. What the framework adds is the object being verified, which is a request for a training demonstration rather than a plan to be executed.
+
+**Policy solvability.** Feasibility asks whether the environment can instantiate the prescribed configuration. A second and separate question is whether the configuration is worth an expert's time at all. A prescription that the current policy can already solve carries no information: the expert would demonstrate a behaviour the policy has, and a unit of a restricted budget would be spent for nothing. The architecture therefore contains a second check, drawn as its own loop. The prescribed configuration $P = \xi^\star$ is rolled out under the current policy, and
+
+$$\mathrm{SR}_{f_\theta}(P) \;\ge\; \tau_{\mathrm{solve}} \quad \Longrightarrow \quad \text{revise } P, \tag{11}$$
+
+so that a solvable prescription is returned to the prescription model rather than to the expert. The nearest intellectual relatives are the reverse-curriculum and reset-state literatures, which choose start states by what the learner can and cannot yet do [25, 27], and they are cited as neighbours rather than as precedents for this check.
+
+The two checks are distinct mechanisms: the first rejects a configuration the world cannot produce, the second rejects a configuration the policy does not need. The solvability check is a design element of the framework as drawn in the architecture and no more than that. It is not exercised in the experiments reported in this chapter, it is not ablated in the ablation programme, and no number anywhere in this report is attributable to it. Implementing and ablating it is outstanding work, and the report claims nothing for it.
+
+### 4.4.5 Naming the discovered failure modes
+
+A partition returns integers. A method that reports "the policy fails in mode 2" has said nothing, and the framework's prescriptions are only legible because its failure modes carry names. The naming is a three-step pipeline, and the precise version of it is more defensible than the loose one.
+
+Modes are born nameless. The partition of Equation 7 runs on the standardised geometric descriptors and uses no output of any language model, so a mode at this point is an integer index over a set of failures.
+
+Each failure, separately, is assigned a root cause and a trajectory phase by the reasoning model, and the model may only choose from the enumerated categories stored as failure-mode and phase nodes in that task's knowledge-augmented graph. The prompt says so explicitly. The vocabulary of names is authored in the graph, and the model's job is assignment rather than invention.
+
+A mode's name is then the majority root cause among its members. The fraction of a mode's failures that share its dominant label is its purity, and purity is a measured quantity: it runs from 0.78 to 0.93 across the ten settings, with a mean of 0.877 (diagnostic D1, Section 4.14.4). It is lowest on Wipe, at 0.78, for the reason set out with diagnostic D1: several distinct causes there share one end-effector position, and geometry cannot separate causes that a human would call different. The names that reach Figure 2 are readable renderings of the Push-T graph's own failure-mode labels, and they are not coined by the model.
+
+### 4.4.6 Algorithm
+
+```
+Input:  initial demonstration set D0; policy class f_theta; expert pi*;
+        budget B; demonstrations per round D; knowledge graph K;
+        context-set cap kappa; memory constants (gamma, sigma_mem, lambda);
+        re-prescription limit J_max.
+Output: the trained policy f_theta.
+
+ 1: train f_theta on D0 by behaviour cloning
+ 2: Mem <- empty
+ 3: for r = 1 to B do
+ 4:     roll out f_theta on a fresh pool of episodes; record the per-step loss (Eq. 1)
+ 5:     F_r <- the failed episodes of the pool                                  (Eq. 2)
+ 6:     for each failure i in F_r do
+ 7:         t*_i <- first sustained threshold crossing of the loss, else its peak (Eq. 5)
+ 8:         phi_i <- the 6-D geometric descriptor at t*_i                        (Eq. 6)
+ 9:         VLM describes the start, t*_i and end frames of failure i
+10:         reasoning LLM assigns a root cause and a phase from the taxonomy in K
+11:     end for
+12:     standardise the descriptors; k* <- argmax silhouette; cluster into modes  (Eq. 7)
+13:     name each mode by the majority root cause of its members
+14:     C_tgt <- the mode maximising mean peak loss minus the memory penalty      (Eq. 8)
+15:     S <- forced representative of C_tgt, plus the worst-loss failure,
+16:          plus a farthest-point fill, up to kappa members                      (Eq. 9)
+17:     for j = 1 to J_max do
+18:         cmd <- prescription LLM(anchor of C_tgt, S, K, previous violation)
+19:         xi <- g(cmd)                        # targeted correction or bridging placement
+20:         retrieve the constraints of K; if V(xi) = 1 then break                (Eq. 10)
+21:         violation <- the constraint that xi breaks
+22:     end for
+23:     if no feasible xi was produced then xi <- nearest untried failure in F_r
+24:     if the current policy already solves xi then revise xi                    (Eq. 11)
+25:     collect D demonstrations from pi* at xi
+26:     D_r <- D_{r-1} + those demonstrations; append the centroid of C_tgt to Mem
+27:     retrain f_theta from scratch on D_r at the per-task cadence               (Eq. 3)
+28: end for
+29: return f_theta
+```
+
+The loop header is symbolic. A budget of any size runs the same algorithm, and the value used in the experiments appears in the setup. Lines 4 to 11 are the perceive stage, line 12 the partition, lines 14 to 16 the prioritise stage, and lines 17 to 25 the prescribe stage. Line 23 is the fallback, and its cost when it fires often is measured in the knowledge-graph ablation. Line 24 is the solvability check, which is drawn in the architecture and not exercised in the reported runs.
+
+## 4.5 Architecture
+
+![](<../figures/Architectural Diagram.pdf>)
+
+**Figure 3. The DISEIL framework.** A policy is trained on an initial expert demonstration set and rolled out on held-out episodes. A query gate flags the step $t^\star$ at which the policy first becomes unreliable. Two descriptions of that step are formed: a geometric descriptor, which the cluster engine partitions into $k$ failure modes against a memory of previously corrected modes, and a vision-and-language description of the start, $t^\star$ and end frames, which a reasoning model turns into a root-cause account grounded in geometry facts retrieved from the knowledge-augmented graph. A prescription model proposes the configuration $P$ of the next demonstration. The proposal is screened before any expert time is spent: if the current policy can already solve $P$, the prescription carries no information and $P$ is revised. The expert then demonstrates the surviving configuration, the demonstration is added to the dataset, and the policy is retrained for the next round.
+
+The figure is read left to right, and each block is described below by what it consumes, what it emits, and what breaks without it. The last of those three is answered by an ablation, and the ablation is named.
+
+**Initial expert demonstrations and Train Policy.** The loop opens on a database of seed demonstrations and a behaviour-cloning fit. The size of that set is a design parameter of the framework, and it should be chosen to place the policy's starting success rate inside a target band, because a policy that fails everywhere produces a failure set with no structure to partition, and a policy that fails nowhere produces no failure set at all. The reasoning behind the band, and the sweep that sets the count, are given in Section 4.8.4 and in the information-gain argument of Section 4.10. Section 4.8.4 also records that the runs reported in this chapter used a uniform count of twenty demonstrations for every task instead of the band-calibrated count, and what that costs on Lift.
+
+**Policy Rollout.** The trained policy is rolled out on held-out episodes. The block emits the round's failure set. Without it there is nothing to reason over, and every method in the comparison contains it.
+
+**Flag Uncertainty at $t^\star$.** The orange gate in the figure is the query gate, and it is the component the DAgger family consists of. It reads the per-step loss and returns the step at which the policy first becomes unreliable. The framework uses it as the DAgger family uses it, and then keeps going.
+
+**The perception branch.** Three rendered frames of each failure, at the start, at $t^\star$ and at the end, feed the vision-language model by the dotted arrows, whose output feeds the reasoning model, which performs the root-cause analysis. The knowledge-augmented graph feeds the reasoning model by a dashed arrow, supplying the geometry facts and the failure vocabulary. Removing the vision-language model costs about one success-rate point, and removing the graph costs about two and a half, chiefly by raising the rate at which rounds fall back.
+
+**The geometric branch.** A long arrow labelled with the geometric descriptor at $t^\star$ runs across the top of the figure into a scatter panel of three coloured point clouds and then into the cluster engine, which emits $k$ failure modes. The cluster memory feeds the engine by a dashed arrow. The two branches leave the same gate and do not meet until the prescription model, which is the visual statement of the fact that the partition uses no output of any foundation model. Removing the cluster engine costs 4.01 success-rate points, which is the largest effect the ablation programme records (Section 4.14.2).
+
+**Prescription LLM.** The reasoning model and the cluster engine both feed the prescription model, which prescribes the configuration $P$ of the next demonstration. It emits a targeted correction or a bridging placement, with a confidence score.
+
+**Policy Rollout on P, and the return arrow.** The prescribed configuration is rolled out under the current policy, and the orange dashed arrow labelled "Solvable ⇒ Revise P" returns to the prescription model. That arrow is the solvability check of Equation 11. The figure draws this loop and does not draw a second return arrow for the feasibility check of Equation 10: in the current drawing the knowledge-augmented graph appears only as a one-way input to the reasoning model. The feasibility loop is a mechanism of the implemented framework and the solvability loop is not, so the drawing understates one and depicts the other, and the two are described separately in Section 4.4.4 for exactly that reason.
+
+**Expert Demo, Add demo, Update Policy.** The surviving configuration goes to the expert, whose single demonstration is added to the dataset, on which the policy is retrained, and the teal arrow returns to the rollout for the next round. One unit of the budget has been spent. Everything the framework has done in the round bears on the choice of what the policy is trained on, and nothing in it touches how the policy is trained, which is what makes the comparison against the DAgger family a controlled one.
+
+## 4.6 Representative prompts
+
+The three model calls of a round are reproduced below in the form the implementation writes to disk. Every run stores its exact prompts, so these are records.
+
+The perception call takes the system instruction and the three frames.
+
+```
+SYSTEM:  You are analysing a robot manipulation failure from rendered frames. Be
+         concrete and spatial; describe what you actually see, not generic advice.
+
+USER:    You are analysing a robot manipulation failure. The attached frames are, in
+         order: start, high_loss, end (the peak-loss frame is the policy's most-uncertain
+         step, t*=146).
+         Task: A UR5e robot with a wiping pad (no fingers) must WIPE a trail of dirt
+         markers off the table by pressing down and sweeping along the dirt path until
+         all markers are cleared (coverage).
+         Describe what went wrong. Focus on: where in the trajectory the failure occurs,
+         the robot/gripper configuration at peak loss, and what object or contact state
+         caused it. ~120 words, concrete and spatial.
+         [start frame] [high_loss frame] [end frame]
+```
+
+The model's reply on that instance, from a Wipe run, reads: *"The failure occurs during the sweep at the beginning of the trajectory, around step t\*=146. At peak loss, the robot's wiping pad is positioned at the start of the dirt trail, but the pad is tilted and not fully in contact with the table surface. The gripper is misaligned, causing the pad to lift slightly and only partially engage the dirt. This lack of stable contact prevents effective wiping, leaving the initial segment of the trail untouched."* One defect in the prompt template is visible in the quotation and is recorded here: the template names the anchor the "peak-loss frame", while the frame actually passed is the first-crossing step of Equation 5. The wording is stale and the frame is correct.
+
+The reasoning call is constrained to the graph's vocabulary and to strict JSON.
+
+```
+SYSTEM:  You are a robot-manipulation failure analyst. Classify the root cause and
+         trajectory phase using ONLY the provided categories and the KAG facts.
+         Output strict JSON, no prose, no code fences.
+
+USER:    TASK: {task_description}
+         {kag_text}
+         VLM FAILURE DESCRIPTION (the only visual evidence): {vlm_report}
+         Identify the root cause category and the trajectory phase where the failure
+         occurred.
+         root_cause in [grasp_failure, approach_failure, placement_error,
+                        contact_instability, pose_mismatch, timeout]
+         phase      in [pre_grasp, grasp, transport, placement, insertion]
+         Output ONLY this JSON:
+         {"root_cause": "<one of the categories>", "phase": "<one of the phases>",
+          "rationale": "<one sentence grounded in the VLM description and a KAG fact>"}
+```
+
+Its reply on the same failure is the grounding claim in miniature, because the rationale cites both the visual evidence and a named node of the graph:
+
+```json
+{"root_cause": "contact_instability", "phase": "transport",
+ "rationale": "The wiping pad tilts and lifts during the sweep (transport phase) as
+ described in the VLM evidence, causing intermittent contact with the table surface and
+ aligning with the KAG-reasoned 'contact_instability' failure due to loss of downward
+ pressure/alignment."}
+```
+
+The prescription call states the budget rule to the model, offers the two arms, and requires a confidence line.
+
+```
+SYSTEM:  You are a demonstration coach for an interactive imitation-learning loop. Each
+         round you spend ONE expert demonstration to fix the dominant failure mode. You
+         decide HOW to spend it, grounded in the KAG facts and the per-failure analyses.
+         Reason briefly, then end with EXACTLY two lines: (1) a decision line in the exact
+         required format, and (2) a confidence line 'CONFIDENCE: <integer 0-100> - <one-line
+         rationale>' reporting how confident you are that this demonstration will improve
+         the policy.
+
+USER:    (A) SELECT ep<ID> - one recorded failure represents the whole mode. That exact
+             scene is re-run and the expert corrects it on-policy from the divergence point
+             t*. Use when the cluster is TIGHT or one failure clearly dominates.
+         (B) BRIDGE ep<ID>,ep<ID> - no single failure covers the mode. Prescribe ONE new
+             object placement in the MIDDLE GROUND between 2-3 cited failures (e.g. failures
+             at (1,1) and (5,5) -> a demo near (3,3)); the expert demonstrates from there.
+             Use when the members are geometrically SPREAD but share a root cause.
+```
+
+The cited failures are handed to the model one line each, and the model answers in two lines. A Wipe round and a GridWorld round, taken verbatim from the logs, show the same machinery on a manipulator and on a discrete grid. One term in the GridWorld record needs stating before it is read: the task's three obstacle cells are written in its knowledge-augmented graph, and therefore in every prompt and every log line derived from it, as the *fires*, and the root-cause label `hit_fire` is the event of entering one.
+
+```
+DOMINANT FAILURE CLUSTER (members with their VLM+analysis findings):
+  - ep3000001: object_xy=(0.221,-0.027) progress=74/500  peak_loss=0.0434
+               root_cause=contact_instability phase=transport
+  - ep3000003: object_xy=(0.165,-0.068) progress=146/500 peak_loss=0.0181
+               root_cause=contact_instability phase=transport
+  - ep3000006: object_xy=(0.123,-0.157) progress=234/500 peak_loss=0.0186
+               root_cause=pose_mismatch         phase=placement
+===== RESPONSE =====
+SELECT ep3000001
+CONFIDENCE: 85 - Ep3000001's contact_instability root cause (higher peak_loss) at early
+progress best represents the dominant failure mode, ensuring the expert demonstration
+directly addresses unstable wiping pressure causing missed coverage.
+```
+
+```
+DOMINANT FAILURE CLUSTER (members with their VLM+analysis findings):
+  - ep3000004: object_xy=(1.000,2.000) progress=3/60 peak_loss=0.4643
+               root_cause=hit_fire phase=corridor
+  - ep3000013: object_xy=(0.000,1.000) progress=0/60 peak_loss=0.7154
+               root_cause=timeout  phase=junction
+  - ep3000016: object_xy=(1.000,2.000) progress=1/60 peak_loss=0.0126
+               root_cause=hit_fire phase=approach
+===== RESPONSE =====
+SELECT ep3000004
+CONFIDENCE: 75 - The cluster has two hit_fire failures at the same start cell (1,2),
+allowing the expert to demonstrate safe corridor navigation from a common fire-adjacent
+starting position.
+```
+
+The Wipe example also shows the imperfection of geometric naming from the inside: two of the three cited members carry the label `contact_instability` and the third carries `pose_mismatch`, so this mode has a purity of two thirds, and the reported mean of 0.877 is an average over instances like it. The confidence line is not decoration. Its correlation with the improvement the prescribed demonstration actually produces is reported in Section 4.11.
+
+## 4.7 Representative environmental constraints
+
+The knowledge-augmented graph of a task is a JSON document with a fixed schema: metadata (domain, robot, controller, action dimension), typed nodes with key-value properties, relations between them, and a block of reasoning implications, one per failure mode plus a workspace constraint and a non-emptiness rule. A renderer turns the document into the text block that is injected into the reasoning and prescription prompts. The graph is authored once per task, and its constraints are measurements of the environment rather than opinions about it.
+
+Push-T stores its bounds as typed workspace nodes and its controller as a node in its own right.
+
+```json
+{"id":"ws_tee","type":"Workspace","label":"Reliable tee init range",
+ "properties":{"x":[-0.20,0.20],"y":[-0.25,0.05],"z":0.021}},
+{"id":"ws_tcp","type":"Workspace","label":"Reliable tcp range",
+ "properties":{"x":[-0.35,0.35],"y":[-0.35,0.35],"z":[0.02,0.08]}},
+{"id":"ctrl","type":"Controller","label":"pd_joint_pos / rel_joint_pos",
+ "properties":{"policy_action":"7 joint deltas (rel_joint_pos)",
+               "expert_action":"PPO -> joint_delta_pos (same 7-joint space)"}},
+{"id":"goal","type":"Goal","label":"Fixed goal T-pose",
+ "properties":{"goal_offset":[-0.156,-0.1],"goal_z_rot_rad":1.5708,
+               "fixed_per_episode":true}}
+```
+
+The predicate that Equation 10 checks is stored as an implication and is written in the imperative, because it is addressed to the model as much as to the checker:
+
+> `"workspace_constraint": "Every prescribed config MUST keep tee_xyz within x[-0.20,0.20] y[-0.25,0.05] z=0.021 and tcp_xyz within x[-0.35,0.35] y[-0.35,0.35] z[0.02,0.08]; out-of-range poses are dropped (the PPO expert is unreliable there) and waste the round."`
+
+> `"non_emptiness": "A failure is present, so the prescription MUST be a concrete, fully-specified config (non-empty tee_xyz, tee_zrot, tcp_xyz). Never emit an empty prescription - that collects zero demos and wastes the round."`
+
+Door's constraint is tighter by an order of magnitude, and the numbers are a padded empirical measurement of the simulator's own reset sampler, so a prescribed configuration cannot leave the task's native reset distribution:
+
+```json
+{"id": "ws_door", "type": "Workspace", "label": "Reliable door-frame range",
+ "properties": {"x": [-0.135, -0.108], "y": [-0.366, -0.340], "z": 1.10,
+                "yaw_rad": [-1.82, -1.57]}},
+{"id": "succ", "type": "SuccessCondition", "label": "Door open",
+ "properties": {"metric": "hinge_qpos > 0.3 rad", "info_key": "success"}}
+```
+
+GridWorld shows the store doing more than bounding a box. For a discrete task the environmental constraint is a reachability predicate, and the graph says so, in the vocabulary of Section 4.6 in which the three obstacle cells are the fires:
+
+> `"workspace_constraint": "Every prescribed layout MUST keep start, goal, and the 3 fires as DISTINCT in-grid cells in [0..4]^2, with start != goal, Manhattan(start,goal) >= 4, and a fire-free BFS path from start to goal (fires never block all routes). Out-of-grid or unsolvable layouts are rejected and waste the round."`
+
+Wipe shows the store doing something a bounding box cannot do at all. Its graph carries an implication that removes an entire arm of the prescription from the task:
+
+> `"select_only": "Wipe randomizes a whole marker PATH, not a single object pose, so BRIDGE is infeasible - always choose SELECT of the most representative failed episode."`
+
+The planner reads that implication structurally and the prompt omits the bridging option. The graph therefore does two jobs: it constrains where a demonstration may be placed, and it determines which prescription arms exist for a task at all. Both jobs are done by knowledge that is written down and checkable, which is the sense in which the framework's model of the environment is explicit rather than implicit in a network's weights.
+
+
+## 4.8 Implementation and experimental setup
+
+Every concrete value in the Aim-1 evaluation is fixed in this section and appears nowhere else. The framework itself is stated over symbols: a budget $B$ of expert demonstrations, $D$ demonstrations acquired per round, a policy $f_\theta$ with a per-step loss $\ell_t$. What follows is the instance of that framework which was actually run.
+
+### 4.8.1 Tasks, observation modalities and settings
+
+A *setting* is one task under one observation modality. The evaluation covers five tasks under two modalities, state and image, which gives ten settings. The word *mode* is used in this report only for a failure mode, which is a cluster of failures that the framework discovers; an observation modality is never called a mode.
+
+GridWorld 5x5 is a discrete navigation task on a five-by-five grid with three obstacle cells, in which an agent must reach a goal cell from a start cell. The expert is a human. A\* search and breadth-first search enter the task only as the feasibility and path-validity checker that decides whether a prescribed grid configuration admits an obstacle-free route from start to goal [20, 31]; they are never used as the expert, and no policy is trained on their output.
+
+Push-T [17, 26] is a planar pushing task, in which a manipulator must push a T-shaped block into a fixed goal pose. The task originates in the implicit-behaviour-cloning work that introduced it [26] and was popularised by the diffusion policy [17]; the implementation used here is ManiSkill3's PushT-v1 [90], which the benchmark documents as the simulated version of that task. ManiSkill3 is the third release of a benchmark line whose earlier releases carry a different task suite and do not contain Push-T [30, 67], so the simulator and the task are cited separately throughout this report. Lift, Wipe and Door are RoboSuite manipulation tasks on a UR5/UR5e arm [102]: lifting a cube from a table, wiping a randomised trail of dirt markers from a surface, and pulling a door open past a hinge threshold. The three RoboSuite tasks and Push-T supply the continuous-action half of the evaluation, and their reset distributions differ by an order of magnitude in width, which matters later for the memory kernel.
+
+The expert differs by task, and the report states which it is in each case, because the claim that the demonstrations are correct by construction depends on it. On GridWorld the expert is a human. On Lift, Wipe and Door the expert is a scripted oracle: an open-loop motion-planner routine on Lift, a closed-loop routine reading the hinge angle on Door, and a scripted wiping routine over the sampled marker path on Wipe. On Push-T the expert is a policy trained by proximal policy optimisation (PPO) [82], a standard reinforcement-learning algorithm used here without modification, so the Push-T expert is learned rather than scripted. It is an expert in the sense the framework requires, namely a demonstrator whose trajectories are the target the policy is fitted to, and it is not uniformly competent: the trained policy pushes in one rotational direction only, so configurations that require the opposite rotation lie outside what it can demonstrate. Those configurations are excluded by the workspace constraints stored in the task's knowledge graph, which is where the constraint appears in Section 4.6.
+
+### 4.8.2 Policy instantiations
+
+The framework requires only that the policy expose a per-step loss, and it is instantiated with three different policy classes to make that requirement visible. GridWorld under the image modality uses a convolutional network. GridWorld under the state modality uses a multilayer perceptron. The four robot tasks use diffusion policies under both modalities, with an R3M visual encoder supplying the image branch [17, 68]. R3M supplies the policy's visual representation and nothing else. It does not supply the clustering features, which are geometric in every run, state and image alike.
+
+### 4.8.3 Budget, rounds and seeds
+
+The validated instance is $B = 20$ and $D = 1$. Each round rolls out the current policy on a frozen held-out evaluation set, analyses the failures, and acquires one expert demonstration, which is added to the training set. Twenty rounds therefore consume twenty demonstrations.
+
+The retraining cadence is a property of the task and not of the framework, and the runs reported here do not use one cadence everywhere. On GridWorld the policy is retrained from scratch after every round, so at $D = 1$ the framework analyses a freshly retrained policy twenty times. On the four robot tasks, where a diffusion policy is expensive to fit, retraining runs once every fourth acquired demonstration, so at $D = 1$ the policy is refreshed five times over the budget and the twenty rounds are twenty fresh rollout pools analysed against a policy that changes every fourth round. The algorithm's line 27 therefore reads "at the per-task cadence", and the two cadences are stated here once and hold for every arm of the comparison, DISEIL and baselines alike, so no arm is advantaged by the schedule.
+
+Ablation A12, reported in Section 4.14.3, is the evidence that $D = 1$ is the right choice at fixed labour and not an arbitrary one: at a fixed total of twenty demonstrations, $D = 1$ attains the highest final success rate in all ten settings, and the decline as $D$ grows is monotone in every one of them. Ablation A11 sweeps $B$ over 10, 20 and 40 and shows that the framework's advantage is largest at the smallest budget, which is the evidence that $B = 20$ is an instance and not a requirement.
+
+Seed counts are not uniform, and the asymmetry is stated. GridWorld is run with nine seeds; the four robot tasks are run with five. The workbook's round accounting confirms both counts independently: clustered rounds plus skipped rounds total 180 for each GridWorld setting and 100 for each robot setting, which is seeds times $B$ in both cases.
+
+### 4.8.4 Initial demonstrations and starting performance
+
+Before the first round, the policy is trained on an initial demonstration set that is excluded from the budget. In the runs that produce every number in this chapter, that set holds twenty demonstrations for every task. That figure, like the budget itself, is fixed by the protocol record of the Aim-1 runs, which is the transcription of the results workbook that this chapter's tables are drawn from, and it is the count against which the Lift-saturation argument below and the information-gain argument of Section 4.10 are made.
+
+The count is not a free parameter, and the reasoning behind it is the first half of the information-gain argument of Section 4.10. A policy's starting success rate has to sit inside a band for the experiment to mean anything. If the initial policy is too weak, its rollouts fail everywhere, every configuration is a failure, the failure set carries no structure for the descriptor to separate, and there is no allocation problem to solve. If the initial policy is too strong, the failure set is empty or nearly so, the budget has nothing to allocate, and every method converges to the same place. The band between those two conditions is the regime in which a fixed budget of demonstrations can be spent well or badly, which is the regime the framework exists for. Demonstration count and coverage are known to govern imitation-learning performance directly [51], so the count is the lever that places a task inside the band.
+
+The principle is implemented as a behaviour-cloning data-scaling sweep. A pool of expert demonstrations is collected, behaviour cloning is trained on each nested prefix of the pool, each prefix is evaluated on the frozen held-out set, and the prefix whose round-zero success rate is closest to a target of roughly 50 per cent is selected. Run over the consolidated re-implementation of the framework, that sweep selects eight initial demonstrations for Lift, twelve for Wipe, four for Door and twenty for GridWorld, and the measured round-zero success rates under those counts are 0.62 to 0.76 for Lift (state), 0.39 to 0.71 for Lift (image), 0.55 to 0.61 for Wipe (state), 0.41 to 0.47 for Door (state) and 0.46 to 0.61 for GridWorld (state). Push-T is absent from that list because the consolidated re-implementation does not yet carry the task, so its initial count was never swept and it stands at the uniform twenty. The four selected counts are read from the re-implementation's configuration, where the sweep grid and the selected value are recorded per task, and the round-zero success rates are read from its per-seed round-zero result files. Those figures come from the live re-implementation and not from the runs that produced Table 5, and they are reported here as the calibration evidence and not as the reported protocol.
+
+The gap between the two is the caveat that governs how every later number in this chapter may be read. Twenty initial demonstrations over-provision the easiest robot task. Lift, under the reported protocol, begins the budget close to a perfect success rate and reaches it within about five demonstrations under every method compared. Its final success rate under DISEIL is 100.0 ± 0.0 in both modalities, with no headroom and no seed variance. Lift therefore separates nothing, and no null result on Lift is evidence about any mechanism in this report. The statement is made here, once, and every later claim excludes Lift from its aggregate.
+
+### 4.8.5 Baselines
+
+Six comparison methods are run, described qualitatively; their hyperparameters are not reproduced here, and the mechanics of each belong to Chapter 2.
+
+Five of them are published interactive imitation-learning methods and share one skeleton: roll out the current policy, read a scalar signal, hand control to the expert when the signal crosses a threshold, aggregate the expert's labels and retrain [79]. They differ only in the signal. SafeDAgger learns a classifier that predicts when the policy is about to deviate from the expert [101]. DropoutDAgger reads the spread of a Monte-Carlo dropout ensemble of the learner's action distribution [29, 65]. EnsembleDAgger reads the variance of an explicit ensemble, combined with an action-discrepancy term [45, 66]. ThriftyDAgger combines a novelty estimate with a learned risk estimate under a target switching rate [35]. Diff-DAgger uses a diffusion policy's own per-step training loss as the uncertainty signal [47], and is run on the robot tasks only, where the policy is a diffusion policy. Those five are the DAgger family, and they are labelled as such in every comparison table. Diff-DAgger's use of the per-step diffusion loss as an uncertainty signal is its own contribution; DISEIL uses that signal for failure localisation and also compares against it as a baseline, and both facts are stated plainly.
+
+The sixth comparison method, Stagger, is not a published system. It is a uniform-random control implemented in this project: each round corrects one uniformly chosen recorded failure, with no gate, no descriptor and no allocation. It carries no citation, it is never labelled as a member of the DAgger family, and it is reported on GridWorld in the main table. Its extension to the robot tasks is reported in Section 4.14.2 as A2, where it answers the most damaging objection available against this work, which is that any failure replay would do.
+
+### 4.8.6 Metrics
+
+Three quantities are reported. The primary metric is the final success rate on the frozen held-out evaluation set after the budget is exhausted, in per cent, averaged over seeds.
+
+Per-demonstration information gain is the policy's per-step loss on a newly acquired demonstration, measured before the policy is retrained on that demonstration. The quantity is the same per-step diffusion loss that Diff-DAgger uses as its gate signal [47], evaluated on a datum and not on a rollout step. The retraining cadence of Section 4.8.3 enters the measurement: on GridWorld the scoring policy is the policy of the round, and on the robot tasks it can be up to three demonstrations stale, because retraining runs every fourth demonstration there.
+
+The record count per cell needs stating, because the report elsewhere uses the round accounting as a consistency check and the two do not line up. Each cell of Table 6 pools between 168 and 184 loss records, which is the count carried by the results table of record. A GridWorld setting acquires nine seeds times twenty demonstrations, which is 180 demonstrations, and one loss record per demonstration reproduces that range. A robot setting acquires five seeds times twenty demonstrations, which is 100, so a robot cell holds more loss records than it holds demonstrations, and a robot demonstration must therefore contribute more than one record. The source does not record the decomposition, and the discrepancy is carried with the other open items in Section 4.16.9 and is not resolved by an assumption here.
+
+$\Delta$SR is the change in the policy's success rate on the round-level rollout evaluation, measured before and after a round. It is a per-round quantity, not a final one, and it is the outcome against which a prescription's reported confidence is scored.
+
+## 4.9 Results
+
+### 4.9.1 The main comparison
+
+Table 5 gives the final held-out success rate in all ten settings. DISEIL attains the highest mean in every one of them.
+
+**Table 5.** Final held-out success rate (per cent, mean ± standard deviation over seeds; nine seeds on GridWorld, five on the robot tasks) after a budget of twenty expert demonstrations. **The DAgger family is the set of five published query-gated methods in the columns SafeDAgger, DropoutDAgger, EnsembleDAgger, ThriftyDAgger and Diff-DAgger.** Stagger is a uniform-random allocation control implemented in this project, has no query gate, and is not a DAgger-family method. Diff-DAgger is run on the robot tasks only, where the policy is a diffusion policy; Stagger is reported on GridWorld only. Lift is at the ceiling under every method and separates nothing.
+
+| | | *DAgger family* | | | | | Control | Ours |
+|---|---|---|---|---|---|---|---|---|
+| **Task** | **Modality** | SafeDAgger | DropoutDAgger | EnsembleDAgger | ThriftyDAgger | Diff-DAgger | Stagger | **DISEIL** |
+| GridWorld 5x5 | image | 86.1 ± 2.8 | 85.8 ± 2.6 | 85.7 ± 2.2 | 87.1 ± 1.9 | — | 86.6 ± 2.3 | **89.6 ± 1.8** |
+| GridWorld 5x5 | state | 85.3 ± 2.7 | 84.9 ± 2.5 | 86.2 ± 2.1 | 86.8 ± 2.0 | — | 85.7 ± 1.5 | **89.9 ± 1.3** |
+| Push-T | state | 82.0 ± 6.8 | 84.8 ± 6.1 | 85.9 ± 5.8 | 83.2 ± 7.2 | 90.7 ± 4.5 | — | **96.1 ± 4.5** |
+| Push-T | image | 78.1 ± 7.8 | 82.1 ± 6.9 | 83.2 ± 6.6 | 79.3 ± 8.1 | 89.0 ± 4.8 | — | **93.9 ± 4.9** |
+| Lift | state | 99.2 ± 1.6 | 99.2 ± 1.0 | 99.2 ± 1.0 | 98.8 ± 2.4 | 99.2 ± 1.0 | — | **100.0 ± 0.0** |
+| Lift | image | 99.6 ± 0.8 | 97.2 ± 3.5 | 98.8 ± 1.6 | 99.6 ± 0.8 | 99.6 ± 0.8 | — | **100.0 ± 0.0** |
+| Wipe | state | 88.0 ± 2.5 | 89.6 ± 4.1 | 90.8 ± 4.3 | 90.0 ± 2.5 | 90.4 ± 6.0 | — | **95.5 ± 6.0** |
+| Wipe | image | 69.6 ± 5.3 | 83.2 ± 6.8 | 84.4 ± 7.1 | 69.2 ± 9.0 | 89.6 ± 3.2 | — | **95.3 ± 3.2** |
+| Door | state | 93.2 ± 5.2 | 92.8 ± 2.7 | 88.8 ± 7.0 | 89.6 ± 3.9 | 95.2 ± 4.3 | — | **98.4 ± 4.2** |
+| Door | image | 92.4 ± 3.2 | 88.8 ± 3.3 | 86.0 ± 10.9 | 92.8 ± 2.7 | 89.2 ± 3.5 | — | **99.2 ± 3.4** |
+
+The margin over the strongest baseline in each setting averages 3.71 points, with a standard deviation of 2.05 and a range from +0.4 on Lift (image) to +6.4 on Door (image). Which baseline is strongest varies: Diff-DAgger on Push-T (both modalities), Wipe (image) and Door (state); ThriftyDAgger on both GridWorld settings and on Door (image); EnsembleDAgger on Wipe (state). On the two Lift settings the strongest baseline is a tie at the ceiling, four methods sharing 99.2 under the state modality and three sharing 99.6 under the image modality, and the comparison there is uninformative. The comparison is therefore against a moving target, and DISEIL is ahead of whichever method happens to be best in each setting.
+
+### 4.9.2 The aggregate claim, stated conservatively
+
+Ten wins from ten is a pattern, and the pattern, and not any individual comparison, is what the aggregate test converts into a number. Treating the ten settings as paired observations, a sign test and a Wilcoxon signed-rank test both reject a coin-flip ranking at two-sided $p = 0.002$, which is the smallest $p$-value attainable with ten pairs and is therefore the floor of what this design can produce.
+
+That figure should not be led with, and the reason is a defect in the design. The ten settings are not ten independent experiments. They are five tasks under two observation modalities, and the two modalities of a task share the expert, the reward structure and the reset distribution, so they are correlated by construction and the effective sample size is nearer five than ten. Collapsing to the five task means, the paired differences are +2.80 (GridWorld), +5.15 (Push-T), +0.60 (Lift), +5.20 (Wipe) and +4.80 (Door). The sweep holds at five from five. A one-sided sign test gives $p = 0.031$, which is its floor at $n = 5$, and a paired $t$-test over the same five means rejects at $t(4) = 4.15$, $p = 0.014$ two-sided. The two-sided nonparametric test does not reject at $n = 5$ ($p = 0.063$), and it cannot, because 0.063 is the smallest value it can return with five pairs.
+
+The claim of record is the collapsed one. DISEIL attains the best mean success rate in all ten settings, and the aggregate advantage is significant under the conservative task-level analysis. Figure 4 shows the ten paired margins with their standard errors and both pooled estimates, which is the presentation that makes the individual overlap and the systematic direction visible at the same time.
+
+![](figures_generated/F14_aggregate_significance.pdf)
+
+**Figure 4. Paired margin over the strongest baseline in each of the ten settings.** DISEIL attains the higher mean in all ten settings, with a mean margin of 3.71 points over the strongest baseline in each. The individual error bars overlap zero in several settings, which is why no single comparison carries the claim; the direction of the ranking is consistent across every task and every modality, and it is the consistency that the aggregate test measures. Horizontal bars are the standard error of the paired difference and are not themselves the test. The upper diamond pools the ten settings; the lower diamond pools the five task means and is the estimate the report leads with. The two smallest margins belong to Lift, for the trivial reason that there is no headroom there.
+
+### 4.9.3 Learning curves over the budget
+
+Figure 5 plots the success rate against the number of demonstrations added, for one setting of each task.
+
+![](../figures/all_5_task_comparison.pdf)
+
+**Figure 5. Success rate against the number of demonstrations added, on five tasks.** The curves are shown for the five tasks, showing the observation modality printed in each panel title: GridWorld (image), Push-T (state), Lift (state), Door (state) and Wipe (image). Lines are means over seeds and shaded bands are one standard deviation (nine seeds on GridWorld, five on the robot tasks). The Door panel shows the state setting; the Door image setting, which is one of the three primary settings used for the ablations, is reported in Table 5 and is not one of these panels. Every method saturates at a perfect success rate on Lift within about five demonstrations, so that panel separates nothing and is shown for completeness.
+
+The curves say three things that the final numbers alone do not. The separation between DISEIL and the DAgger family opens early on Push-T, from about the fifth demonstration, and holds thereafter, which is consistent with the budget sweep: the advantage is a coverage-rate advantage and it is paid out at the front of the budget, not at the end of it. On GridWorld every method rises together and finishes bunched between roughly 0.86 and 0.90 on the image setting shown, and Table 5 puts the whole column between 85.7 and 89.6 there, which is why the GridWorld margins (+2.5 and +3.1 points) are the smallest of the non-Lift settings. The task is small enough that twenty demonstrations approach what any allocation rule can extract from it.
+
+The third observation is a limitation and is reported as one. On Wipe (image), DISEIL and the strongest baseline are both still rising at the twentieth demonstration. Neither curve has plateaued inside the budget, so the +5.7-point claim on that setting rests on the final gap (95.3 against 89.6) and not on a demonstrated asymptote. A longer budget could close it, and the budget sweep shows the margin on that setting falling to +3.4 points at $B = 40$. The gap narrows with more labour, and it has not been shown to vanish.
+
+## 4.10 Information gain, starting performance and why the gain is real
+
+### 4.10.1 The measurement
+
+Per-demonstration information gain is the current policy's per-step loss on a newly acquired demonstration, evaluated before the policy has been retrained on it. The intuition is the standard one from active learning, where a datum on which the current model incurs a large loss is the datum whose acquisition is expected to change the model most [36, 84]. What is new here is not the measure. It is what the measure licenses once the acquisition pipeline is known.
+
+Table 6 gives the mean gain per setting. DISEIL acquires demonstrations of higher pre-retrain loss than every comparison method in all ten settings.
+
+**Table 6.** Per-demonstration information gain: the policy's per-step loss on each newly acquired demonstration, measured before retraining on it (mean ± standard deviation; 168 to 184 loss records per cell, as carried by the results table of record and reconciled against the round accounting in Section 4.8.6). **The DAgger family is the set of five published query-gated methods in the columns SafeDAgger, DropoutDAgger, EnsembleDAgger, ThriftyDAgger and Diff-DAgger.** Stagger is the uniform-random allocation control and is not a DAgger-family method. Lift begins the budget at the ceiling and supports no mechanism claim here either; its rows are reported for completeness, and Section 4.10.2 reads its low gain as the counter-example the measure predicts.
+
+| | | *DAgger family* | | | | | Control | Ours |
+|---|---|---|---|---|---|---|---|---|
+| **Task** | **Modality** | SafeDAgger | DropoutDAgger | EnsembleDAgger | ThriftyDAgger | Diff-DAgger | Stagger | **DISEIL** |
+| GridWorld 5x5 | image | 2.46 ± 1.61 | 2.53 ± 1.69 | 1.57 ± 1.55 | 1.37 ± 1.12 | — | 1.88 ± 1.43 | **3.21 ± 2.33** |
+| GridWorld 5x5 | state | 2.55 ± 1.68 | 2.95 ± 2.12 | 1.33 ± 1.18 | 1.34 ± 0.93 | — | 1.83 ± 1.11 | **3.55 ± 2.51** |
+| Push-T | state | 1.66 ± 0.99 | 2.36 ± 1.63 | 1.11 ± 0.64 | 1.10 ± 0.65 | 1.57 ± 1.10 | — | **2.81 ± 2.09** |
+| Push-T | image | 2.04 ± 1.11 | 2.16 ± 1.36 | 1.06 ± 0.64 | 1.20 ± 0.62 | 1.80 ± 1.10 | — | **2.82 ± 1.72** |
+| Lift | state | 2.23 ± 1.36 | 2.10 ± 1.25 | 1.12 ± 0.74 | 1.13 ± 0.55 | 1.61 ± 1.12 | — | **2.64 ± 1.65** |
+| Lift | image | 2.18 ± 1.40 | 2.17 ± 1.39 | 1.00 ± 0.55 | 1.21 ± 0.64 | 1.36 ± 0.85 | — | **2.93 ± 1.67** |
+| Wipe | state | 2.02 ± 0.96 | 2.38 ± 1.55 | 1.23 ± 1.10 | 1.18 ± 0.81 | 1.43 ± 0.80 | — | **2.91 ± 2.02** |
+| Wipe | image | 2.50 ± 1.47 | 2.96 ± 2.00 | 1.43 ± 0.89 | 1.52 ± 0.86 | 1.95 ± 1.16 | — | **3.62 ± 2.19** |
+| Door | state | 2.53 ± 1.64 | 3.10 ± 2.21 | 1.43 ± 0.82 | 1.42 ± 0.90 | 1.84 ± 1.11 | — | **3.43 ± 2.12** |
+| Door | image | 2.35 ± 1.40 | 2.46 ± 1.44 | 1.24 ± 0.76 | 1.26 ± 0.72 | 1.58 ± 0.92 | — | **3.00 ± 1.98** |
+
+![](../figures/info_gain_boxplot.pdf)
+
+**Figure 6. Per-demonstration information gain on GridWorld (image).** Each box is the pre-retrain per-step loss of the current policy on the demonstration that method acquired in that round, over the setting's nine seeds and twenty rounds. The DISEIL box has the highest median and the longest upper tail. The framework acquires demonstrations of higher typical novelty, and it also reaches the rare demonstrations of very high novelty that the query gates never select. Diff-DAgger does not appear, because it is a robot-task baseline and this is a GridWorld setting.
+
+### 4.10.2 The argument
+
+A high pre-retrain loss on a demonstration admits exactly two readings.
+
+Either the demonstration covers a region of the state space that the current training set underrepresents, so that the policy has never had to fit anything like it, or the demonstration is itself poor, in the sense of being suboptimal or invalid, so that no policy could fit it and the loss is a statement about the datum's incoherence rather than about the policy's ignorance. The second reading is the one that would destroy the measure, and any method that reports information gain without addressing it is reporting a number that could mean either.
+
+In DISEIL the second reading is ruled out by construction, and by two independent constructions at that. A prescription reaches the expert only after it has passed the feasibility check against the knowledge-augmented graph: the prescribed configuration lies inside the workspace bounds, inside the object's spawn range and inside the reachable set, because a violation is returned to the prescription model as feedback and a revised prescription is demanded until a feasible one is produced. An infeasible scenario therefore never becomes a demonstration. And the demonstration itself comes from the expert, whose trajectories are the target the policy is being fitted to, so a demonstration that survives the feasibility check cannot be suboptimal with respect to that target. Neither an infeasible scenario nor a bad action survives into the dataset.
+
+The first reading is therefore the only one left. High pre-retrain loss on a DISEIL-acquired demonstration identifies genuinely novel, underrepresented data. That is a claim with an argument behind it, not a hypothesis awaiting a test, and it is why Table 6 is a statement about coverage rather than about noise.
+
+Starting performance is what makes the argument interpretable in the first place, and it is the reason the initial demonstration count was set as it was. Loss is measured relative to a policy, and a policy that fails uniformly produces a high pre-retrain loss on any demonstration whatsoever, including a redundant one. The measure only discriminates when the policy is competent enough that its failures are localised. Placing each task's starting success rate inside the target band is what buys that condition: the policy already handles part of the state space, so a demonstration that provokes a high loss is one that lies outside the part it handles. Lift is the counter-example that proves the point from the other side. It starts at the ceiling, its information gain is the lowest DISEIL records in the state modality (2.64), and its success-rate margin is the smallest in the table (+0.8 and +0.4). With no failures to be novel with respect to, novelty has nothing to measure.
+
+### 4.10.3 Where the measure stops licensing the claim
+
+High information gain per demonstration is necessary and it is not sufficient, and the evidence for that is one of this project's own ablations. Removing the clustering step, so that each round greedily corrects the single highest-loss failure, leaves information gain statistically unchanged over the eight settings with headroom (mean change +0.06, Wilcoxon $p = 0.25$; the gain rises slightly) while the final success rate on the same eight settings collapses by 4.01 points (Wilcoxon $p = 0.008$, which is the floor of the test at $n = 8$). Greedy worst-loss selection collects demonstrations that are individually informative and jointly redundant, because information gain measured on one demonstration carries no term for its overlap with the demonstration collected in the previous round. Allocation across failure modes is precisely the term that supplies it.
+
+Table 6 must therefore never be read as the source of the framework's advantage on its own. It is the evidence that the demonstrations DISEIL asks for are novel to the policy. The evidence that they are novel *to each other* is the allocation ablation, reported in full in Section 4.14.2.
+
+## 4.11 Prescription confidence as an in-round predictor of improvement
+
+At the moment it issues a prescription, the prescription model also emits an integer confidence between 0 and 100, together with a one-line rationale, reporting how likely it believes the resulting demonstration is to improve the policy. The number is scored against $\Delta$SR, the change in the policy's success rate on the round-level rollout evaluation across that round.
+
+The Pearson correlation between the reported confidence and the realised $\Delta$SR runs from 0.82 to 0.89 across the ten settings. Quoting each task as state then image: GridWorld 0.88 and 0.86, Push-T 0.87 and 0.88, Lift 0.88 and 0.89, Wipe 0.82 and 0.86, Door 0.83 and 0.82. The two Lift figures are excluded from the reading that follows, on the same ground as everywhere else in this chapter: Lift is at the ceiling, so the $\Delta$SR these correlations are scored against has almost no range to correlate with, and the pair is quoted only because omitting it would be selective reporting. Figure 7 shows the GridWorld (image) scatter, where $r = 0.86$ over 152 prescriptions. The figure records the pooled count and not its decomposition, and the run logs have not been re-read to recover it, so the report states what is known: the correlation is 0.86 on GridWorld (image), and it is computed over 152 prescriptions. The count is below the 180 rounds that nine seeds at a budget of twenty supply, and no measurement in this report accounts for the shortfall.
+
+![](../figures/confidence_vs_success.pdf)
+
+**Figure 7. Reported prescription confidence against realised improvement.** The confidence the prescription model reports for a prescription, against the change in the policy's success rate on the round-level rollout evaluation that the resulting demonstration produced. GridWorld (image), 152 prescriptions, Pearson $r = 0.86$; the figure does not record which seeds and rounds those 152 are drawn from. Below roughly 55 per cent confidence the prescriptions return nothing and a few cost a little; above roughly 70 per cent almost all of them return a gain, and the largest gains are concentrated there. The correlation runs from 0.82 to 0.89 across the ten settings.
+
+What makes this number usable, and not a post-hoc rationalisation, is the order in which the two quantities become available. The confidence is reported blind, at prescription time. At that moment the demonstration has not been collected, the expert has not been called, the policy has not been retrained, and the re-rollout that produces $\Delta$SR has not been run. The success-rate signal arrives only after all three of those steps have completed, by which point the round's unit of budget has already been spent. The model is therefore forecasting an outcome it cannot observe, and a correlation of 0.82 to 0.89 is the accuracy of that forecast rather than a description of an outcome the model was shown. A signal available before the expenditure and correlated with what the expenditure returns is exactly the signal an allocation framework under a restricted budget needs, and it is not available to any query gate, whose scalar signal is a property of a state and carries no forecast about a demonstration that does not yet exist.
+
+The number carries two limits. The correlation is measured on DISEIL runs only, so it says nothing about whether a baseline's gate signal would predict its own $\Delta$SR equally well. And no experiment in this project gates on the confidence: nothing is skipped, deferred or re-prescribed on the basis of a low confidence score, so the correlation is an observed property of the system and not yet a mechanism inside it. Turning it into one, by declining to spend a demonstration on a prescription the model itself does not believe in, is the obvious next step and it has not been run.
+
+## 4.12 The failure modes the framework discovers
+
+The partition step produces the object the whole framework allocates over, so it is worth showing what that object actually is on a real task. Figure 2, in Section 4.4.2, shows the three failure modes discovered on Push-T (image), with three sampled members of each. The modes are behaviourally distinct: the block is brought to the goal region but left almost fully inverted, the arm never establishes a working contact, and the block is pushed but abandoned at a moderate orientation error and far from the end-effector. The clusters are found from geometry alone, and the naming pipeline of Section 4.4.5 supplies their labels from the task graph's own vocabulary.
+
+How well that naming holds is itself measured. Cluster purity, the fraction of a geometric cluster's failures that share the dominant root-cause label, ranges from 0.78 to 0.93 across the ten settings with a mean of 0.877, and the mean number of distinct root causes per cluster ranges from 1.30 to 1.91. Purity is lowest on Wipe (image), for the reason developed with diagnostic D1 in Section 4.14.4: several distinct causes share one end-effector position there, and geometry cannot tell them apart. Across the eight settings with headroom, purity and geometric separation are strongly correlated ($r = 0.93$, $p = 0.0008$), so the silhouette study of Section 4.14.3 and the purity diagnostic are not independent checks on the descriptor, and a high silhouette does not have to be earned twice. The claim the report makes is therefore the qualified one: the descriptor separates failures by where and how they occur, and it recovers root cause only to the extent that configuration determines cause. Purity is measured against the reasoning model's own labels, so it records agreement between two components of the same system and not agreement with a ground truth, and there is no human-labelled root-cause set against which it could be checked. That circularity is a real limitation of the measurement, and D1 develops it.
+
+Three is not the number of failure modes on these tasks; it is the most frequently selected count when the silhouette criterion runs. Pooled over 896 clustered rounds the shares are $k = 2$ at 17.5 per cent, $k = 3$ at 25.1 per cent, $k = 4$ at 23.8 per cent, $k = 5$ at 18.6 per cent and $k = 6$ at 15.0 per cent. The framework discovers a different number of failure modes in different rounds, and Figure 2 shows the most common count, not a fixed property of Push-T.
+
+## 4.13 What the results establish, and what they do not
+
+DISEIL attains the best mean success rate in every one of the ten settings, by an average of 3.71 points over whichever DAgger-family method is strongest in that setting, and the aggregate advantage survives the conservative task-level analysis ($t(4) = 4.15$, $p = 0.014$). It acquires demonstrations of higher pre-retrain loss than every comparison method in every setting, and the pipeline's two construction guarantees, feasibility verification and an expert demonstrator, are what convert that loss into a statement about coverage. The prescription model's own confidence in a prescription, reported before the demonstration is collected, predicts the round's realised change in success rate at $r = 0.82$ to 0.89.
+
+Four things the results do not establish should be read alongside those that they do. Lift contributes nothing: it is at 100.0 ± 0.0 with no headroom and no seed variance, and every mechanism claim in this report excludes it. The Wipe (image) advantage rests on the final gap and not on a plateau, because neither curve has flattened within the budget. The confidence correlation is a correlation, measured on DISEIL runs only, and nothing in the framework yet acts on it. And the demonstrations counted here are calls to a scripted or planner-based expert, each costing the same, which is the assumption that Aim 3 exists to remove.
+
+
+## 4.14 Ablation studies
+
+The comparison in Section 4.9 establishes that DISEIL wins. It does not establish *what wins*, and a framework assembled from a geometric descriptor, a clustering step, a memory term, a reasoning model, a prescription model, a vision-language model, a constraint store and a fallback rule can win for reasons unrelated to the components the method presents as its contribution. The ablation programme exists to find out which of those components carries the result. It was designed to be able to retire components of the framework, it retired two, and it located the advantage in a component the framework had treated as an implementation detail.
+
+### 4.14.1 Scope, conventions and what is reported here
+
+Fifteen ablation studies were run, together with five diagnostics. Fourteen of the ablations cover all ten settings. A2 covers the eight robot settings only, because it is the control for the GridWorld-only Stagger baseline and extends that control to the tasks where Stagger was not run. Of the five diagnostics, D1 (cluster purity), D2 (the distribution of the selected cluster count) and D3 (the split between targeted and bridged prescriptions) cover all ten settings; D4 (failures per round) is instrumented on Push-T (image) only; and D5, the compute and token-cost instrumentation, covers five settings, which are Door under both modalities, Wipe (image), Push-T (image) and GridWorld (image), and it is run at a single seed. D3 is not tabulated below and enters the text as the bridging shares quoted with A7; D5 has a section of its own, Section 4.14.5. Reporting every remaining cell would produce a matrix of two hundred numbers whose individual entries are within seed noise and whose collective message is simple. The studies discussed below are therefore reported on three primary settings, chosen to span the three policy classes and both observation modalities: GridWorld (image), where the policy is a convolutional network; Push-T (state), where it is a state diffusion policy; and Door (image), where it is an image diffusion policy. The remaining seven settings, and the studies not discussed here, are retained in full and are held for the supplementary material and for rebuttal. Where a claim depends on the full sweep and not on the primaries, an aggregate is given, and the set it is taken over is named at every use. Almost every aggregate in this chapter is a mean over the eight settings with headroom, for the reason given below; a reader should not attach any of them to the three primary settings, whose panels illustrate a study and do not supply its aggregate.
+
+Two derived quantities recur, and two aggregates must not be confused with each other. $\Delta$SR is the change in the policy's success rate on the round-level rollout evaluation. *Margin retained* is the fraction of DISEIL's advantage over the strongest baseline that survives an ablation, $(\text{ablated} - \text{best baseline}) / (\text{full} - \text{best baseline})$, expressed as a percentage. Margin retained is reported alongside the raw damage because a component whose removal costs two points on a task where the margin is three points is a different object from a component whose removal costs two points where the margin is ten. A value near 100% means the component is decorative. A value near zero means it carries the result. A negative value means the ablated system has fallen beneath the baseline it was built to beat.
+
+*The eight settings with headroom* are the ten settings minus the two Lift settings. *The eight robot settings* are the ten minus the two GridWorld settings, and they are the scope of A2, which needs a diffusion policy. Where both could be meant, the aggregate is named in full.
+
+Lift is excluded from every aggregate and from every mechanism claim in this section. Under DISEIL, Lift reaches 100.0 ± 0.0 in both modalities: no headroom above the mean and no variance across seeds. A knockout that changes nothing on Lift has demonstrated nothing about the component it removed, because nothing on Lift can move. Where a Lift number appears below, it appears only to show that it is uninformative. Every mean reported as "over the eight settings with headroom" is a mean over the ten settings minus the two Lift settings, and the eight are GridWorld, Push-T, Wipe and Door under both modalities. This is stated once and applies throughout.
+
+The workbook is the source of truth for every number below. Two internal inconsistencies were found during the analysis, and each is stated where it arises: a stale display column on the knowledge-graph sheet, and a contradiction between the recorded bridging rate and the method's stated precondition for bridging. The compute sheet was empty when this chapter was first drafted and now holds the D5 matrix of Section 4.14.5, which is read out of the jobs' telemetry and reconciled against the workbook.
+
+### 4.14.2 Knockouts, and where the mechanism lives
+
+Seven components were removed one at a time, with everything else held fixed. Ranked by mean damage over the eight settings with headroom, the ordering is: clustering (−4.01 points, 11.3% of the margin retained), the fallback rule promoted to the whole method (−3.14, 31.1%), the knowledge-augmented graph (−2.44, 44.2%), bridging placement (−1.24, 71.7%), the prescription model (−1.08, 76.7%), the vision-language model (−1.01, 78.0%) and the cluster memory (−0.75, 83.3%).
+
+A note on which component A4 removes, because two model calls are defined in Section 4.4 and only one of them is knocked out. The *reasoning model* is the text-only call that assigns a root cause and a trajectory phase to each failure from the taxonomy stored in the task's graph. The *prescription model* is the call that turns the selected mode and its context set into the round's demonstration request. A4 replaces the second of those, the prescription call, with a deterministic heuristic; the root-cause reasoning call is retained in A4 and still runs. The two calls are removed together nowhere in the programme, and the phrase *reasoning stack*, used below and in Section 4.14.5, names the two model calls plus the vision-language call taken together, and is used only where a cost or a recommendation applies to all three.
+
+The ordering shaped the rest of the programme in two ways. The clustering step, which the framework treats as an implementation detail of a generic partition, is the component that carries DISEIL. The cluster memory, which the method presents as one of its two contributions, is the least damaging of the seven knockouts.
+
+![](figures_generated/F1_allocation_ladder.pdf)
+
+**Figure 8. The allocation ladder, on the three primary settings.** Each panel compares uniform-random allocation of the budget over recorded failures (A2), the deterministic nearest-untried fallback rule promoted to the whole method (A8), clustering removed in favour of greedy worst-loss selection (A3), and full DISEIL, against the strongest DAgger-family baseline for that setting (dashed rule). Bars are the mean final success rate over seeds, nine for GridWorld and five for the robot tasks, with one standard deviation. Randomly chosen expert labour falls below the gated baselines; structured but unreasoning allocation recovers roughly a third of the margin; removing the failure-mode structure returns the system to baseline performance and, on Door (image), drops it beneath the baseline. Budget $B = 20$, one demonstration per round.
+
+**The ladder.** Figure 8 is read from the bottom up. The first rung is uniform-random allocation (A2), in which each round corrects one uniformly chosen recorded failure with no descriptor, no partition, no memory and no reasoning model. A2 is run on the eight robot settings, and on the six of those that have headroom it averages 83.72 against DISEIL's 96.40, a gap of 12.68 points (over all eight robot settings, Lift included, the gap is 10.25). It lands below all five gated baselines on Wipe (state), Door (state) and Door (image), and below four of the five on Push-T (state). Sampling failures uniformly reproduces the frequency of failure modes in the current policy's failure set, so the dominant mode is corrected in proportion to how often it occurs and a rare, persistent mode is almost never touched inside twenty rounds. The premise of the whole framework is that the value of a demonstration is not proportional to the frequency of the corresponding failure, and A2 measures that premise directly. It also settles the obvious objection, that DISEIL's advantage is nothing more than failure replay. Random replay of recorded failures is worse than an uncertainty gate, and an uncertainty gate is worse than allocation.
+
+The second rung is the deterministic fallback rule (A8). When the prescription model cannot produce a feasible prescription after five attempts, DISEIL falls back on the nearest untried recorded failure in descriptor space. A8 promotes that rule to the entire method. It retains 31.1% of the margin and beats every baseline on every setting. Nearest-untried is a spatial heuristic that implicitly spreads the budget, since a failure adjacent to one already corrected is less likely to be chosen than a distant one, and that is a crude version of the coverage pressure the partition and the memory supply deliberately. It gets a third of the way. It cannot get further, because "nearest untried" has no notion of a failure mode: it will select a chain of adjacent failures that all belong to the same mode, and it has no mechanism for concluding that a mode has been addressed. A8 is the floor against which the rest of the framework is calibrated, and every claim below about the reasoning stack is measured against A8 and not against the baselines.
+
+**A3, the clustering step.** The third rung removes the clustering step and targets, each round, the single failure with the highest peak per-step loss. The loss signal is kept; the failure-mode structure is removed. Success falls by 4.01 points on average over the eight settings with headroom (Wilcoxon on the eight paired means, p = 0.008, which is the smallest value the test can return at n = 8) and the margin retained collapses to 11.3%. On Door (image) the ablated system falls beneath its own best baseline, 92.4 against 92.8. The ablated system beats its best baseline in seven of the ten settings, and its mean advantage over the best baseline across the eight settings with headroom is 0.48 points, which is inside noise.
+
+![](figures_generated/F2_gain_without_allocation.pdf)
+
+**Figure 9. Information gain is necessary and is not sufficient.** Each arrow joins full DISEIL (open marker) to the clustering-off ablation (filled marker) for one setting. The horizontal axis is per-demonstration information gain, the policy's per-step loss on a newly acquired demonstration measured before retraining on it; the vertical axis is the change in success rate against full DISEIL. Both tests are computed over the eight settings with headroom, Lift excluded. Removing the failure-mode structure leaves information gain statistically unchanged (mean change +0.06, Wilcoxon p = 0.25) while success falls by 4.01 points (Wilcoxon p = 0.008, the floor of the test at n = 8). The right panel plots the paired gain values alone. Lift is at the ceiling and is uninformative.
+
+What makes A3 the argument for the framework, and not one knockout among seven, is the second column of Figure 9. Per-demonstration information gain does not fall when clustering is removed. It rises, very slightly: mean change +0.06 over the eight settings with headroom, Wilcoxon p = 0.25. Greedy worst-loss selection is marginally better than DISEIL at collecting demonstrations on which the current policy has high pre-retrain loss, which is unsurprising, since maximising that quantity is exactly what it does by construction, whereas DISEIL sacrifices some of it to spread the budget across failure modes. The two columns move in opposite directions, and the dissociation is the finding.
+
+The mechanism is straightforward once stated. Peak loss is a property of one failure trajectory. It is not a property of the *set* of failures the policy is still producing. Under greedy worst-loss, the highest-loss failure in round $r$ very likely belongs to the same failure mode as the highest-loss failure in round $r-1$, because the modes that generate the largest loss spikes are the ones the policy has learned least about, and one demonstration does not close a mode. The budget is spent repeatedly inside one region of the state space. Each demonstration in that stream is genuinely informative in isolation, which is why the gain column stays high, and each is largely redundant with the demonstration collected in the round before, which is why the success rate does not move. Information gain, measured per demonstration, has no term for redundancy between demonstrations. Allocation is precisely the term that supplies it.
+
+The consequence for the rest of the report is a restriction on what may be claimed. High information gain is necessary for a demonstration to be worth collecting and it is not sufficient, and the information-gain table cannot be presented on its own as evidence of the method's advantage, because A3 exhibits an ablated system with equal or higher gain and a four-point lower success rate. A3 also has a limitation worth stating: it removes the descriptor and the memory along with the clustering, because those components have nothing to operate on once modes are gone, so it is a knockout of the allocation *stack* and not of the partition in isolation. The cleaner variant, which keeps the descriptor and replaces agglomerative clustering [93] with a random partition of the failures into $k$ groups, would separate "grouping by geometry" from "grouping at all". It was not run and is future work, not a claim.
+
+![](figures_generated/F5_grounding_and_feasibility.pdf)
+
+**Figure 10. Grounding and feasibility.** Removing the knowledge-augmented graph from the prompts raises the fallback rate to between 23.5% and 34.8% of rounds on the settings with headroom and costs 2.44 success-rate points on average, retaining 44.2% of the margin. Without the graph there is nothing for the feasibility check to check against, so the prescription model proposes placements outside the reachable set or outside the spawn range, the expert cannot solve the prescribed episode inside the step limit, and the round falls back. The relation between fallback rate and damage is loose because a fallback round is not a wasted round: the fallback rule alone still retains 31% of the margin. The full-DISEIL fallback rate per setting is not recorded in the workbook, so the figure carries no reference line. Lift is at the ceiling and is uninformative.
+
+**A6, the constraints the prescription is checked against.** Equation 10 is a feasibility-verification loop. The prescription model proposes a prescription; constraints are retrieved from the knowledge-augmented graph, which stores workspace bounds, reachability, object and spawn ranges and controller limits as structured key-value knowledge; the prescription is checked against them; if a constraint is violated, the violation is returned to the model as feedback and a revised prescription is requested, until a feasible one is produced. A6 removes the graph from both the vision-language and the reasoning prompts, so the loop has nothing to verify against.
+
+The cost is 2.44 points on average, and 44.2% of the margin is retained. A6 is the third most damaging knockout, and it costs 2.44 points against the prescription model's 1.08, a factor of 2.3. Fallback rates of 23.5% to 34.8% mean that roughly five to seven of the twenty rounds are spent on a fallback correction and not on a prescribed one, a direct loss of a quarter to a third of the budget. That the relation between the fallback rate and the damage is loose (Push-T image loses 3.9 points at a 29.0% fallback rate; Wipe state loses 1.7 at 34.2%) is exactly what A8 predicts, because a fallback is not worthless. It is the nearest untried failure, and a system built entirely on that rule still retains 31% of the margin. A lost round costs the difference between a prescribed correction and a fallback correction, not the whole round, which is why A6 costs two and a half points and not six.
+
+What the graph buys follows from that mechanism. It stops the prescription model from producing prescriptions the environment cannot instantiate, and it does not make the model a better reasoner. Two limitations bound the claim. The per-task graph is authored by hand, and the study does not decompose it, so it cannot be said whether the workspace bounds alone would recover most of the 2.44 points or whether the failure taxonomy and the per-mode rules matter as well. And A6 knocks out only the *first* of the architecture's two screens. The second, the policy-solvability check, in which the prescribed scenario is rolled out under the current policy and revised if the policy already solves it, is not ablated anywhere in the workbook. That is a gap in the study and it is named as one.
+
+![](figures_generated/F4_reasoning_and_vision_small.pdf)
+
+**Figure 11. The prescription model and the vision-language model are each worth about one point.** Removing the prescription model (A4, replaced by a fixed heuristic operating on the same geometric clusters, with the root-cause reasoning call retained) and removing the vision-language model (A5, leaving the reasoning model with the geometric descriptor and the root-cause labels) cost a mean of −1.08 and −1.01 success-rate points over the eight settings with headroom. The shaded band is one seed standard deviation of the corresponding full DISEIL run (nine seeds on GridWorld, five on the robot tasks). The direction is consistent across all ten settings, and every gap falls inside the seed noise.
+
+**A4 and A5, the prescription model and the vision-language model.** A4 replaces the prescription model with a deterministic rule, "always target the dominant cluster representative", operating on the same geometric clusters, so that the comparison isolates the prescription decision and not the partition. The root-cause reasoning call is untouched in A4 and still runs. A5 removes the vision-language model, which reads three frames of each cited failure (the start, the flagged step and the end) and supplies a description of what went wrong. The two knockouts cost 1.08 and 1.01 points and retain 76.7% and 78.0% of the margin. Every individual gap in both studies is smaller than the seed standard deviation of the corresponding full run, and the two are close enough in magnitude that the study cannot rank them.
+
+The explanation is structural. Clustering is geometric in every run, state and image alike, and it consumes no output from any foundation model. By the time either model is called, the decision that matters, which region of the failure distribution receives this round's demonstration, has already been made by the descriptor and the memory. The prescription model chooses the form of the correction inside a region that was selected without it. A component acting downstream of the decisive step cannot produce a large effect, and the measurement agrees. Read the other way, the same fact is a practical result: a deployment that cannot afford the reasoning stack can delete it, keep the geometric clustering, the memory and the deterministic heuristic, and still beat every baseline on every setting.
+
+The pattern carries two details worth reporting. In A4, the gap is largest on Push-T (state), at −1.9, and Door (image), at −1.6, and smallest on Door (state), GridWorld (image) and Push-T (image). The heuristic cannot bridge, and the tempting reading is that what the prescription model buys is the decision to bridge, but the bridging shares do not support it: among the three primary settings the shares run Push-T (state) 28%, GridWorld (image) 24% and Door (image) 21%, so the setting with the second-largest A4 gap has the smallest share of the three, and across all ten settings the largest shares belong to GridWorld (state) and Door (state) at 30%, of which Door (state) has the smallest A4 gap of the eight settings with headroom, at −0.4. The same flatness appears in A7 (Figure 12). The bridging explanation is therefore untested and is not adopted here; the experiment that would test it, a heuristic that bridges by a fixed rule, has not been run. In A5, the largest gap is on Push-T (state), at −2.0, which is a state-modality setting and therefore counterintuitive. The frames are not there to compensate for a missing state vector. They are there to let the model see why the T ended where it did, and Push-T is the task on which one terminal geometry can be reached by several distinct failure processes: pushing on the wrong face, losing contact, over-rotating. On Door, where the geometry of a failure largely determines its cause, the visual channel adds less.
+
+Both knockouts carry a limitation that cuts against the framework's interest. The A4 heuristic is a strong one: "always target the dominant cluster representative" is itself an allocation rule, and it inherits the memory's rotation, because the dominant cluster changes as the memory penalises recently corrected regions. A weaker heuristic would have produced a larger gap. A5, for its part, does not test whether a better visual model would help more, and it does not test the counterfactual that matters most for the image settings, which is clustering in a visual space. That arm was run in an earlier version of the study and is retired for the reasons given under A10; it is not resurrected here as evidence.
+
+![](figures_generated/F6_bridging.pdf)
+
+**Figure 12. Bridging placement and its measured value.** Bridging, which asks the expert for a configuration positioned between the target cluster and a region the policy already handles, is selected in 18% to 30% of accepted prescriptions (mean 24.4%), and disabling it costs 1.24 points on average over the eight settings with headroom. The cost of removing it does not grow with how often a setting bridges: over the same eight settings the Pearson correlation between the bridging share and the cost in success-rate points is −0.23 (p = 0.58), which is flat. The right panel gives the targeted and bridged split per setting.
+
+**A7, bridging placement.** Bridging is the only part of the prescription that changes the environment configuration rather than selecting an episode, and it is the mechanism by which a prescription can be made easier than the failure it addresses. Disabling it costs 1.24 points over the eight settings with headroom and retains 71.7% of the margin, which is proportionate: a component used in a quarter of rounds cannot produce a large aggregate effect unless the rounds in which it is used are the decisive ones. That aggregate pools settings whose status is in dispute, so it is also given on the settings where the arm is defined by the task's own graph: over Push-T and Door under both modalities, the four settings that have both a bridging arm and headroom, disabling bridging costs 1.03 points and retains 80.2% of the margin. Neither figure changes the reading, and both are reported so that the aggregate is not silently contaminated by the settings in dispute.
+
+Bridging does not pay more where it is used more often. The correlation between the bridging share and the cost of removing bridging is flat (r = −0.23, p = 0.58), and Figure 12 shows the flat cloud. The largest damage is on Wipe (image), at −2.9 with a 27% share; the smallest is on Door (state), at −0.4 with a 30% share. The rounds in which bridging is used are what matters, not how often it is used, and the coherent reading is that bridging pays when the target cluster lies far outside anything the current policy solves, so that a targeted demonstration would be a large distributional jump and a bridged one is a step the policy can absorb. Wipe (image) carries the weakest policy in the sweep, which is where that condition should bite hardest, and it takes the largest damage. That setting is held for the supplementary material and is not one of the three primaries, so the observation comes from the full sweep and not from a primary setting.
+
+The method's stated precondition for bridging is pose randomisation, from which it follows that bridging should be inapplicable on GridWorld, a discrete corridor, and on Wipe, which randomises the path rather than a pose. The recorded prescription logs disagree: 24% to 30% of accepted prescriptions on those settings are marked bridged, and A7 records a measurable effect there, including the −2.9 on Wipe (image), which is only coherent if bridging did operate. Either the recorded mechanism is broader than the method text claims, or the runs did something the method text did not intend. The data are the source of truth, so bridging is reported here as active on all five tasks, and the discrepancy is the first item to resolve before the AAAI submission, by inspecting the prescription logs of a GridWorld run. Until it is resolved, a reader who compares the precondition with the 27% bridging share on a path-randomised task has grounds to conclude that the implementation does not match the method text, and the aggregate above is quoted both ways for that reason.
+
+![](figures_generated/F3_knockout_summary.pdf)
+
+**Figure 13. Every knockout, on every setting.** Cells give the percentage of the margin over the strongest DAgger-family baseline that survives the ablation, with the change in success rate (points) beneath. Rows are ordered by mean damage over the eight settings with headroom. Clustering carries the method; the deterministic fallback recovers about a third; knowledge-graph grounding is worth roughly half; and the cluster memory, which the method presents as one of its two contributions, is the least damaging knockout of the seven. The single cell in the alert hue is A3 on Door (image), where the ablated system falls beneath its baseline. Lift is at the 100.0 ± 0.0 ceiling, and its columns are struck out and not reported.
+
+**A1, the cluster memory.** Switching the memory off ($\lambda = 0$) costs 0.75 points and retains 83.3% of the margin, the smallest effect of the seven knockouts, with every individual gap inside one standard deviation of the corresponding full run. The memory is the mechanism that is supposed to stop the budget from being absorbed by whichever failure mode happens to dominate in round 1, and if it does nothing then the framework's second contribution is decorative. On the face of it, A1 says it does nearly nothing.
+
+A1 cannot, on its own, separate "the memory does little" from "the memory was disabled by a badly chosen constant". Only the joint reading of A1 and the constant sweep can, and the joint reading is given in Section 4.14.4.
+
+### 4.14.3 Design choices, and whether this instantiation is the right one
+
+The second family of studies asks a different question. Given that allocation is the mechanism, is *this* descriptor, *this* cluster count, *this* context set, *this* budget and *this* number of demonstrations per round the right way to allocate?
+
+![](figures_generated/F7_descriptor_dimensionality.pdf)
+
+**Figure 14. Mean silhouette of the failure clusters against the dimensionality of the geometric descriptor.** One thin line is drawn per setting, and the heavy line is the mean over all ten. The 6-D descriptor is the argmax in ten settings out of ten (Friedman χ²(6) = 59.52, p = 5.6 × 10⁻¹¹; Wilcoxon 6-D against 5-D and against 8-D, p = 0.002 in both). Below 6-D the descriptor discards information that separates failure modes, and the largest single step in the sweep is the addition of orientation. Above 6-D nothing is removed and the loss is geometric. Silhouette scores geometric separation only, and is independent of the success rate.
+
+**A10, the width of the geometric descriptor.** The descriptor is designed, not learned, which invites the suspicion that the feature set was fitted to the reported result. A10 answers by scoring the descriptor on what it is *for*, the separation of failure modes, using a criterion with no relationship to success rate: the mean silhouette of the resulting clusters [81]. Features are removed from and added to the descriptor, and the silhouette is measured over every clustering round. If the feature set had been over-specified, the curve would be flat and the choice of six dimensions arbitrary.
+
+The curve is a clean inverted U with a single interior maximum, and the 6-D descriptor is the highest-scoring variant in all ten settings without exception. Below six dimensions the descriptor discards information that distinguishes modes, and the largest single step in the whole sweep, +0.131 in mean silhouette, is the step from two dimensions to four, which adds orientation. Position alone cannot separate a Push-T failure in which the T is in the right place at the wrong angle from one in which it is in the right place at the right angle and the pusher lost contact, so those failures collapse into one cluster and the cluster's silhouette is poor. Adding task progress (+0.047) and contact distance (+0.035) each buy less, which is consistent with orientation being the dominant discriminator on these tasks. Above six dimensions the fall is not an information loss, since every added feature carries some signal. It is geometric: as dimensionality rises, the ratio of the nearest to the farthest pairwise distance approaches one, all failures come to look equidistant, the agglomerative merge order becomes arbitrary, and the silhouette falls although nothing was removed. End-effector velocity adds two dimensions of mostly noise to a distance computation over a few dozen points, and by twelve dimensions the joint-angle summary has added six more. The number of failures being clustered is small, forty-two in round 1 and two by round 20, and distance concentration bites hardest at small sample sizes. The descriptor is small because the failure sets are small, and the two facts are linked by the geometry of the distance computation, not by a design preference.
+
+A10 also settles a point of record. Clustering is geometric for every run, state modality and image modality alike, and the descriptor is the same six-dimensional vector in both: $[p_x, p_y, \sin\theta, \cos\theta, \rho, \delta]$ for the robot tasks, where $\rho$ is task progress and $\delta$ is contact distance, and $[\text{agent cell}, \text{signed offset to goal}, \text{progress}, \text{Manhattan distance}]$ for GridWorld. An earlier version of the method clustered image-modality runs in a frozen visual-embedding space reduced by principal-component analysis. That branch is retired. The two columns for one task under the two modalities differ because an image policy fails in different places, not because the features differ. The visual channel feeds root-cause reasoning and it does not feed the partition, and the architecture figure must show it entering the prescription branch only.
+
+The limitation is the one silhouette cannot address. Silhouette scores geometric separation, not semantic correctness, and a descriptor could produce beautifully separated clusters that correspond to no distinct root causes at all. The purity diagnostic of Section 4.14.4 is the measurement that bears on that hole, and it does not close it: over the eight settings with headroom, purity and silhouette are strongly correlated (r = 0.93), so purity supplies no audit of the descriptor that silhouette does not already supply, and both are computed inside the same system. A10 also shows only that this family of descriptors peaks at six dimensions. It says nothing about whether a learned descriptor would do better.
+
+![](figures_generated/F11_context_and_selection.pdf)
+
+**Figure 15. Three ablations of the machinery inside individual steps, with arms ordered by effect.** The panels are drawn on the three primary settings; the means quoted in the text below are taken over the eight settings with headroom and should not be attached to the panels. Left: the composition of the context set $S$, built from a forced target representative, the worst-peak-loss seed and a farthest-point-sampling diversity fill. Middle: silhouette-based selection of the cluster count against the best fixed alternatives. Right: the number of cited episodes and the selection rule. Across the eight settings with headroom the three studies move the success rate by between roughly half a point and just over two points. The forced representative is the single most valuable rule, at −1.93 points when it is dropped, and the two comparisons that test the machinery against a plain alternative are the smallest: silhouette selection beats the best fixed cluster count by 0.34 points, and the three-rule context set beats the top three by peak-loss rank by 0.40.
+
+**A9 and A15, the context set.** The context set given to the prescription model contains three cited failure episodes chosen by three rules: the forced representative of the target cluster, the worst-peak-loss seed, and a farthest-point-sampling fill for diversity [24]. A9 removes each rule in turn and adds a floor control of three episodes drawn at random from the cluster, with the target cluster fixed by the memory in every arm so that only the composition of $S$ varies. Every figure quoted in this paragraph and the next is a mean over the eight settings with headroom. The ordering is the result. Dropping the forced representative hurts most (−1.93 points over the eight settings with headroom), because without it the prescription model may never see an example of the mode it has been instructed to fix: the memory selects the cluster, and if $S$ is filled by loss rank and diversity alone, the cited episodes can all come from the cluster's periphery. Dropping the diversity fill costs −1.15 over the same eight, because a context set of three episodes all drawn from near the loss peak describes the mode narrowly and the model prescribes a narrow correction. Dropping the worst-loss seed costs least (−0.74 over the same eight), which is what the mechanism predicts, since the representative and the diversity fill between them already span the mode and the loss peak adds sharpness and not coverage. Random selection of three (−2.25 over the same eight) is worse than any single-rule removal, so the three rules are complementary and not redundant (Friedman χ²(4) = 31.54, p = 2.4 × 10⁻⁶).
+
+The magnitudes discipline the claim. The whole spread from the full context set to random selection is 2.25 points over the eight settings with headroom, comparable to the knowledge graph and considerably less than the clustering. A15 sharpens the point by varying the *number* of cited episodes jointly with the selection rule, and it contains the one comparison that could have deleted a component of the method: citing the top three episodes by plain peak-loss rank, against the three-rule construction, at the same number of citations. The gap is 0.40 points over the eight settings with headroom. It is a real gap in the paired sense, since the full construction wins on every setting, and it is a small one. Every arm of A15 is measured against the same reference, the full three-rule construction at three citations. Two citations cost 0.98 points against that reference; five citations cost 0.46 against it and three citations cost 0.40, a difference of six hundredths of a point, so the fourth and fifth citations buy nothing and the cap at three is justified directly; and citing every failure in the target cluster costs 1.40, which raises the prompt length without adding discriminative detail, since the early rounds carry about forty failures and a context set of forty episodes buries the target mode in detail the model cannot weigh. All four figures are means over the eight settings with headroom. The single-citation arm was not run, and the reason is that it is confounded by construction: bridging requires at least two cited failures in order to define a placement between a failing region and a solved one. It is not a null result and must never be reported as one.
+
+**A14 and D2, the cluster count.** The cluster count $k$ is chosen per round by maximum mean silhouette, which is standard practice and is used as such, and is not claimed as a contribution [72, 81]. A14 replaces the adaptive choice with a fixed $k \in \{2,3,4,5\}$. Silhouette selection wins on every setting (Friedman χ²(4) = 30.63, p = 3.6 × 10⁻⁶), and it beats the best fixed alternative, $k = 3$, by 0.34 points over the eight settings with headroom. The seed standard deviations run from 1.3 to 7.2 across those eight settings, so 0.34 is a small fraction of the noise on every one of them and the adaptive rule is defended by the consistency of its sign and not by the size of its effect. Both halves of that sentence are true and both are reported. Too few clusters merges distinct failure modes, so the memory penalises a merged cluster and suppresses correction of a mode that was never addressed. Too many splits one mode across several clusters, so the memory cannot recognise that the mode has been corrected and rotation is diluted across fragments of the same region. The optimum is flat between three and four.
+
+![](figures_generated/F12_cluster_count_distribution.pdf)
+
+**Figure 16. How many failure modes the method discovers, per round.** Bars give the share of all rounds selecting each cluster count $k$, with the rounds that skip clustering entirely, because fewer than four failures remain and each failure becomes its own cluster, shown hatched. Pooled over the 896 clustered rounds, $k = 3$ is the most frequently selected count at 25.1% and $k = 4$ a close second at 23.8%, with $k = 2$ at 17.5%, $k = 5$ at 18.6% and $k = 6$ at 15.0%. Total rounds equal seeds × $B$ (180 for GridWorld at nine seeds, 100 for the robot tasks at five), which confirms the stated seed counts.
+
+D2 shows that the adaptivity is not a disguised constant. Pooled over the 896 clustered rounds, $k = 3$ is the most frequently selected count at 25.1% and $k = 4$ a close second at 23.8%, and no value from two to six falls below 15.0%, which is the share of the least common of them, $k = 6$. The claim the framework may make is that the number of discovered failure modes varies by round and is most often three or four, not that there are three failure modes. D2 also carries a seam: between 15% and 34% of all rounds never cluster at all, because fewer than four failures remain, and in those rounds each failure becomes its own cluster and the budget is allocated by the fallback rule. Its hatched segment is the same fact that the failure-count curve of Figure 21 shows in time.
+
+![](figures_generated/F8_budget_sweep.pdf)
+
+**Figure 17. Margin over the strongest DAgger-family baseline as a function of the budget $B$.** One line is drawn per setting, with the mean over the eight settings that have headroom (dashed). The margin decreases monotonically in $B$ in all ten settings and roughly doubles when the budget is halved: +10.35 points at $B = 10$, +4.49 at $B = 20$, +2.68 at $B = 40$. The right panel shows the mechanism on Push-T (state): the margin shrinks because the baseline catches up, not because DISEIL degrades.
+
+**A11, the budget.** The framework is claimed to operate under any fixed budget, with $B = 20$ as the validated instance, and A11 is the experiment that supports or refutes the claim. The margin is monotonically decreasing in $B$ in every one of the ten settings and roughly doubles when the budget is halved. Allocation buys the *rate* at which the failure distribution is covered, not the asymptote, which is why a large budget closes the gap: with enough draws, even a poorly allocated stream eventually covers the failure distribution, because coverage is a coupon-collector problem and the collector wins if it draws long enough. The effect is largest on the settings with the widest failure distributions and smallest on Lift, which has essentially one mode and covers it immediately. A11 is therefore the evidence for the separation the framework insists on: $B$ is a symbol in the method and in the algorithm, whose loop header reads "for $r = 1$ to $B$", and the value 20 appears only in the experimental setup.
+
+One claim the sweep was expected to support does not hold, and it is retracted here. The workbook proposed the headline "DISEIL at $B = 10$ matches the best baseline at $B = 20$, the same policy for half the expert labour". DISEIL at $B = 10$ is *below* the best baseline at $B = 20$ in seven of the ten settings, matches it on Door (image) by a tenth of a point, and exceeds it only on the two Lift settings, which are at the ceiling and uninformative. The halved-labour claim is false and does not appear in this report. What survives is the claim the data do support, which is the one that matters for the framework: the advantage of allocation grows as the budget shrinks, and the method stops paying when demonstrations stop being scarce.
+
+![](figures_generated/F9_demos_per_round.pdf)
+
+**Figure 18. Final success rate against the number of demonstrations prescribed per round.** The total expert labour is held fixed at $B = 20$, so that $D = 1$ gives twenty rounds and $D = 3$ gives about seven. $D = 1$ is best in ten settings out of ten and the decline is non-strictly monotone in every one (Friedman χ²(2) = 19.54, p = 5.7 × 10⁻⁵; Wilcoxon $D = 1$ against $D = 3$, p = 0.002). No line rises and no two lines cross. The only flat segment is Lift (image), which sits at 99.9 at both $D = 2$ and $D = 3$; Lift is at the ceiling and carries no weight either way.
+
+**A12, demonstrations per round.** The framework prescribes one demonstration per round, and if three matched one the choice would be arbitrary. A12 holds the total expert labour fixed and varies only how the labour is divided into rounds. One per round wins on all ten settings, and the decline is monotone, in the non-strict sense, in every one.
+
+The mechanism turns on the number of re-analysis opportunities the budget supplies, and not on how often the policy is retrained. A round is one fresh rollout pool, one partition of the resulting failures, and one allocation decision taken against that partition. At $D = 1$ the budget buys twenty of them. At $D = 3$ it buys about seven, and within a round the second and third demonstrations are prescribed from a single analysis of a single failure pool, so they are allocated jointly, without any new rollout evidence, and without any observation of what the first demonstration of the round changed. Retraining runs at the per-task cadence of Section 4.8.3, every round on GridWorld and every fourth demonstration on the robot tasks, and it is that cadence, and not $D$, that determines how fresh the scoring policy is; what $D$ determines is how many times the failure distribution is re-measured and re-partitioned before the budget is exhausted. Fewer re-analyses mean a coarser allocation, and the coarser allocation is what the sweep measures.
+
+The size of the effect is where A12 stops being a hyperparameter study. The cost of coarse allocation is largest exactly where allocation buys the most: −2.1 on Door (image) and −2.2 on Wipe (image), the two settings with the largest DISEIL margin over baseline, and −0.7 and −0.9 on the GridWorld settings, where the margin is smallest. The cost of losing allocation is proportional to the value of allocation, which makes A12 a second and independent confirmation of the allocation thesis. The practical reading is the one a practitioner will want: on a task where retraining is expensive, a larger $D$ is forced, and A12 prices that at about 1.5 points at $D = 3$, taken as a mean over the eight settings with headroom.
+
+### 4.14.4 Sensitivity and diagnostics, and where the instantiation is wrong
+
+The last family of studies asks whether the constants the framework was run at are the right ones, and it returns a defect in the instantiation.
+
+![](figures_generated/F10_memory_constants.pdf)
+
+**Figure 19. Sensitivity of the three memory constants.** Each constant is swept alone, with the other two held at their reference values (dashed). The recency discount γ and the penalty weight λ are significantly best at their reference values and separate from every swept alternative under Holm-corrected Wilcoxon tests. The response to λ is not monotone: a half-weight penalty is worse than no penalty at all. The kernel width σ = 0.06 is directionally best and is not statistically distinguishable from its neighbours (Holm-corrected p = 0.125, marked ns), because it moves the success rate by 2.2 to 2.6 points on Push-T and Wipe and by 0.1 to 0.2 points on the six remaining settings, where the kernel is degenerate or masked by the Lift ceiling.
+
+**A13, the memory constants.** The memory term has three constants: the recency discount γ, the Gaussian kernel width σ and the penalty weight λ. Each was swept over five values with the other two held at their reference values, on all ten settings treated as matched blocks, with a Friedman test across each sweep, post-hoc two-sided Wilcoxon signed-rank tests of the reference value against every alternative, and Holm–Bonferroni correction inside each constant's family of four comparisons and never across constants.
+
+| Constant | Value | Average rank | Mean SR (%) | Holm-corrected p against the reference | Friedman |
+|---|---|---|---|---|---|
+| γ | 0.3 | 4.00 | 94.64 | 0.0078 | χ²(4) = 33.13 |
+| γ | 0.5 | 2.60 | 95.51 | 0.0078 | p = 1.1 × 10⁻⁶ |
+| γ | **0.6 (reference)** | **1.10** | **95.79** | — | |
+| γ | 0.7 | 2.55 | 95.55 | 0.0078 | |
+| γ | 0.9 | 4.75 | 94.55 | 0.0078 | |
+| σ | 0.02 | 3.65 | 95.16 | 0.047 | χ²(4) = 28.84 |
+| σ | 0.04 | 2.15 | 95.62 | 0.125 (ns) | p = 8.4 × 10⁻⁶ |
+| σ | **0.06 (reference)** | **1.75** | **95.79** | — | |
+| σ | 0.1 | 2.75 | 95.48 | 0.125 (ns) | |
+| σ | 0.2 | 4.70 | 94.79 | 0.016 | |
+| λ | 0.0 | 2.90 | 95.17 | 0.0078 | χ²(4) = 34.36 |
+| λ | 0.5 | 3.90 | 94.67 | 0.0078 | p = 6.3 × 10⁻⁷ |
+| λ | **1.0 (reference)** | **1.10** | **95.79** | — | |
+| λ | 2.0 | 2.30 | 95.36 | 0.0078 | |
+| λ | 4.0 | 4.80 | 94.48 | 0.0078 | |
+
+**Table 7. Memory-constant sweep.** Average rank over the ten settings (rank 1 = highest success rate), mean success rate across the ten settings, and the Holm-corrected p-value of a two-sided Wilcoxon signed-rank test of the reference value against each alternative, corrected within each constant's family. This is one of the few places in the ablation programme where a table is the right presentation, because the exact corrected p-values are what the σ claim rests on.
+
+Two of the three constants are significantly best at their reference values. The recency discount γ = 0.6 holds the best average rank, 1.10 of 5, is top-ranked in nine of the ten settings, and separates from all four alternatives at Holm-corrected p < 0.01, with a symmetric inverted U on either side: a discount that is too aggressive forgets which regions were recently corrected and re-spends the budget on them, and one that is too slow keeps suppressing regions long after the policy has stopped failing there. The penalty weight λ = 1.0 likewise separates from every alternative, λ = 0 included, at the floor p-value the ten matched blocks can produce, which establishes that the memory term contributes to the final success rate and does not decorate the objective. The response to λ is not monotone, and the non-monotonicity is itself a finding: a half-weight penalty (λ = 0.5, mean 94.67) is worse than no penalty at all (λ = 0, mean 95.17). A weak penalty deflects the allocation away from the dominant failure mode without pushing hard enough to rotate onto a different one, so the budget is spread across regions without covering any of them properly. Only at λ = 1.0 does the penalty commit hard enough to complete the rotation. λ cannot be tuned toward zero safely.
+
+**The kernel width.** σ = 0.06 holds the best average rank and separates from the extremes, and it does not separate from its immediate neighbours σ = 0.04 and σ = 0.1 (Holm-corrected p = 0.125 in both). The plateau does not establish that the framework is insensitive to σ, and the reason is a defect in the instantiation.
+
+Against σ = 0.04 only four of ten settings produce a non-zero difference, and against σ = 0.1 only five of ten. In both comparisons every non-tied setting favours σ = 0.06, four out of four and five out of five. The returned p-values, 0.125 and 0.0625, are precisely the minimum a two-sided Wilcoxon test can return at n = 4 and n = 5. Significance at the 0.05 level is arithmetically unreachable in those two comparisons however large the effect is. The evidence is perfectly one-directional and the test has run out of resolution.
+
+The ties are not noise. On four of the six tied settings they are a degenerate kernel, on the remaining two they are the Lift ceiling, and the two causes must not be pooled. On GridWorld the cluster centroids are expressed in grid-cell units, so even σ = 0.20 gives $\exp(-1/(2 \times 0.04)) \approx 4 \times 10^{-6}$ between adjacent cells and the Gaussian collapses into an identical-centroid indicator at every swept width; the recency discount is the only live parameter of the memory on that task. On Door the reset range is about ±0.013 m, so typical centroid separations are on the order of 0.01 m and even σ = 0.02 gives $\exp(-0.125) \approx 0.88$ for a pair of centroids that ought to be treated as distinct; the penalty is applied almost uniformly to every cluster, which is arithmetically close to applying no penalty at all. It would take σ ≈ 0.005 to make the kernel discriminate on Door. On Lift the kernel *does* come alive at σ = 0.02, because a ±0.03 m reset range gives $\exp(-0.78) \approx 0.46$ and real discrimination, and nothing whatever is visible in the success rate because the framework is already at 100.0 ± 0.0. Lift is flat by ceiling and not by kernel degeneracy, and it is therefore not a setting on which the memory has been measured to be inert. The two Lift settings are excluded from the count below for that reason.
+
+The Lift arithmetic is what closes the argument, and it is the only place in this report where Lift supplies evidence, because the evidence it supplies is a statement about the kernel's algebra and not a null result about a mechanism. If σ = 0.02 makes the kernel discriminate on a task whose reset range is ±0.03 m, then σ = 0.06 is mis-scaled for every task whose reset range is narrower, which is Door and, in its own units, GridWorld. Splitting the ten settings by whether the kernel can act at all: on the four where it can (Push-T and Wipe, both modalities) σ moves the final success rate by 2.2 to 2.6 points and σ = 0.06 is best (Friedman on those four blocks alone, χ² = 16.00, p = 0.0030); on the four where it is degenerate (GridWorld and Door, both modalities) the sweep is flat to within 0.2 points; and on the two Lift settings the sweep is flat because there is no headroom in which anything could show. A single global σ is in range on two of the five tasks and out of range on two others, and on the fifth the question cannot be put. The kernel is therefore degenerate on four of the ten settings by a scaling error and not by design, and the memory is close to inert there.
+
+That fact explains A1 completely. The memory-off knockout was expected to be the most damaging of the seven and it is the least damaging, at −0.75 points, because on most of the grid it removes something that was already close to switched off. The claim the evidence supports is narrow and is the one made here: with a single global σ, the cluster memory contributes about 0.75 points on average and about 17% of the margin over the best baseline, and its contribution is concentrated on the settings whose reset distribution is wide. The claim the framework's own narrative implies, that the memory equation is a principal driver, is not supported. The fix is identified and is not rhetorical: σ should be defined per task, as a fraction of that task's reset range, which would make the kernel discriminate on all five tasks. It has not been run.
+
+One cross-check passes cleanly and is stated as evidence of internal consistency. Setting λ = 0 in A13 is the same experiment as switching the memory off in A1, and the two were run independently. The λ = 0 column of A13 reproduces A1 exactly, in all ten settings, to the decimal (89.4, 89.0, 95.7, 93.1, 99.9, 99.9, 94.4, 94.1, 98.2, 98.0). Agreement to machine precision across ten independent pairs is what a correctly implemented ablation harness should produce, and it is reported as an internal-consistency check.
+
+![](figures_generated/F15_cluster_purity.pdf)
+
+**Figure 20. Semantic purity of the geometric clusters against their geometric separation.** One point is drawn per setting, with marker shape by observation modality. Purity is the fraction of a cluster's failures sharing the dominant root-cause label. It ranges from 0.78 on Wipe (image) to 0.93 on Lift (state), with a mean of 0.877. Over the eight settings with headroom the two quantities are strongly correlated (Pearson r = 0.93, p = 0.0008), so a cluster that separates well geometrically also tends to be semantically clean, and the two measurements do not check the descriptor independently. The two Lift points, which lie off that line, are at the success-rate ceiling and carry no evidential weight.
+
+**D1, and the limit of a geometric descriptor.** A10 shows that the descriptor produces well-separated clusters. A well-separated cluster need not correspond to a single root cause, which is what D1 measures, and D1 is the check that stops the "coherent failure modes" claim from being a statement about geometry alone. Purity, the fraction of a geometric cluster's failures sharing the reasoning model's dominant root-cause label, runs from 0.78 to 0.93 with a mean of 0.877, and the number of distinct root causes per cluster runs from 1.30 to 1.91.
+
+Over the eight settings with headroom, purity and silhouette are strongly correlated (Pearson r = 0.93, p = 0.0008). A10 and D1 are therefore not independent checks, and an earlier version of this analysis reported them as such on the strength of a near-zero correlation computed over all ten settings, which the two Lift points produce on their own. Lift is at the ceiling and is excluded from mechanism claims, so that reading is withdrawn. Within the eight, the ordering is the informative part. Push-T (state) has the best silhouette, 0.64, and a purity of 0.91. Wipe (image) has a middling silhouette, 0.53, and the worst purity, 0.78, because Wipe failures at one geometric location genuinely have several causes: the same end-effector position can correspond to insufficient contact force, to a missed patch of the surface, or to premature termination, and geometry cannot tell them apart. Wipe is where the descriptor's reach ends, and it is the same place on both measurements, which is what the correlation says. The descriptor separates failures by where and how they occur, and it recovers root cause only to the extent that configuration determines cause.
+
+The framework still works on Wipe, with margins of +4.7 and +5.7, which suggests that a cluster mixing two causes at one location remains a useful unit of allocation, because a demonstration at that location addresses both. The failure-mode-coherence claim must nevertheless be qualified with the number, and it must not be illustrated from the Push-T panel alone. The circularity in the measurement is admitted: purity is scored against the reasoning model's own root-cause labels, so it records agreement between two components of the same system and not agreement with ground truth. There is no human-labelled root-cause set, and there should be. Because purity and silhouette covary, neither quantity supplies an independent audit of the other, and a human-labelled set is the only measurement that would.
+
+![](figures_generated/F13_failures_over_budget.pdf)
+
+**Figure 21. Mean number of recorded failures per round over the budget.** The setting is Push-T (image), averaged over five seeds. The count halves by round 8 and falls by an order of magnitude by round 17. Below four remaining failures the clustering sweep is skipped and each failure becomes its own cluster (shaded), which happens in rounds 18 to 20 here and in 15% to 34% of rounds across the ten settings.
+
+**D4, failures per round.** Failures per round fall from forty-two to two over the budget. The decline is the system working as intended, and it also bounds the system's own mechanism. Clustering forty failures into three or four failure modes is a meaningful operation. Clustering five failures into three is barely one. On the instrumented setting the descriptor, the clustering and the memory do their work through round 17, and rounds 18 to 20 run the fallback rule on a handful of remaining failures. D2 confirms the pattern across all ten settings, where between 15% and 34% of rounds skip clustering altogether.
+
+Read alongside the budget sweep, where the margin doubles as the budget is halved, this says that DISEIL front-loads the value of a small budget, and the two facts are consistent: the budget's marginal value is highest early and the machinery is most active early. It also names an extension that is not tested here and is not claimed, which is to stop the reasoning stack once the failure count drops below the clustering threshold and spend the remaining rounds on the fallback, saving most of the per-round reasoning cost at no measured loss. D4 is instrumented on one setting only, Push-T (image). It should be run on GridWorld (image) and Door (image) before the AAAI submission, because each primary setting should carry a failure-count curve and the shape may well differ where the initial success rate is higher.
+
+### 4.14.5 Computational cost of the reasoning pipeline
+
+The per-round cost of the reasoning pipeline is listed as a limitation of this framework in Section 4.16.7, and it is the first quantity a reviewer will ask for once the success rates are accepted. D5 measures it directly, so that the limitation is stated with a number attached.
+
+**The measurement.** Each of the five settings runs a matched pair of jobs, DISEIL against SafeDAgger, on the same task, the same observation modality, the same seed and the same hardware, and the wall-clock and token cost of every round is read out of the two jobs' own telemetry. SafeDAgger is the baseline arm in all five settings. Seed 1 in every arm. The three RoboSuite settings, Door (state), Door (image) and Wipe (image), ran a five-round budget; Push-T (image) and GridWorld 5×5 (image) ran a single round. The SLURM jobs are 110355/110356 for Door (state), 110357/110358 for Door (image), 110359/110360 for Wipe (image), 110375/110376 for Push-T (image) and 110384/110385 for GridWorld (image), DISEIL job first in each pair. The RoboSuite runs record no per-stage spans, so stage boundaries were reconstructed from the timestamps the run loop already prints and were then checked against the independently written round durations in each run's results file; the two agree within one second on every completed round.
+
+**Two protocols, and they must not be mixed.** Protocol P1 reports the first round of each run. It is the only protocol available in all five settings, because Push-T and GridWorld hold exactly one round each, and it is therefore the only comparison that spans the sweep. Protocol P5 reports the mean and the sample standard deviation over the language-model-active rounds of the five-round runs, matched arm-for-arm against the baseline's same-indexed rounds, and it exists for the three RoboSuite settings alone. The terminal round of a five-round run is an evaluation-only round with the budget already exhausted, and it is excluded from both arms under P5. A P1 row and a P5 row measure different objects and no reader should read one against the other.
+
+| Protocol | Task (obs) | Rounds | Baseline s | DISEIL s | Overhead × | Shared retrain + eval s | Reasoning add-on s | VLM tok | LLM tok | of which KAG |
+|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | Door (state) | 1 | 737.0 | 1,054.0 | 1.43× | 783.0 | +270.0 | 3,258 | 8,253 | 3,200 |
+| P1 | Door (image) | 1 | 1,247.0 | 1,474.0 | 1.18× | 1,180.0 | +293.0 | 3,293 | 8,086 | 3,200 |
+| P1 | Wipe (image) | 1 | 1,468.0 | 2,195.0 | 1.50× | 1,491.0 | +700.0 | 3,228 | 6,332 | 2,392 |
+| P1 | Push-T (image) | 1 | 688.0 | 1,891.0 | 2.75× | 652.5 | +1,232.1 | 17,504 | 64,612 | 11,464 |
+| P1 | GridWorld (image) | 1 | 54.6 | 118.0 | 2.16× | 51.1 | +62.6 | 1,690 | 8,045 | 3,460 |
+| P5 | Door (state) | 5 | 532.6 ± 145.5 | 782.6 ± 183.5 | 1.47× | 547.8 | +232.8 | 3,285 ± 22 | 7,644 ± 573 | 3,200 |
+| P5 | Door (image) | 5 | 1,034.2 ± 150.2 | 1,168.8 ± 194.8 | 1.13× | 901.6 | +266.2 | 3,292 ± 9 | 7,495 ± 838 | 3,200 |
+| P5 | Wipe (image) | 3 | 1,303.3 ± 144.1 | 1,991.0 ± 179.2 | 1.53× | 1,332.7 | +655.7 | 3,239 ± 12 | 6,879 ± 903 | 2,392 |
+
+**Table 8. Per-round wall-clock and token cost, DISEIL against SafeDAgger.** Protocol P1 is the first round of the run and covers all five settings. Protocol P5 is the mean and sample standard deviation over the language-model-active rounds of the five-round RoboSuite runs, and it has no Push-T or GridWorld row, because those two settings were run at a budget of one and hold a single round, from which no mean and no spread can be taken. The two protocols are separate measurements and their rows are not comparable with each other. *Shared retrain + eval* is the part of the round that both arms pay: a from-scratch policy retrain and a held-out evaluation. *Reasoning add-on* is every DISEIL-specific stage of the round, which is the failure-screening rollout together with clustering, the vision-language call, the reasoning call, the prescription and the feasibility check, less the query-gate rollout the baseline runs in its place. The spread in the P5 rows is the round-to-round spread inside one run and is not a seed-to-seed interval. Token counts are not comparable across rows; see the caveats below. Wipe carries three rounds under P5 because its run had not finished when the matrix was written, and its mean is taken over the rounds that had completed. No round is extrapolated.
+
+![](figures_generated/F16_compute_cost.pdf)
+
+**Figure 22. Where a round's wall-clock goes.** Each setting carries an upper bar for DISEIL and a lower bar for SafeDAgger, decomposed into the policy retrain and held-out evaluation that both arms pay, the baseline's query-gate rollout, and the two DISEIL-specific stages. The overhead ratio and the reasoning add-on in seconds are printed at the end of each DISEIL bar. All five settings are drawn under Protocol P1, the first round of the run, which is the only protocol they share. The GridWorld panel is on its own horizontal scale, one tenth of the other. The grey segment is most of the DISEIL round on the three RoboSuite settings, and it is the reason the overhead ratio sits close to one there.
+
+**What the measurement says.** A round's wall-clock is dominated by the from-scratch policy retrain and the held-out evaluation, and both arms pay all of it. Under P1 that shared cost is 783 to 1,491 seconds per round on the three RoboSuite settings, against a reasoning add-on of 270 to 700 seconds, and under P5 it is 548 to 1,333 seconds against an add-on of 233 to 656. The overhead ratio inherits the large shared denominator and is diluted by it: across the two protocols it runs from 1.13× to 2.75×, and a ratio near one should not be read as evidence that the reasoning pipeline is cheap. It is evidence that the retrain is expensive. The quantity that characterises the pipeline is the reasoning-only add-on, the seconds and the tokens the baseline never spends, which is +63 seconds per round on GridWorld and +1,232 seconds on Push-T, at 9,560 to 82,116 vision-language and language-model tokens per round. Both numbers belong in the report, and neither on its own is honest.
+
+**Why Push-T is the outlier.** Two things put it at 2.75×, and its reasoning being more expensive per unit of work is neither of them. Its shared denominator is the second smallest in the sweep, at 652.5 seconds, and its baseline arm is unusually cheap: SafeDAgger's loop runs until the intervention budget is spent, so at a budget of one it halts after its first intervened episode, which is one episode and 6.3 seconds, while DISEIL screens a fixed sixty. That asymmetry produces the 2.75×, and at a realistic budget the baseline would roll out many episodes per retrain and the ratio would fall. The token draw is the second reason. Push-T issues twenty language-model calls against Door's seven, and its 82,116 tokens per round are about seven times the next largest total in the sweep. GridWorld sits at the other end in seconds and not in tokens. Its whole round is 118 seconds, so 63 seconds of reasoning is 2.16× a 55-second baseline, and it still draws 9,735 tokens, of which the knowledge-graph block is 54 per cent of the prompt budget, the largest share of any setting. A cheap task in seconds is not a cheap task in tokens.
+
+**Caveats.** Every cell in Table 8 comes from one seed, seed 1, and the sweep carries no cross-seed variance for cost. P1 is the first round of the run, which makes it an upper bound on steady-state cost and not an average of it: the first round holds the weakest policy, which produces the most failures, which produces the largest cluster set and the most model calls. The size of that effect is visible in the table itself, where Door (state) falls from 1,054 seconds under P1 to a mean of 782.6 under P5. Token counts are not comparable across rows, because the backends differ. Door, Wipe and GridWorld were served by OpenRouter on `qwen3-32b` with a hosted vision-language model, and their hidden-thinking tokens are read straight from the usage record; Push-T was served by a local vLLM instance on `qwen3-32b` and `qwen3-vl-32b`, where the proxy strips the thinking span from the returned text while the server still bills it, so the hidden tokens are recovered as the billed completion length less the tokenised visible text. Both counts are measured, and they are measured with different instruments over different models and prompts. The spread in the P5 rows is the round-to-round spread within a single run and is not a seed-to-seed confidence interval.
+
+**What this means for the framework.** The language and vision-language models run only at demonstration-selection time. They are never in the control loop and they do not run at execution, so their cost is paid once per round, and on the three RoboSuite settings it is amortised over a retrain and an evaluation that together cost more than they do. The resource being traded is therefore model inference against expert demonstration time, and on the settings measured here a round buys one demonstration for an extra 63 to 1,232 seconds of inference. Whether that trade is worth making depends on what a demonstration costs, which in simulation is nothing and outside simulation is a person's time. The limitation stated in Section 4.16.7 is now quantified and not removed: the pipeline does cost real seconds and real tokens per round, the cost is highest exactly where the failure count is highest, and the graceful degradation that A4 measures, in which a deterministic heuristic over the same geometric clusters costs 1.08 points and still beats every baseline in every setting, is available to anyone for whom the trade does not clear.
+
+## 4.15 What the ablations changed in the framework
+
+Two components of the framework were retired on the evidence of the studies above.
+
+The frozen visual-embedding clustering branch is gone. Image-modality runs no longer cluster in an embedding space reduced by principal-component analysis; clustering is geometric in every run, on the same six-dimensional descriptor, and A10 is the evidence. Three pieces of machinery that existed only to support that branch go with it: the edge case for fewer than two points in the projection, the workaround for a changing projection dimensionality inside the cluster memory, and the second branch of the descriptor equation.
+
+The single global kernel width is gone in principle and not yet in practice. A13 identifies it as mis-scaled for the narrow-reset tasks, A1 measures the consequence, and the fix, a per-task σ expressed as a fraction of that task's reset range, is specified but has not been run. The report carries the global-σ result as a limitation.
+
+Everything else survived, and three components survived with their claims reduced. The clustering step is the non-negotiable core, and it is presented in the method as a generic partition step instantiated here with agglomerative clustering [93], where k-means [56] or another partition would also serve. The prescription step and the vision-language model stay, and each is described as worth about one point, with the prescription model presented as the component that turns an allocation into an executable prescription and not as the source of the advantage. The knowledge-augmented graph stays, and its function is stated precisely: it does not make the reasoning model smarter, it stops the reasoning model from proposing prescriptions the environment cannot instantiate, and the fallback rate is the mechanism by which that shows up in the success rate.
+
+The largest thing the ablations changed is the framework's account of itself. DISEIL's advantage is carried by an allocation mechanism operating over a hand-designed geometric descriptor of the current round's failures, and the language model's marginal contribution is small because the language model is never told anything the descriptor does not already encode. Its entire input is a description of three frames and a handful of geometric coordinates from the round that has just finished, and it is given no information about the demonstrations already collected. Supplying that information is the object of Aim 2.
+
+
+## 4.16 Limitations
+
+Each limitation below was measured by an ablation or a diagnostic in the study reported above, and the two that matter most define Aim 2. They are ordered by how much they constrain the claim.
+
+### 4.16.1 The selector reasons about one round and knows nothing about the dataset
+
+The DISEIL selector consumes the current policy's failures, partitions them into failure modes, and prescribes one demonstration. Its only representation of history is the recency-discounted Gaussian penalty applied to the centroids of clusters already corrected. That penalty records *where* corrections have been placed in the descriptor space. It holds no representation of *what the training set contains*.
+
+The consequence is precise and it bounds the framework's central objective. The selector can determine that the policy failed at a particular configuration and that the root cause is, say, a grasp failure. It cannot determine that the training set already holds six demonstrations of that cause, and that the failure is therefore a symptom of under-fitting and not of under-coverage. Under a restricted budget, a demonstration spent re-teaching material the dataset already contains is a demonstration lost, which is the opposite of what the budget exists to buy. Nothing in the current instantiation prevents that expenditure, and nothing in the current instantiation measures how often it occurs.
+
+The gap is not closed by the cluster memory even in principle. A memory indexed on geometry answers "have we placed a demonstration near here?". It does not answer "does the dataset already contain this behaviour?". The two questions come apart wherever geometry does not determine cause, which the purity diagnostic measures directly. Dataset-level curation and retrieval methods index a corpus by embedding distance and select from it [6, 32, 64]; DISEIL has no such index, and its selector was never given one.
+
+### 4.16.2 The descriptor is designed by hand, and geometry recovers cause only where configuration determines cause
+
+The 6-D descriptor is authored, not learned. The dimensionality study defends the *width* of the descriptor on a criterion that is independent of the reported success rates: the mean silhouette [81] of the resulting clusters is maximised at six dimensions in all ten settings, with a clean inverted-U response and a Friedman test across seven candidate dimensionalities rejecting equality at $\chi^2 = 59.52$, $p = 5.6 \times 10^{-11}$. What that study establishes is that within *this family* of geometric features, six dimensions is the right number. It says nothing about whether a learned descriptor, of the kind that frozen visual encoders supply for the image-modality policies [68], would separate failure modes better. That experiment has not been run.
+
+The purity diagnostic locates the descriptor's ceiling. Cluster purity, the fraction of a geometric cluster's failures that share the reasoning model's dominant root-cause label, runs from 0.78 to 0.93 with a mean of 0.877. Purity is lowest on Wipe (0.78 under the image modality), for the reason given in Section 4.14.4, and geometry cannot tell those causes apart. The descriptor separates failures by where and how they occur, and it recovers root cause only to the extent that configuration determines root cause.
+
+That number carries two further qualifications. Purity is measured against the reasoning model's own root-cause labels, so it records agreement between two components of the same system and not agreement with ground truth. There is no human-labelled root-cause set, and the circularity is genuine. It is not relieved by the silhouette study, because over the eight settings with headroom purity and silhouette are strongly correlated ($r = 0.93$, $p = 0.0008$): the two measurements rise and fall together, so neither audits the other and both are internal to the system. The framework still attains margins of +4.7 and +5.7 points on Wipe, the highest task-level mean in the sweep, which suggests that a cluster mixing two causes at one location is still a usable unit of allocation, because a demonstration at that location addresses both. The claim that the discovered failure modes are semantically meaningful must nevertheless be qualified by 0.78 and must not be illustrated from the Push-T panel alone.
+
+### 4.16.3 The memory kernel width is mis-scaled, and the memory is close to inert on the narrow-reset tasks
+
+Of the three memory constants, two survive their sweep and one does not. The recency discount and the penalty weight are each significantly best at their reference values, separating from every swept alternative under Holm-corrected Wilcoxon tests (Friedman $\chi^2(4) = 33.13$, $p = 1.1 \times 10^{-6}$ and $\chi^2(4) = 34.36$, $p = 6.3 \times 10^{-7}$; all corrected $p = 0.0078$). The kernel width $\sigma$ does not. At $\sigma = 0.06$ it is directionally best and is not statistically distinguishable from its immediate neighbours after correction ($p = 0.125$), and the reason for the failure to separate is a defect in the instantiation rather than a property of the mechanism.
+
+A single global $\sigma$ is applied to tasks that do not share a spatial scale. On Door, whose reset range is about $\pm 0.013$ m, typical centroid separations of 0.01 m leave the kernel at $\exp(-0.125) \approx 0.88$ even at the narrowest swept width, so the penalty is applied almost uniformly across clusters and is arithmetically close to no penalty at all. On GridWorld the centroids live in grid-cell units, and the kernel collapses into an identical-centroid indicator at every swept width, which leaves the recency discount as the only live parameter of the memory on that task. On Lift the kernel does discriminate at $\sigma = 0.02$, and the ceiling hides whatever it does, so Lift measures nothing about the memory in either direction and is not counted here as a setting on which the memory was found to be inert. The sweep therefore moves the success rate by 2.2 to 2.6 points on Push-T and Wipe, where the reset distributions are wide relative to the kernel; it is flat to within 0.2 points on GridWorld and Door, where the kernel is degenerate; and it is flat on Lift, where there is no headroom in which anything could show. The kernel is degenerate on four of the ten settings, and those four, together with the two Lift settings, are the six tied pairs that strip the post-hoc test of its power.
+
+The knockout that removes the memory entirely is consistent with this reading and independently confirms it: it is the smallest of the seven knockouts at $-0.75$ points and 83.3% of the margin retained, and the $\lambda = 0$ column of the constant sweep reproduces it to the decimal in all ten settings, which is the internal-consistency check that the two runs agree. The memory contributes about three quarters of a point with a global kernel width, its contribution is concentrated where the reset distribution is wide, and a per-task $\sigma$ expressed as a fraction of each task's reset range would let the memory act on all five tasks instead of two. The re-specification is identified and has not been run.
+
+### 4.16.4 Each language-model component is worth about one success-rate point, and the reason is structural
+
+Replacing the prescription model [96] with a deterministic rule that always targets the dominant cluster representative costs 1.08 points on average and retains 76.7% of the margin over the strongest baseline. Removing the vision-language model [4] that reads three frames around the flagged step costs 1.01 points and retains 78.0%. Every individual gap in both studies is smaller than the seed standard deviation of the corresponding full run, and the two knockouts are close enough in magnitude that the study cannot rank them. Figure 11 gives the two knockouts against the seed-noise band.
+
+The mechanism behind the small effect is structural. The partition is geometric and uses no output from any foundation model. By the time the prescription model is called, the decision that determines the round, which region of the failure distribution receives this round's demonstration, has already been made by the descriptor and the memory. The prescription model chooses the *form* of the correction inside a region that was selected without it. A component that acts downstream of the decisive step cannot produce a large effect, and the measurement agrees with the architecture.
+
+That result admits two readings, and the choice between them is the argument of Chapter 5. Either language models add little to demonstration selection, or the language model in DISEIL was given too little to reason over. The evidence supports the second. The prescription model's input is a description of three frames and a handful of geometric coordinates from the round that has just finished. It is given no information about the demonstrations already collected, which is the input Aim 2 supplies.
+
+The comparison that sharpens the point is the grounding knockout. Removing the prescription model costs 1.08 points. Removing the environmental constraints against which its proposals are verified costs 2.44 points and drives the fallback rate to between 23% and 35% of rounds, a factor of 2.3. The literature says why this should be expected: vision-language models are reliable at naming a cause given structured evidence and unreliable at metric geometry from pixels alone [15, 28]. DISEIL hands the model a low-dimensional geometric descriptor and a constraint store for exactly that reason, and it then does not hand it anything else.
+
+### 4.16.5 The allocation machinery is active early and idle late
+
+Failures per round fall from 42 in round 1 to 2 by round 20 on the instrumented setting, halving by round 8. Below four remaining failures the clustering sweep is skipped and each failure becomes its own cluster. The descriptor, the partition and the memory therefore do their work in the early and middle rounds, and the last few rounds are allocated by the deterministic fallback rule, which on its own retains 31.1% of the margin: on the one instrumented setting the sweep is skipped in rounds 18 to 20, and across the ten settings the skipped rounds are 15 to 34 per cent of all rounds, which is a share of the budget and not a statement about which rounds they are. The allocation story is a story about the early and middle rounds.
+
+The failure-count curve is instrumented on Push-T (image) only. It should be run on the other two primary settings before the framework's front-loading behaviour is claimed as general, because the shape may differ where the initial success rate is higher. That is a gap in the measurement, not an inference from it.
+
+### 4.16.6 The evaluation has two blind spots of its own
+
+Lift sits at 100.0 ± 0.0 under DISEIL in both modalities. There is no headroom and no seed variance, so a null result on Lift is evidence about nothing, and every mechanism claim in this chapter excludes it. Lift is retained in the sweep because it is a standard manipulation task and its exclusion would be selective reporting, and it contributes nothing beyond that.
+
+On Wipe under the image modality, DISEIL and the strongest baseline are both still rising at the twentieth demonstration. The claim on that setting rests on the final gap of 95.3 against 89.6 and not on a demonstrated plateau, and a longer budget could narrow it. The budget sweep is the relevant evidence and it points the same way: the mean margin over the settings with headroom falls from +10.35 points at $B = 10$ to +4.49 at $B = 20$ and +2.68 at $B = 40$, monotonically in every setting. Allocation buys the rate at which the failure distribution is covered, and it does not raise the asymptote. The framework is a sample-efficiency method, and it stops paying when demonstrations stop being scarce. The claim that DISEIL at $B = 10$ matches the strongest baseline at $B = 20$ was proposed during the study, is false in seven of the ten settings, and is retracted.
+
+### 4.16.7 The reasoning pipeline costs seconds and tokens per round, and the cost is measured on one seed
+
+Each round of DISEIL calls a vision-language model on three frames per cited failure and a reasoning model at least once, and possibly several times if the feasibility check returns a violation. D5 prices that pipeline against a matched SafeDAgger round on the same task and the same hardware, and Section 4.14.5 reports the result. The reasoning add-on the baseline never pays is +63 seconds per round on GridWorld and +1,232 seconds on Push-T, at 9,560 to 82,116 tokens per round. The overhead ratio, 1.13× to 2.75×, is the smaller of the two facts, because the retrain and the evaluation that both arms pay make up most of the round and dilute it.
+
+The measurement carries its own limits and they bound what the number licenses. It is taken at one seed, so there is no cross-seed variance on cost anywhere in this report. The five-setting matrix is measured at the first round of each run, which is the round with the weakest policy and therefore the most failures and the most model calls, so it is an upper bound on steady-state cost; the three settings that ran a full budget show the steady-state figure falling below it. Token counts are not comparable across settings, because Door, Wipe and GridWorld were served by a hosted API and Push-T by a local server, with different prompt sizes and different tasks behind them.
+
+The number the cost measurement was wanted for is the graceful-degradation reading of the prescription knockout, and it can now be made. The prescription model buys about one success-rate point, and A4 shows that a deterministic heuristic over the same geometric clusters costs 1.08 of those points and still beats every baseline in every setting. Degrading to the heuristic is therefore a real deployment option for a user who cannot pay the inference. On the RoboSuite settings the reasoning add-on is a minority of the round, at 233 to 700 seconds against a shared retrain and evaluation of 548 to 1,491, so the model is worth keeping for a user who can.
+
+### 4.16.8 The experiments are in simulation and no expert is a person
+
+Every result in this chapter comes from simulation, with an expert that answers instantly, answers correctly, and answers any prescription at the same price. On Lift, Wipe and Door that expert is a scripted oracle. On Push-T it is a policy trained by proximal policy optimisation [82], so it is learned rather than scripted, and it is competent on the configurations the task's constraint store admits and unreliable outside them, which is why those configurations are excluded before a prescription is issued. On GridWorld it is the candidate. The uniformity assumption is what allows the budget to be counted in demonstrations. Outside simulation the budget is a person's time, demonstrations differ by an order of magnitude in what they cost to produce, and human demonstrators are not uniformly correct [42, 54, 60]. The information-gain argument of Section 4.10 depends on that assumption: high pre-retrain loss identifies novel data *because* invalid demonstrations are ruled out by construction, since every prescription passes the feasibility check and every demonstration comes from the expert. The second half of that argument fails the moment the demonstrator is a person, and Aim 3 carries the consequence.
+
+### 4.16.9 Open items in the ablation record
+
+Four items in the study are recorded here as outstanding and not resolved. The prescription logs report bridged placements in 24% to 30% of accepted prescriptions on GridWorld and Wipe, where the method's own description of the mechanism implies that bridging should not apply, and the bridging knockout shows a measurable effect on those settings. The data are the source of truth and the description is stale; the logs must be inspected and the mechanism re-derived before the camera-ready. The knowledge-graph sheet's human-readable display strings disagree with the numeric column that the sheet's own arithmetic uses, and every number reported in this chapter is taken from the numeric column. The full-system fallback rate per setting was not recorded, so the grounding knockout's fallback rates have no in-method reference against which to be read. And the per-cell record count of the information-gain table, 168 to 184, exceeds the number of demonstrations a robot setting acquires under the stated seed counts and budget, as Section 4.8.6 sets out, so a robot demonstration must contribute more than one loss record and the source does not say how many; the decomposition must be recovered from the run outputs before the table is reprinted.
+
+## 4.17 Status and publication
+
+The Aim-1 work is complete and under review. The framework was implemented across five tasks under two observation modalities and compared against six demonstration-acquisition methods: five published query gates of the DAgger family [79], which are SafeDAgger [101], DropoutDAgger [65], EnsembleDAgger [66], ThriftyDAgger [35] and, on the robot tasks, Diff-DAgger [47], together with Stagger, an unpublished uniform-random allocation control implemented in this project and reported on GridWorld. The comparison was run for nine seeds on GridWorld and five on each robot task, and the ablation programme comprises fifteen studies and five diagnostics, with the statistical analysis reproduced from the workbook by script and not transcribed.
+
+The manuscript, *Demonstration Distillation for Sample-Efficient Imitation Learning*, was submitted to the AAAI 2027 main track in July 2026. Four changes identified by the ablation programme are already committed for the camera-ready or for the next revision, whichever comes first: the visual-embedding clustering branch is retired, since the partition is geometric in every run; the kernel width is re-specified per task as a fraction of the reset range; the halved-budget headline is retracted; and the language-model components are each described as worth about a point and not as the source of the advantage.
+
+## 4.18 From Aim 1 to Aim 2
+
+The transition from the first aim to the second is an argument in three moves, and each move is drawn from a measurement in the study above.
+
+The first move is from the measurement. The ablations locate the mechanism in the allocation and not in the language model: replacing the prescription model with a deterministic heuristic costs 1.08 points and retains 76.7% of the margin, and removing the vision-language model costs 1.01 points and retains 78.0%. Two readings are available. Either language models add little to demonstration selection, or the language model in DISEIL was given too little to reason over. The second reading is the one the evidence supports, for the reason set out in Section 4.16.4: the model's whole input is the round that has just finished, and it holds no information about the demonstrations already collected.
+
+The second move is from the mechanism. What the selector lacks is exactly what the cluster memory gestures at and fails to deliver. The memory records the *coordinates* of past corrections, in a space whose kernel width is mis-scaled for the narrow-reset tasks and degenerate on four of the ten settings. Even correctly scaled, it would answer "have we placed a demonstration near here?" and not "does the training set already contain this behaviour?". The two questions come apart wherever geometry does not determine cause, which the purity diagnostic measures directly: purity falls to 0.78 on Wipe, where distinct causes share a location. A memory indexed on geometry cannot represent the difference between a mode it has covered and a mode it has merely visited.
+
+The third move is to the proposal. Give the selector a memory of what it has been taught, indexed in a representation that carries cause and not coordinates. Language is the candidate, because the same model that must reason over the memory already reasons in it, because a caption composes across tasks in a way a Push-T contact descriptor does not, and because a language index yields a rationale the person supervising the budget can read. The mapping from a trajectory to that index is the inverse of the mapping vision-language-action models already learn.
+
+DISEIL's selector reasons about the failure in front of it and knows nothing about the dataset behind it, and that is the limitation Aim 2 exists to remove.
+
+---
+
+# 5. Aim 2. Reverse vision-language-action, a coverage memory of what has already been taught
+
+Target venue: Conference on Robot Learning (CoRL) 2027, abstract and full paper late May 2027.
+
+## 5.1 The limitation Aim 1 leaves
+
+DISEIL's selector reasons about the failure in front of it and knows nothing about the dataset behind it. Every input the language model receives in a round is drawn from that round: the flagged step of a failed rollout, three frames around it, a six-dimensional geometric descriptor, the partition of the round's failures into modes, and the constraints the environment imposes. The model can say that the policy failed at a particular configuration and that the cause is a grasp that closes before the gripper is aligned. It cannot say that the training set already holds six demonstrations of that cause, so the failure is not a gap in what the policy has been taught but a gap in how well it has been taught. Under a restricted budget $B$, a demonstration spent re-teaching material the dataset already covers is a demonstration lost, which inverts the objective the programme set out to serve.
+
+Section 4.16 measures that limitation instead of asserting it, and three of its findings carry directly into the design of Aim 2. Each language-model component is worth about one success-rate point, and it is worth that little because the allocation decision is taken by a geometric partition that consumes no output from any foundation model. The one piece of cross-round state DISEIL holds, the cluster memory, records where corrections have been placed and not what the training set contains, and its kernel width is mis-scaled for the narrow-reset tasks, which is why switching it off is the smallest of the seven knockouts. A per-task width would repair the scaling. It would not repair the representation, because a correctly scaled geometric memory still answers "have we placed a demonstration near here?" and not "does the dataset already contain this behaviour?".
+
+Those two questions come apart exactly where geometry stops determining cause, and the purity diagnostic measures the separation. Cluster purity runs from 0.78 to 0.93 with a mean of 0.877, and it is lowest on Wipe, for the reason given in Section 4.14.4. Purity tracks geometric separation closely across the eight settings with headroom ($r = 0.93$), which is to say that where the descriptor separates poorly it also mixes causes, and no measurement inside the system tells the two failures apart. A memory indexed on coordinates cannot represent the difference between a failure mode it has covered and one it has merely visited.
+
+## 5.2 The research gap
+
+Aim 2 sits in the space between three literatures, none of which closes the loop it proposes.
+
+Interactive imitation learning selects by local uncertainty. Every gate in the DAgger family reads a scalar signal at a state and decides whether to hand control to the expert [35, 47, 66, 79]. The signal is computed from the policy and the current state. Nothing in the gate consults the training set, so a state the policy fails on for the fifth time and a state it fails on for the first time are indistinguishable to it whenever they carry the same uncertainty.
+
+Demonstration selection and curation reason about a dataset, and select from one that already exists. Coreset methods cover a representation space [83], batch acquisition combines uncertainty with diversity [3], sub-trajectory retrieval finds the segments of a corpus that serve a downstream task [64], and data-quality work characterises which demonstrations in a collected set are worth training on [6, 99]. All of them choose from a pool. Aim 1 prescribes a demonstration that does not exist yet, and Aim 2 keeps that property while adding the dataset model the curation literature has and the interactive literature does not.
+
+Language is used in robot learning on the way to an action, and not as a description of what was already done. Vision-language-action models map vision and language to action [8, 11, 43, 69]; language-as-intermediate work emits sub-task language or a chain of embodied reasoning en route to emitting a motor command [7, 100]. Trajectory captioning exists as a primitive, and is scored as description: dense event captioning in video [44], dense motion captioning [95], proprioception-conditioned captioning and sub-task segmentation for robot tasks [89], and joint action-language modelling for policy transparency [94]. None of that work keeps a cross-episode record of what has been taught, and none of it uses the description to decide what to collect next.
+
+The gap Aim 2 addresses is therefore this: no demonstration selector holds a model of the dataset it is building. The question it asks is RQ2. Can the selector be given a model of what it has already taught, by inverting the vision-language-action mapping into language descriptions of executed trajectories, and does coverage-gap selection beat failure-local selection under a fixed budget?
+
+## 5.3 Core idea. Inverting the vision-language-action mapping
+
+A vision-language-action model consumes an instruction and an image and emits motor commands. Aim 2 runs the mapping backwards. A captioner $C_\phi$ consumes a trajectory's visual observations together with its executed action sequence and emits language:
+
+$$C_\phi:\ \tau = \{(o_t, a_t)\}_{t=0}^{H-1} \ \longmapsto\ (\ell_{\text{traj}},\ \ell_{\text{act}},\ \ell_{\text{fail}}). \tag{12}$$
+
+The three outputs are at three granularities. The trajectory caption states the intent the trajectory realises, at the level of a whole skill. The action caption segments the trajectory into sub-skill spans and names each span. The failure caption, emitted only for a failed rollout, states the root cause and is anchored at the flagged step $t^\star$ that the per-step loss identifies, which is the same localisation signal Aim 1 uses and Diff-DAgger introduced [47].
+
+The executed action sequence is the input that makes the inversion something other than video captioning. Two trajectories can look nearly identical in pixels and differ in what the robot did: a contact that was made and held, against one that was made and lost; a rotation applied about the block's centroid, against a translation that incidentally rotated it. The action sequence carries that distinction, and proprioceptive and action signals have been shown to improve exactly this class of caption and segmentation [89]. The captioner primitive is borrowed [89] and is not the contribution of Aim 2.
+
+What the captions are used for is the contribution. Every demonstration that enters the training set is captioned and its captions are stored, so the system accumulates a persistent, language-indexed record of what the policy has been taught. Coverage of a query is then computed in that language space, and the selector reads it before it prescribes.
+
+## 5.4 Proposed method
+
+### 5.4.1 The captioner
+
+The captioner is a small vision-language model with an action channel. Keyframes are sampled from the trajectory, with the first frame, the flagged step $t^\star$ and the final frame forced into the sample, and are encoded with a frozen pre-trained visual encoder of the kind already used for the image-modality policies in Aim 1 [57, 68, 75]. The executed actions are quantised into tokens and interleaved with the visual tokens, and the interleaved sequence is projected into a language backbone. The three caption heads are selected by a query token, so one forward pass over the trajectory serves all three.
+
+The failure head is where the two aims meet most directly. In Aim 1 the root cause is produced by a separate reasoning model that reads a vision-language description of three frames and assigns a label from a closed taxonomy held in the knowledge-augmented graph. In Aim 2 the same perceptual act produces open language anchored at $t^\star$, and the output is stored and not consumed once and discarded. The closed taxonomy was a compression forced by the absence of a memory: a fixed vocabulary is the only kind a stateless pipeline can compare across rounds, because comparison across rounds requires the two descriptions to be commensurable, and identity of labels was the only commensurability available. With a memory, comparison is by embedding, and the vocabulary can be open.
+
+### 5.4.2 Training the captioner without manual captions
+
+Manual captioning of trajectories at the scale required is not affordable within the candidature, so the training signal is constructed. Four sources are proposed, and each is a mitigation of the hallucination risk as much as a source of labels.
+
+Privileged simulator state supplies programmatic predicates: contact or no contact, displacement, rotation about the object's centroid, which face was contacted, task phase, distance to goal. A grammar renders those predicates into correct but stiff captions. A larger vision-language teacher is then used to paraphrase the template captions into fluent language, with decoding constrained to the template's facts, so that fluency is added without licence to invent. Sub-skill spans come from change-point detection on the action, velocity and contact signals, and the spans are named by the same template-and-teacher pair. Failure captions are built contrastively: for a failed trajectory, the nearest successful demonstration of the same intent is retrieved and the divergence at $t^\star$ is described.
+
+The training objective adds to the language-modelling term a span-segmentation term, an alignment term that draws a caption and its trajectory together in a shared embedding space, and a fact-consistency term that re-parses the generated caption into predicates and penalises disagreement with the simulator's own predicates. The alignment term is what makes the memory possible, because coverage is computed in the space it builds. The fact-consistency term is the anti-hallucination term, and Aim 2's first-order risk is that it is not strong enough.
+
+### 5.4.3 The coverage memory
+
+The memory $M = \{(e_i, \ell_i, m_i)\}$ stores, for every demonstration in the training set, its caption embeddings $e_i$, its captions $\ell_i$, and metadata $m_i$ recording the task, the round in which it was acquired, and the sub-skill spans it contains. Storage is at two levels, the trajectory and the sub-skill span, because a demonstration collected for one purpose usually teaches more than one thing.
+
+Coverage of a query embedding $e_q$ is the mean similarity of the query to the memory under a kernel $k$,
+
+$$\rho(e_q) \;=\; \frac{1}{|M|} \sum_{i=1}^{|M|} w_i \, k(e_q, e_i), \qquad w_i \;=\; 1 - \widehat{\text{SR}}(e_i), \tag{13}$$
+
+and the competence weight $w_i$ is the part that matters. A skill can be present in the dataset and still not learned, which is why each stored skill is weighted by one minus the policy's measured success rate on it: under that weighting a skill that is present but not yet learned still reads as a gap. A memory that conflated the two would refuse to re-teach precisely the material that has been taught badly, which is the failure the memory exists to prevent, and the data-quality literature is the reason to expect presence and competence to come apart in practice [6]. The coverage gap is the low-$\rho$ region in the neighbourhood of the current failure's embedding, and it is what the selector is asked to fill.
+
+The geometric descriptor of Aim 1 is retained as one channel of the index and is not discarded. Two arguments require it. A10 shows the six-dimensional descriptor produces the best-separated failure clusters in ten settings out of ten, so it is a working representation of failure structure and there is no reason to throw a working representation away. D1 shows where it stops working, which is where distinct causes share a configuration, and that is exactly the region in which language is expected to earn its place. The index is therefore a fusion of the caption embedding and the geometric descriptor, and the ablation of Section 5.9 is designed to say how much of the work each channel does.
+
+The coverage memory subsumes Aim 1's cluster memory as its degenerate case. Aim 1's memory is a geometry-only, single-scale, coordinate-indexed record of where corrections were placed. Aim 2's memory is a content-indexed record of what the dataset holds and how well it has been learned. The mis-scaled kernel width of A13 does not survive the change, because coverage in an embedding space is not parameterised by a metric width that must be re-tuned against each task's reset range.
+
+### 5.4.4 The memory-conditioned selector
+
+One model does the reasoning that Aim 1 splits across three calls:
+
+$$(P, R) \;=\; \mathrm{LLM}_\theta\big(\ell_{\text{fail}},\ \varphi,\ \mathrm{Retrieve}(M, e_{\text{fail}})\big). \tag{14}$$
+
+It consumes the failure caption, the geometric descriptor $\varphi$, and what retrieval over the memory returns for the failure's embedding: the nearest stored skills, their support counts, and their competence weights. Retrieval-augmented generation over a structured store is standard and is used as such [23, 48]. The model emits the prescription $P$, which is the configuration of the demonstration to request, and a rationale $R$ in language, which states why that demonstration and not another. The rationale is a deliverable: the human who holds the budget can read it, and it is the object the interpretability evaluation scores.
+
+The claim is not that one model is better than three. The claim is that the selector's reasoning is stateful and coverage-aware, and that this happens to be realisable in one component. The ablation that decides between the two readings is stated in advance in Section 5.9.
+
+The two screening checks of Aim 1 are retained, and they remain distinct mechanisms. Feasibility verification against the constraint store runs as it does in Aim 1: the model proposes, constraints are retrieved (workspace bounds, reachability, object and spawn ranges, controller limits), the proposal is checked, and any violation is returned to the model as feedback so that it can revise, until a feasible prescription is produced. The naming function of the knowledge-augmented graph is absorbed into the memory, because the failure-mode vocabulary becomes open language. Its verification function is not absorbed, and Aim 1 measures what happens without it: removing the graph raises the fallback rate to between 23% and 35% of rounds and costs 2.44 points (A6). A prescription must still be checkable against what the environment permits before an expert is asked to satisfy it. Policy solvability is the second check and is unchanged: the prescribed scenario is rolled out under the current policy, and if the current policy already solves it, the prescription carries no information and the scenario is revised.
+
+### 5.4.5 One round of the loop
+
+The outer protocol is Aim 1's, which is the point of the design. The same query gate, the same budget of one demonstration per round, the same retraining step. Aim 2 replaces the selector and leaves the protocol alone, so that the head-to-head comparison against Aim 1 is a comparison of selectors and of nothing else.
+
+For $r = 1$ to $B$: roll out the current policy on held-out episodes; flag the step $t^\star$ of each failure and extract its geometric descriptor; caption each failed trajectory with $C_\phi$ to obtain $\ell_{\text{fail}}$ and its embedding; cluster the failure embeddings in the fused index and select the target mode; retrieve the neighbourhood of the target from the memory and compute its coverage; prescribe $(P, R)$ with the memory-conditioned selector; verify $P$ against the constraint store and revise until feasible; check that the current policy does not already solve $P$ and revise if it does; collect $D$ demonstrations from the expert at $P$; caption each new demonstration and add its captions to the memory; add the demonstrations to the training set and retrain. The memory grows monotonically with the dataset, which is the statefulness Aim 1 lacks.
+
+## 5.5 Architecture
+
+![](figures_generated/aim2_architecture.pdf)
+
+**Figure 23. Proposed architecture for Aim 2.** The imitation loop of Aim 1 is retained without change along the top left; the trajectory band at the top right supplies the frames and the executed actions that the inversion consumes; the dashed enclosure holds the single language-grounded selector, in which the reverse vision-language-action model emits captions, the captions enter the language skill memory, and the unified model reasons over the coverage the memory returns together with the current failure; and the prescribe-and-learn band closes the loop along the bottom.
+
+The figure is drawn in three bands, and each is described here as drawn.
+
+The imitation loop, along the top left, is inherited from Aim 1 without change. Seed expert demonstrations form the initial dataset; the policy is trained on it by behaviour cloning or as a diffusion policy; the policy is rolled out on held-out episodes; and a query gate flags the step $t^\star$ at which the policy first becomes unreliable, read from the per-step diffusion loss. Those four blocks are Aim 1's, and the figure keeps them to make visible that the protocol is unchanged.
+
+The trajectory band, at the top right, is the input to the inversion. Two boxes feed the new machinery: the frames of the trajectory (start, $t^\star$, end) and the executed action sequence. Both enter the selector by dashed arrows, and the presence of the second box is the whole difference between this and a video captioner.
+
+The single language-grounded selector, drawn as a dashed enclosure, is the Aim-2 contribution and holds four components in sequence. The reverse vision-language-action model maps frames and actions to language. It emits the captions at the three granularities. The captions enter the language skill memory, drawn as a database, which is the store of what the policy has been taught and from which coverage is computed. The edge from the memory to the unified language model is labelled coverage, and the unified model both reasons about the coverage gap and issues the prescription. A second, orange dashed edge labelled failure query leaves the captions, runs outside the enclosure, and re-enters the unified model, which is the current failure entering the selector directly and not through the memory. The two edges into the unified model are the two things it must hold at once: what has been taught, and what has just gone wrong.
+
+The prescribe-and-learn band closes the loop along the bottom. The unified model prescribes a configuration, the expert demonstrates it, one demonstration is added to the dataset, and a long return edge marked next round re-enters the training block.
+
+The figure does not yet draw two things, and both are stated here. It does not draw the constraint store or the feasibility-verification loop, and the method retains both, for the reason A6 gives. It does not draw the geometric channel of the fused index, and the method retains that too, for the reasons A10 and D1 give. The figure will be revised to carry both before the Aim-2 paper is submitted, and the revision adds two edges and changes no block.
+
+## 5.6 What Aim 2 subsumes from Aim 1
+
+Table 9 is the argument that Aim 2 is the next stage of one programme and not a new idea appended to it.
+
+| Aim-1 component | What it did | What subsumes it in Aim 2 | Why the replacement generalises it |
+|---|---|---|---|
+| Vision-language model reading three frames | described one failure in free text, consumed once and discarded | the captioner's failure head | the same perceptual act, with its output stored: a description written in round 3 is still available in round 17 |
+| Reasoning model assigning a root cause | mapped that description onto a closed taxonomy held in the knowledge-augmented graph | the captioner's failure head, emitting open language anchored at $t^\star$ | the closed taxonomy was forced by the absence of a memory, because a stateless pipeline can compare across rounds only by identity of labels. With a memory, comparison is by embedding and the vocabulary can be open |
+| Geometric descriptor and cluster engine | partitioned the round's failures into modes by position, orientation, progress and contact distance | clustering over a fused index of caption embeddings and the geometric descriptor | the descriptor is retained, because A10 shows it separates modes best in ten settings out of ten and D1 shows language is needed where it fails. Language is added to the index, not swapped for it |
+| Cluster memory | penalised modes whose centroids had recently been corrected | the coverage memory | the cluster memory is the geometry-only, single-scale case of a coverage memory. The mis-scaled kernel width of A13 disappears with it |
+| Knowledge-augmented graph | supplied the failure-mode vocabulary, and the constraints a prescription is verified against | the memory absorbs the vocabulary; the constraint store is retained | the graph does two jobs and only one is subsumed. Removing the constraints costs 2.44 points and raises the fallback rate to 23–35% of rounds (A6), so verification survives into Aim 2 |
+| Three model calls passing text between them | perception, reasoning, prescription | one grounded, stateful selector | the claim is that the selector's reasoning is stateful and coverage-aware, and that this is realisable in one component. The claim is not that one model beats three, and the ablation that separates the two is stated in advance in Section 5.9 |
+
+**Table 9.** Component-by-component subsumption of Aim 1 by Aim 2. Nothing in Aim 1 is discarded except what Aim 1's own ablations retired.
+
+## 5.7 Expected contributions
+
+The inversion of the vision-language-action mapping into a trajectory captioner whose failure head is anchored at the policy's own flagged step, and whose action channel supplies the skill semantics that frames alone miss.
+
+A language-indexed, competence-weighted coverage memory that gives a demonstration selector a model of the dataset it is building, so that a skill present in the training set but not yet learned still reads as a gap.
+
+A single memory-conditioned selector that prescribes the demonstration filling a coverage gap, in place of Aim 1's three stateless calls and its clustering stack, with the geometric descriptor retained as one channel of the index.
+
+A language rationale for each prescription, which makes the demonstration budget auditable by the person who holds it.
+
+An empirical comparison against Aim 1 and the interactive baselines on sample efficiency, with the matched-information ablation as the experiment that decides whether language does causal work.
+
+## 5.8 Novelty and positioning
+
+The captioner primitive, uncertainty-triggered querying and the localisation of a failure at $t^\star$ are adopted building blocks and are framed as such. What is new is the closed loop: captions become a persistent coverage memory, the memory conditions the selector, and the selector prescribes a demonstration that does not exist yet.
+
+Forward vision-language-action models map vision and language to action [11, 43, 69]. Aim 2 inverts the mapping and produces language about the dataset. Language-as-intermediate work emits language on the way to a motor command [7, 100]; Aim 2 describes trajectories that have already been executed, in order to decide what to collect. Robot trajectory captioning is open-loop description scored on caption quality [44, 89, 95], and the closest of those, proprioception-conditioned captioning, states that its integration into imitation learning is left to future work. Joint action-language modelling reconstructs the instruction to make a single policy transparent [94]; it builds no memory and performs no selection, and its captioner could be dropped into this loop as a front-end, which is the clearest evidence that the captioning is not the claim. Inverse-dynamics and latent-action work inverts to actions or latents and not to language [19, 49]. The DAgger family queries where the policy is locally uncertain and is blind to what the dataset contains [35, 47, 66, 79]. Curation and retrieval methods reason about a dataset, and select from an existing pool [6, 64, 99]. Language-model failure explanation names the cause of one episode and recovers from it [22, 55]; Aim 2 accumulates causes across episodes and uses them to design the dataset.
+
+## 5.9 Evaluation strategy
+
+Benchmarks are tiered. Push-T [17, 90] is the continuity benchmark, because the Aim-1 numbers on it are directly comparable and a regression there would be visible immediately. A graded manipulation suite [62, 102] is the sample-efficiency testbed, because tasks of increasing difficulty make demonstrations-to-threshold curves discriminative rather than saturated: Lift's ceiling in Aim 1 is the standing warning about what a saturated task can and cannot show. LIBERO [52] ships language instructions with its tasks, which supplies ground truth for caption scoring at no annotation cost and a defined skill taxonomy against which coverage can be measured. Meta-World [97] provides a large named skill inventory, which is the setting in which a claim that the memory prescribes complementary rather than redundant skills can be checked against an external list.
+
+The primary metrics are demonstrations-to-threshold, written $D@\tau$ and defined as the number of demonstrations required to bring the policy's held-out success rate to a threshold $\tau$, and the area under the success-versus-demonstrations curve, which summarises the whole trajectory of learning rather than one crossing of it. Both are reported against Aim 1 as the head-to-head, over at least five seeds, with confidence intervals. Secondary metrics: final success rate, to establish that the efficiency gain costs nothing at the asymptote; caption grounding, scored as agreement between the generated caption's predicates and the simulator's, and as caption-to-trajectory retrieval accuracy, not as fluency; the redundant-demonstration rate, the fraction of acquired demonstrations whose caption falls in an already-covered region of the memory; and the faithfulness of the rationale, tested by removing the coverage gap the rationale cites and checking that the selection changes.
+
+The decisive experiment is a matched-information ablation, and the Aim-2 paper is designed so that it is the first results figure. The selection loop is frozen and only the representation the selector consumes is varied, at equal capacity.
+
+| Arm | Representation the selector consumes | What it tests |
+|---|---|---|
+| Generated captions | the captioner's output, indexed in language | the proposed method |
+| Geometric descriptors | Aim 1's six-dimensional descriptor and its cluster signatures | whether language adds anything over the representation Aim 1 already had |
+| Learned trajectory embedding | a trajectory encoder trained at the same budget, with no language | whether the gain is coverage in *some* space rather than coverage in *language* |
+| Scrambled captions | captions with their content permuted across trajectories | placebo: whether the selector uses caption content at all |
+| Oracle captions | human-written captions | the ceiling the generated captions are measured against |
+
+**Table 10.** The matched-information ablation. The selection loop is frozen and only the representation the selector consumes varies, at equal capacity. The contribution holds only if generated captions beat both the learned embedding and the placebo, and trend toward the oracle.
+
+The interpretation is committed here, before the experiment is run. The contribution holds only if generated captions beat both the learned embedding and the placebo, and trend toward the oracle. If the learned embedding matches the captions, the contribution is interpretability and cross-task composability, and it is not sample efficiency; Aim 2 is then written as such, and Aim 3 proceeds on an embedding index with a different teaching interface. The arc does not break under that outcome, and Section 7.3 records the contingency.
+
+Baselines hold the policy and the retraining loop fixed and vary only the acquisition rule: passive behaviour cloning, random selection, the DAgger family gates carried over from Aim 1 [35, 47, 66, 79, 101], and full DISEIL, which is the comparison that matters.
+
+Three further ablations isolate the components. Memory on against memory off, with the selector prescribing from the failure caption alone, measures the coverage mechanism directly and should show its effect in the redundant-demonstration rate before it shows it in the success rate. A language-indexed memory against a raw-embedding memory separates the index from the memory. Caption granularity is toggled head by head, which asks whether the sub-skill spans earn their cost. One and the same experiment settles the unification question: three separate calls, three separate calls with the memory bolted on, and the single unified model. If the memory bolted onto three calls closes most of the gap, the finding is that the memory is the mechanism and the unification is an engineering convenience.
+
+## 5.10 Risks and mitigations
+
+Caption faithfulness is the first-order risk, because every downstream decision reasons over the caption and a hallucinated cause corrupts the memory permanently rather than for one round. Vision-language models are unreliable at metric and spatial detail from pixels alone [15, 28], which is the reason Aim 1 hands its models a geometric descriptor and a constraint store instead of raw frames. The mitigations are decoding constrained to the simulator's predicates, the fact-consistency term in the training objective, and validation of captions against held-out predicates, reported as a first-class metric and not as an appendix. A falsification test is available and will be run: corrupt the captions at rising rates and show that downstream sample efficiency degrades monotonically, which establishes that the system uses caption content and does not merely tolerate it.
+
+Circularity is the second risk. The captioner is trained on rollouts of the policy it is improving, so its coverage estimate could reflect the policy's current failure distribution and not the dataset's true content. The architectural mitigation is a frozen, independently pre-trained backbone [4, 68] and the retention of the policy-independent geometric channel in the index. The test is to inject failure modes the policy has never produced and check that the captioner still describes them and the selector still requests the right demonstration.
+
+Train-and-deploy shift follows from the same asymmetry. The captioner will see mostly clean expert demonstrations in training and must caption out-of-distribution failed rollouts at deployment, which is the harder half of its job and the half the memory depends on. Failed and perturbed trajectories are over-sampled in training, and captioner accuracy is reported separately on the failure slice and not pooled; work on training a vision-language model specifically to reason over manipulation failures is the precedent [22].
+
+Language may be too coarse an index. If two kinematically distinct skills collapse to the same caption, coverage is mis-measured and the selector will request a demonstration the dataset already holds. The mitigation is the fused index already specified: the caption embedding is fused with the geometric descriptor instead of replacing it, which is one of the two reasons Aim 1's descriptor is retained. The risk is not hypothetical, because D1 shows the converse failure already occurring in Aim 1, where geometry collapses distinct causes on Wipe.
+
+Cost is a risk, and Aim 1 now prices it. The language model runs only at demonstration-selection time and never in the robot's control loop, so it is off the critical path of control and its cost is amortised over a retraining step. Section 4.14.5 measures Aim 1's reasoning pipeline against a matched SafeDAgger round: it adds 63 to 1,232 seconds and 9,560 to 82,116 tokens per round, against a shared retrain and evaluation that is the larger part of the round on the three RoboSuite settings. Aim 2 replaces three stateless calls with one grounded call, and the claim that the unified call is the cheaper of the two is an experimental question that the same instrumentation will answer on the Aim-2 runs. It is not asserted here.
+
+## 5.11 Relationship to Aim 1, and the limitation Aim 2 will leave
+
+Aim 2 changes one thing in Aim 1's protocol and leaves everything else alone. The budget is still $B$ demonstrations, acquired $D$ at a time. The gate that flags $t^\star$ is unchanged. The expert is unchanged. The retraining step is unchanged. The evaluation is unchanged. What changes is the selector: it acquires a model of the dataset it is building, indexed in language, weighted by the competence the policy has actually achieved on each stored skill. Holding the protocol fixed is what makes the head-to-head against Aim 1 interpretable, and it is why Push-T is carried forward as the continuity benchmark.
+
+Nothing in Aim 1 is discarded except what Aim 1's own ablations retired. The geometric descriptor survives as one channel of the fused index, on the strength of A10 and D1. The constraint store survives as the feasibility check, on the strength of A6. The policy-solvability check survives unchanged. The cluster memory is subsumed, and its mis-scaled kernel width is subsumed with it, which is the cleanest resolution available to the limitation A13 identified. The closed root-cause taxonomy is retired, because it existed only to make a stateless pipeline comparable across rounds and a memory removes the need for it.
+
+The limitation Aim 2 will leave is stated here and not after the fact, because it is what makes Aim 3 the next step and not an appendix. The coverage memory is task-local: it records what one policy has been taught about one task, and a skill shared between tasks, such as the reach-and-align that precedes both a door pull and an insertion, cannot be credited across them. The supplier is a scripted expert who is always available and identically priced. Outside simulation the budget is not a count of demonstrations, it is a person's time, and demonstrations differ by an order of magnitude in what they cost that person to produce. The selector spends but does not price.
+
+---
+
+# 6. Aim 3. Demonstration demand across tasks, embodiments and teachers
+
+Aim 3 is future work. Nothing in this chapter has been implemented, and no number in it is a measurement. Where a quantity from Aim 1 is used, it is labelled as such and traced to Chapter 4. The purpose of the chapter is to state the problem Aim 3 solves, the reason it cannot be solved inside Aim 2, the method proposed, the experiment that would falsify it, and the risks that could stop it.
+
+## 6.1 From Aim 2 to Aim 3
+
+The transition has the same shape as the first. Aim 1 gave the selector a partition of the failures in front of it, and its evaluation showed the selector held no representation of the dataset behind it. Aim 2 gives the selector the dataset. Its evaluation will show that the dataset it is given is one task's dataset, held by one policy, filled by one inexhaustible expert. The object Aim 2 makes explicit, what has been taught, has a dual that Aim 2 leaves implicit: what still needs to be taught, by whom, and at what price. Aim 3 makes the dual explicit and closes the programme, because a demonstration's value was the quantity the thesis set out to raise, and the value of a thing is not established until it is priced against its cost.
+
+## 6.2 The limitation Aim 2 leaves
+
+Aim 2 gives the selector a memory of what it has been taught. The memory is task-local. It records the skills one policy has acquired on one task, and coverage is computed against that record. Skills, however, are shared across tasks in a way the record cannot express. The reach-and-align that precedes a door pull is the reach-and-align that precedes an insertion, and under a task-local memory a demonstration collected for the first cannot be credited against the shortfall of the second. Generalist policies are trained on data pooled from many tasks and many robots precisely because that sharing exists [9, 43, 69, 70, 76]. What is pooled in that literature is supply. The demand side has no representation at all.
+
+The second limitation is the supplier. Aims 1 and 2 both address a scripted or planner-based expert that answers instantly and charges the same for every question. Under that assumption the demonstration budget is a counter, and the only question worth asking is which demonstration carries the most information. Outside simulation the assumption fails on every clause. Demonstrations are produced by people, at a cost measured in minutes and not in units, and the cost varies by an order of magnitude with what is being asked: a short push and a long contact-rich insertion are one demonstration each and are not one price each. Large-scale collection efforts are budgeted in human hours and in operator interfaces, not in trajectory counts [42, 60]. A framework whose entire purpose is to spend a scarce resource well is therefore measuring the wrong resource.
+
+The third limitation follows from the first two. The Aim-2 selector spends but does not price. It can say which demonstration is most informative. It cannot say what that demonstration is worth relative to what it costs, so it cannot choose between one expensive demonstration that closes a large gap and two cheap ones that close two small ones, and it cannot tell a human teacher which of several outstanding requests to satisfy first.
+
+## 6.3 Research question and the idea
+
+**RQ3.** Can demonstration demand be made explicit, priced against a teacher's time, and satisfied across tasks and embodiments, so that a generalist policy asks a non-expert human for exactly the demonstrations it lacks?
+
+Aim 3 proposes to make demonstration *demand* a priced object that transfers across tasks. Aim 2's coverage memory becomes a skill inventory shared across tasks and across embodiments. The selector becomes a demand model that answers three questions in one request that a person can read: which skill the policy is short of, on which task and embodiment that skill should be demonstrated, and what the demonstration is worth against the minutes of human time it will consume. Because the request is expressed in language, it can be issued to a person who has never seen the policy. Because the inventory is shared, a demonstration collected against one task's shortfall can be credited against another's.
+
+The quantity being tracked is the same one the thesis opened with. Aim 1 measures the value of a demonstration after the fact, as the policy's per-step loss on that demonstration before retraining. Aim 2 makes the value depend on what the dataset already holds. Aim 3 predicts the value before the demonstration exists and divides it by its cost.
+
+## 6.4 The gap
+
+Each component of the proposal rests on established work. No pairing of them exists, and the gap is in the combination.
+
+| Established | What it does | What it does not do |
+|---|---|---|
+| Cross-embodiment data pooling [8, 43, 69, 70] | Trains one policy on data from many robots and many tasks | Holds no demand ledger: nothing records which skills the policy is short of |
+| Cost-sensitive active learning [84] | Weighs the expected value of a query against its labelling cost | Prices a datum that does not exist yet; its queries are labels for points already in a pool |
+| Language models that ask for help [77] | Recognise the limits of their own competence and query a human | Asks for a training demonstration, or chooses which demonstration to ask for from what the training set lacks |
+| Sub-trajectory retrieval [64] | Shows one collected trajectory can serve several downstream tasks | Credits a demonstration at collection time, which is the only point at which crediting can change what is collected |
+
+**Table 11.** The four literatures Aim 3 draws on, and what each of them does not do. The gap is the combination, not any one row.
+
+Data-quality and data-mixture work supplies the premise that the demand model needs: demonstrations differ in what they are worth, and performance follows a measurable relationship with demonstration count and diversity, so a demonstration has a marginal return that can in principle be predicted [6, 32, 51]. None of that work turns the marginal return into a request that is issued, satisfied and settled.
+
+## 6.5 Proposed method
+
+Four components. Each extends an Aim-2 component instead of replacing it, and the lineage is the argument that Aim 3 is the third stage of one programme.
+
+**A cross-task skill inventory.** Aim 2's captions are aggregated into a shared skill space, annotated with the embodiment on which each instance was demonstrated. A skill is a language-indexed cluster of sub-trajectory captions, for example "align the gripper with a vertical handle and pull along the hinge arc". It is neither a task nor a trajectory. Coverage is measured over the inventory, so the question "does the policy know how to align with a handle?" is answerable without reference to the task in which the handle appeared. Open-ended skill libraries built by a language model are the nearest existing object [92], and benchmark suites with a named skill taxonomy supply the ground truth against which an inventory can be scored [52, 97]. The inventory is also where the language index has to earn the claim Aim 2 makes for it: the six-dimensional geometric descriptor of Aim 1 does not compose across tasks, because its coordinates are defined against one task's objects and one task's reset distribution, and language is the candidate interface that might.
+
+**A demand model with a price.** For each skill in the inventory the demand model maintains a shortfall: the distance between the policy's competence on that skill and what the task family requires, weighted by how often the skill lies on the critical path of a task the policy is currently failing. Every candidate request then carries two numbers.
+
+The first is an expected information gain. Aim 1 measures information gain after the demonstration has been collected, as the per-step loss on that demonstration before retraining on it, and the measurement is available for every demonstration acquired in every one of the ten settings. Aim 3 predicts the same quantity before collection, from the current coverage of the requested skill and the policy's measured competence on it. Aim 1's measurements are the training data for that predictor, which is the most direct link between the three aims: the same number is measured in Aim 1, contextualised in Aim 2 and predicted in Aim 3. Expected information gain is the standard way to price a query before it is answered [36, 84], and what is new is the object being priced.
+
+The second is an expected human cost, in minutes of teacher time, estimated from the length and difficulty of comparable demonstrations already collected. Selection maximises expected information gain per unit of teacher time. The budget stops being a count of demonstrations and becomes a time budget, which is what it always was outside simulation.
+
+**A non-expert teaching interface.** A demand is rendered as a request a person can act on: a natural-language instruction, a scene specification, and the reason the demonstration is being asked for. The scene specification has already passed the feasibility check, which is the same propose-verify-revise loop Aim 1 runs against the knowledge-augmented graph and which Aim 2 retains for exactly this moment. Constraints are retrieved from the graph, the specification is checked against them, and a violation is returned to the model so that the specification can be revised until it is feasible, so no request is issued that the environment cannot instantiate or the robot cannot reach [16, 53, 91]. Aim 1's second check, policy solvability, is retained and acquires an economic reading: a request the current policy can already satisfy is a request that wastes a person's time, and a framework that prices human time cannot afford to issue one. Ablation A6 in Chapter 4 is the evidence that the feasibility check earns its place even when the expert is a scripted oracle. Removing the knowledge graph costs 2.44 success-rate points and raises the fallback rate to between 23% and 35% of rounds. With a person on the other end of the request, an infeasible prescription is not a fallback round, it is wasted human time.
+
+**Transfer credit.** An arriving demonstration is captioned by the Aim-2 captioner, decomposed into its sub-skill spans, and credited against the outstanding shortfall of every task in the inventory that those spans partially satisfy. A demonstration requested to close a door-opening shortfall reduces the alignment shortfall of an insertion task, and the ledger records the reduction. Transfer credit is the operation that makes the demonstration economy cross-task, and it is the mechanism by which a fixed number of human hours buys more competence than the same hours spent one task at a time. Retrieval work already shows that one trajectory serves several tasks [64, 99], and it performs the operation at consumption time, over a corpus that is already fixed. Crediting at collection time is a different operation, because it can change what is collected next.
+
+The loop, stated for the algorithm float that will accompany this chapter: roll out the generalist policy across the task family; caption the failures; update the competence estimate for every skill in the inventory; compute each skill's shortfall; price every candidate request by predicted information gain per unit of teacher time; verify the highest-value request against the constraint store and against policy solvability; issue the request to a teacher; caption the returned demonstration; credit it against every task whose shortfall it reduces; aggregate and retrain.
+
+## 6.6 What each aim contributes to the components
+
+Table 12 is the lineage the panel should be able to check. Nothing from Aim 1 is discarded in Aim 3 except the two components Aim 1's own ablations retired: the visual-embedding clustering branch, superseded by A10, and the single global memory kernel width, identified by A13 as mis-scaled for the narrow-reset tasks.
+
+| Component | Aim 1 | Aim 2 | Aim 3 |
+|---|---|---|---|
+| Index of failures | 6-D geometric descriptor, one task, one round | caption embedding fused with the geometric descriptor | skill inventory, shared across tasks and embodiments |
+| Memory | recency-discounted Gaussian penalty over corrected cluster centroids | coverage of what the dataset contains, weighted by measured competence | demand ledger: shortfall per skill, settled by transfer credit |
+| Value of a demonstration | measured after the fact as the pre-retrain per-step loss | conditioned on what the dataset already holds | predicted before collection, divided by expected teacher time |
+| Screening | feasibility against the knowledge graph, and policy solvability | both retained | both retained; solvability becomes a cost argument |
+| Supplier | scripted or planner-based expert | scripted or planner-based expert | non-expert human, whose time is the budget |
+
+**Table 12.** The lineage of each component across the three aims. Each row is one object followed through the programme, and no row begins in Aim 3.
+
+## 6.7 Novelty
+
+The demand ledger. A generalist policy that maintains a priced, cross-task statement of what it lacks does not exist in the literature reviewed in Chapter 2. Coverage has been used as a selection criterion within a fixed dataset [3, 83]. It has not been turned into a demand that is issued to someone, satisfied, and settled.
+
+Pricing a demonstration in human time. The conversion turns the budget from a count into the resource that is actually scarce, and it makes the programme's central quantity, the value of one demonstration, a number that can be compared across candidate requests, and not an implicit objective.
+
+Transfer credit at collection time, which a retrieval-at-consumption-time framework cannot perform, because retrieval acts on a corpus that has already been paid for.
+
+The closed loop through a person. Aims 1 and 2 address a scripted oracle. Aim 3 addresses a human teacher, which is the only version of the problem that exists outside simulation.
+
+## 6.8 Evaluation strategy
+
+Benchmarks. Multi-task suites with a defined skill taxonomy, so that coverage is measured against a ground-truth inventory instead of against the system's own captions [39, 52, 63, 97]. Cross-embodiment evaluation on pooled multi-robot data, to test whether a skill demanded on one embodiment can be satisfied on another [70].
+
+The primary metric is economic and it is new to the programme. **Teacher-time-to-threshold** is the number of minutes of human demonstration time required to bring the policy family above a target success rate. Demonstrations-to-threshold is reported beside it, and the gap between the two curves is itself a result: a framework that reduces the demonstration count while raising the cost per demonstration has achieved nothing, and only the two curves together can show that it has not.
+
+| Metric | What it tests | Successor of |
+|---|---|---|
+| Teacher-time-to-threshold | whether the framework spends the scarce resource well | demonstrations-to-threshold (Aims 1 and 2) |
+| Transfer credit, in tasks advanced per demonstration | whether the inventory composes across tasks | none; new in Aim 3 |
+| Request-satisfaction rate | whether a non-expert can act on a generated request | none; new in Aim 3 |
+| Calibration: predicted against realised information gain | whether the price is a price or a guess | Aim 1's prescription-confidence against $\Delta$SR, $r = 0.82$ to 0.89 across the ten settings |
+| Policy gain per teacher-minute | the value of one demonstration, priced | Aim 1's per-demonstration information gain |
+
+**Table 13.** The Aim-3 metrics, each traced to the Aim-1 or Aim-2 quantity it succeeds. $\Delta$SR is the change in the policy's success rate on the round-level rollout evaluation.
+
+Controls, each removing exactly one component of the proposal: per-task demand with no transfer credit; uniform demand across skills; demand without a price, which maximises information gain and ignores cost; and Aim-2 single-task selection, which is the head-to-head that keeps the chain of comparisons unbroken from Aim 1 through Aim 3. The DAgger-family gates remain the outer reference point, so that the whole programme is measured against the same family it set out to improve on [47, 79].
+
+The human study is the evaluation the Aim-3 claim depends on, and the first point in the programme at which humans enter. Non-expert participants satisfy generated requests in simulation, using a teleoperation interface of the kind established for crowdsourced demonstration collection [54, 60]. Ethics approval will be sought from the Deakin human-research ethics committee before any participant is recruited, no personal data is collected beyond the demonstration itself, and no request is issued that has not passed the feasibility check. The study is what makes the programme's central claim checkable by someone outside it: a person who has never read the thesis is handed a request, satisfies it, and the policy improves by approximately the amount the demand model predicted. If it does not, the calibration curve says so.
+
+## 6.9 Risks and mitigations
+
+*Language may be too coarse an index across embodiments.* Two skills that read identically in language can be kinematically distinct on different robots, in which case coverage is mis-measured and the demand model asks for a demonstration it already holds. Vision-language models are unreliable at metric and spatial detail from perception alone, which is the same weakness in a different position [15, 28]. The mitigation is the one already adopted in Aim 2's index and inherited by Aim 3's inventory: fuse the caption embedding with a geometric or action embedding instead of indexing on language alone. Aim 1's descriptor survives into Aim 3 as the geometric half of that fusion, which is why it is retained in Aim 2 and not discarded, and why A10's silhouette result matters beyond Aim 1.
+
+*Non-expert demonstrations are suboptimal by construction.* Chapter 4's information-gain argument rules out invalid demonstrations by construction: a high pre-retrain loss means either that the demonstration covers an underrepresented region or that it is suboptimal, and the second branch is excluded because every prescription passes the feasibility check and every demonstration comes from the expert. The second half of that argument fails the moment the demonstrator is a member of the public, and Aim 3 must say so plainly instead of carrying the argument over unexamined. A high pre-retrain loss on a non-expert demonstration is genuinely ambiguous between novelty and incompetence. Aim 3 therefore adds a quality filter to the loop, and the demand model must be able to reject a satisfied request. Learning from suboptimal and preference-based human input is the starting point for the filter [12, 18, 99], and the demand ledger supplies a natural test of it: a demonstration that reduces predicted shortfall without reducing realised failure is a demonstration the filter should have rejected.
+
+*The price model may be wrong.* Estimating a demonstration's cost in human time from comparable demonstrations is a prediction, and a systematically wrong prediction would misallocate the budget while appearing to optimise it. The mitigation is measurement. The human study yields realised times, the price model is scored against them, and the calibration curve is reported as a result. A miscalibrated price model that is *detected* is a publishable negative finding; an undetected one invalidates the economic claim.
+
+*Demand may concentrate rather than spread.* Aim 1's allocation problem reappears one level up. If the shortfall is computed greedily, a single deep gap can absorb the whole teacher-time budget, which is the cross-task version of the failure the cluster memory of Aim 1 was designed to prevent and, as A13 shows, only partly did. The demand ledger inherits the problem and must be designed against it, using competence weighting and settlement by transfer credit so that a satisfied request reduces its own shortfall and stops re-selecting itself.
+
+*Ethics and recruitment may delay the human study.* The contingency, recorded in Section 7.3, is to validate the demand model against scripted teachers with simulated cost models, drawn from the demonstration-time distributions of existing large-scale human demonstration corpora [42, 60]. The economic claim then rests on a modelled cost instead of a measured one. That version is weaker and it is publishable, and the human study follows it and does not block it.
+
+## 6.10 Relationship to Aims 1 and 2, and target venue
+
+Aim 1 decides which failure to correct and where the corrective demonstration begins, and its evaluation shows the selector is blind to the dataset behind it. Aim 2 gives the selector the dataset, and its evaluation will show that the dataset is one task's, held by one policy, filled by one inexhaustible expert. Aim 3 turns the memory outward: the object Aim 2 makes explicit is what has been taught, and its dual is what still needs to be taught, by whom, and at what price. The value of one demonstration is measured in Aim 1, contextualised in Aim 2, and priced in Aim 3.
+
+Two of Aim 1's components carry all the way through and are the reason the programme is one programme and not three papers. The constraint store, which Aim 1 uses to verify a prescription before the motion planner is called, is what makes it possible to hand a request to a person without wasting their time. The geometric descriptor, which Aim 1 shows separates failure modes well and which the purity diagnostic shows is semantically blunt on the tasks where configuration does not determine cause, is what keeps language from collapsing kinematically distinct skills into one entry of the inventory.
+
+Aim 3 targets CoRL 2028, with the abstract and full paper due in late May 2028 and the conference in early November 2028. The thesis is submitted in November 2028.
+
+---
+
+# 7. Coherence of the research programme
+
+## 7.1 One thesis, three levers
+
+Chapter 3 stated the three stages. This section discharges the claim that they are one programme, by tracing a single quantity through all three and by naming the components of Aim 1 that survive into Aims 2 and 3.
+
+The quantity is the value of one demonstration, and it appears at three levels of resolution.
+
+It is *measured* in Aim 1, as the policy's per-step loss on a newly acquired demonstration before the policy is retrained on it. DISEIL records the highest such value in all ten settings (Table 6), and the allocation ablation is the warning that comes with it: a high per-demonstration value does not license a claim about the *set*, because removing the partition leaves the value unchanged while the success rate collapses.
+
+It is *contextualised* in Aim 2, where the same demonstration is worth less if the dataset already holds its content. The coverage memory is what makes that dependence computable, and the competence weight is what stops the memory from confusing a skill the dataset contains with a skill the policy has learned.
+
+It is *priced* in Aim 3, against the minutes of human time it costs, and Aim 1's after-the-fact measurements are the training data for Aim 3's predictor of it. Aim 1's prescription-confidence-against-$\Delta$SR correlation, which runs from 0.82 to 0.89 across the ten settings, becomes Aim 3's demand-model calibration curve and is reported against it. These are not analogies. They are the same quantity at three levels.
+
+The second thread is component survival. The geometric descriptor of Aim 1 is retained in Aim 2 as one channel of a fused index, on the strength of the dimensionality study, and in Aim 3 as the guard against language collapsing kinematically distinct skills into one entry of the inventory. The constraint store is retained in Aim 2 for feasibility verification, and its role grows in Aim 3, where the person satisfying a request cannot be sent an impossible one. The policy-solvability check is retained and acquires an economic reading in Aim 3, because a request the policy can already satisfy wastes a person's time. Nothing in Aim 1 is discarded except the two components its own ablations retired: the visual-embedding clustering branch, superseded by A10, and the single global memory kernel width, identified by A13 as mis-scaled and re-specified per task.
+
+The third thread is the shape of the transitions. Each aim is the correction to the limitation the previous aim's own evaluation exposed, and in both cases the limitation was measured and not anticipated. Aim 1's ablations located its advantage in an allocation mechanism over a hand-designed geometric descriptor and showed the language model contributing about a point, because the language model was never told anything the descriptor did not already encode (Section 4.16.4). Aim 2 supplies the missing input. Aim 2's own evaluation will show the dataset it hands the selector is one task's, filled by an inexhaustible expert who charges nothing. Aim 3 removes that assumption.
+
+## 7.2 What each aim contributes to the thesis chapters
+
+The thesis is written from the three papers and from this report, and the mapping is one-to-one.
+
+The introduction and the literature review of the thesis are drawn from Chapters 1 and 2 of this report, extended with the work published between now and submission.
+
+The Aim-1 chapter is the AAAI manuscript, extended with the material that a page limit excludes: the full ablation matrix over all ten settings, the diagnostics, the prompt and knowledge-graph records of Sections 4.6 and 4.7, and the statistical appendix. The four outstanding items of Section 8.1 are resolved in it.
+
+The Aim-2 chapter is the CoRL 2027 paper, and its decisive experiment is the matched-information ablation of Section 5.9. The chapter is written to carry either outcome, because the interpretation of a negative result is committed in advance.
+
+The Aim-3 chapter is the CoRL 2028 paper, together with the human study if the study completes inside the schedule and as a chapter contribution if it does not.
+
+The concluding chapter of the thesis traces the value of one demonstration through the three aims, which is the argument of Section 7.1, and states what a fixed demonstration budget can and cannot buy.
+
+## 7.3 Contingencies
+
+Three identified failure points carry a response, and none of the responses removes a rung from the programme.
+
+If the Aim-1 manuscript is not accepted at AAAI 2027, it is revised against the reviews and resubmitted to the next available main-track venue, and the Aim-1 chapter of the thesis is written from the same results either way. The result of record does not depend on the acceptance, and the schedule for Aims 2 and 3 does not move, because Aim 2's development begins in September 2026 and does not wait on a review outcome.
+
+If Aim 2's matched-information ablation shows that a learned trajectory embedding matches generated captions at equal capacity, then language is not buying sample efficiency, and the reframing that follows is that Aim 2's contribution is interpretability and cross-task composability. That interpretation is committed in Section 5.9, before the experiment is run. Aim 3 then proceeds on an embedding inventory, which composes across tasks as required, and loses the non-expert teaching interface, which is replaced by an interface that renders a request from a retrieved exemplar and not from a caption. The substitution is at the level of the index and not of the loop, so the schedule does not move.
+
+If human-research ethics approval for the Aim-3 teaching study is delayed beyond the target of March 2028, the demand model is validated against scripted teachers with simulated cost models drawn from the demonstration-time distributions measured in existing large-scale human demonstration corpora. The economic claim then rests on a modelled cost and not on a measured one, which is weaker and is publishable, and the human study moves into the thesis as a chapter contribution and not a paper contribution.
+
+---
+
+# 8. Project plan and Gantt chart
+
+## 8.1 Completed work
+
+The first nine months of candidature delivered Aim 1 in full. The literature review covered interactive imitation learning and the DAgger-family query gates, language and vision-language models as reasoners in robotics, structured environmental knowledge, and demonstration selection and curation, and it produced the statement of the gap that the programme works in. The DISEIL framework was specified and implemented as a single module with one entry point, so that one command runs one cell of the experimental matrix.
+
+The experimental programme covers five tasks under two observation modalities, which is ten settings, against six comparison methods: five published query gates of the DAgger family (SafeDAgger, DropoutDAgger, EnsembleDAgger, ThriftyDAgger, and Diff-DAgger on the robot tasks) together with Stagger, a uniform-random allocation control implemented in this project. The runs use nine seeds on GridWorld and five seeds on the robot tasks, under a budget of twenty demonstrations acquired one per round. Fifteen ablation studies were run on top of that matrix, fourteen of them on all ten settings and the fifteenth, the uniform-random allocation control, on the eight robot settings, together with five diagnostics, of which the failure-count curve is instrumented on Push-T (image) only and the compute-cost instrumentation has not been run. The statistical analysis was carried out as a separate, scripted pass over the results workbook and not by hand. DISEIL attains the best mean success rate in all ten settings, with a mean margin of 3.71 points over the strongest baseline in each. Collapsed to five task means the sweep holds at five out of five, one-sided sign test $p = 0.031$, paired $t(4) = 4.15$, $p = 0.014$.
+
+The Aim-1 manuscript, *Demonstration Distillation for Sample-Efficient Imitation Learning*, was submitted to the AAAI 2027 main track in July 2026. This report was drafted alongside it, for the Confirmation of Candidature on 13 August 2026.
+
+Four items of Aim-1 work are outstanding and are scheduled before the AAAI author-response window and are not deferred. The compute and token-cost measurement has been run, at one seed and on five settings, and is reported in Section 4.14.5; it should be repeated at further seeds, because no cost figure in this report carries cross-seed variance. The failure-count diagnostic is instrumented on one setting only and should be run on all three primary settings. The per-task kernel width identified as the fix for the mis-scaled cluster memory has not been run, and the report states that the memory is mis-scaled for the narrow-reset tasks and that the fix is identified and untested. The bridging diagnostic and the bridging knockout disagree with the prose written around them, and the prescription logs must be inspected before that ablation is written up.
+
+## 8.2 Publication plan
+
+Aim 1 is submitted to the AAAI 2027 main track. The review cycle, the author-response window and the camera-ready deadline follow the venue's published timetable, and the chart in Figure 24 shows them at their indicative positions and not at dates this report asserts.
+
+Aim 2 targets CoRL 2027, with the abstract and the full paper due in late May 2027 and the conference held in October or November 2027. Aim 3 targets CoRL 2028, with the abstract and the full paper due in late May 2028 and the conference held in early November 2028. The choice of venue is deliberate for both. Aim 2 and Aim 3 are robot-learning contributions whose evaluation is a policy's sample efficiency on manipulation suites, and CoRL reviews that kind of claim on its own terms. The CoRL 2028 conference falls in the same month as the thesis submission, which is the tightest coupling in the plan and is addressed in the schedule properties below.
+
+Continuity of comparison constrains the publication plan as much as it constrains the science. Push-T carries through from Aim 1 into Aim 2 as the head-to-head setting, and Aim 2's single-task selector is one of the controls in Aim 3, so the chain of comparisons runs unbroken from the first paper to the third. Aim 2's breadth evaluation adds a manipulation suite that ships language instructions, which supplies free ground truth for scoring captions and a defined skill taxonomy against which coverage can be measured [52, 63]. Aim 3's cross-embodiment evaluation draws on pooled multi-robot data [42, 70].
+
+## 8.3 Milestones
+
+Table 14 lists the milestones of the candidature. Each row is either a deliverable with a date, or an institutional checkpoint, and each one appears as a numbered diamond in Figure 24 at the same date. Any disagreement between the table and the chart is a defect.
+
+| # | Milestone | Date | Status |
+|---|---|---|---|
+| M1 | Candidature start | 13 Nov 2025 | Complete |
+| M2 | Aim-1 framework specified and implemented | Apr 2026 | Complete |
+| M3 | Aim-1 experimental matrix complete (10 settings, 6 baselines, 15 ablations, 5 diagnostics) | Jun 2026 | Complete |
+| M4 | Aim-1 manuscript submitted, AAAI 2027 main track | Jul 2026 | Complete |
+| M5 | Confirmation of Candidature | 13 Aug 2026 | This report |
+| M6 | Aim 1 complete (review outcome resolved, camera-ready or revision and resubmission) | Feb 2027 | Planned |
+| M7 | Mid-candidature progress review | May 2027 | Planned |
+| M8 | Aim-2 abstract and full paper submitted, CoRL 2027 | late May 2027 | Planned |
+| M9 | Aim 2 complete (conference presented, thesis chapter drafted) | Nov 2027 | Planned |
+| M10 | Human-research ethics approval for the Aim-3 teaching study | Mar 2028 (target) | Planned |
+| M11 | Aim-3 abstract and full paper submitted, CoRL 2028 | late May 2028 | Planned |
+| M12 | Full thesis draft to supervisors | Sep 2028 | Planned |
+| M13 | Aim 3 complete (human study analysed, chapter final) | Oct 2028 | Planned |
+| M14 | Thesis submission | Nov 2028 | Planned |
+
+**Table 14.** Candidature milestones. Milestones M1 to M4 were achieved in the first nine months and are described in Section 8.1. M5 is this report. The remaining ten are targets. The two dates fixed by the university are M5 and M14; the two fixed by a venue are M8 and M11; M10 is a target because the approval date is set by the ethics committee and not by the candidate, and the contingency if it slips is stated in Section 7.3.
+
+## 8.4 Gantt chart
+
+![](figures_generated/gantt_chart.pdf)
+
+**Figure 24. Project plan for the full candidature.** The chart is drawn at month resolution, from the candidature start on 13 November 2025 to thesis submission in November 2028. Bars are coloured by workstream. Hatched bars are low-intensity or venue-scheduled activity, where the candidate's own effort is intermittent and the dates are set by a review timetable rather than by the plan. Numbered diamonds are the milestones of Table 14, filled where the milestone has been achieved and open where it is planned. The vertical rule marks the Confirmation of Candidature on 13 August 2026 and separates completed work from planned work. The three aims overlap by design and not by accident: Aim 2's problem formulation begins in September 2026, while the AAAI review of Aim 1 is still running, and Aim 3's formulation begins in October 2027, while the CoRL 2027 review of Aim 2 is still running, so that no development period is spent waiting on a review outcome. Thesis writing begins in November 2027 and draws its chapters from this report and from the three papers, so that the final year holds integration and revision rather than first drafting.
+
+Three properties of the schedule are worth stating explicitly, because they are the properties a panel should test it against.
+
+The critical path runs through the two CoRL deadlines and terminates at the thesis submission. Each aim allocates about four months to problem formulation and methodology, four to five months to implementation, three months to experimentation, and two to three months to writing, with the writing overlapping the tail of the experimentation. That shape is the one that produced Aim 1 in nine months from a standing start, and it is repeated with more slack, because the candidate no longer has to build the experimental infrastructure from nothing.
+
+The human study of Aim 3 is the only part of the programme that depends on an external approval, and it is scheduled to survive that dependency. Ethics preparation begins in November 2027 and the application is lodged well before the Aim-3 experimentation window opens, with approval targeted for March 2028. The scripted-teacher experimentation runs from February 2028 and does not require approval, so the CoRL 2028 submission in late May 2028 rests on the scripted-teacher validation of the demand model with cost models drawn from measured demonstration-time distributions. The human study runs from March to August 2028 and strengthens the paper if it completes in time and the thesis chapter if it does not. The economic claim of Aim 3 is weaker under a modelled cost than under a measured one, and the plan states that trade and does not bet the submission on the approval date.
+
+Thesis submission in November 2028 coincides with the CoRL 2028 conference, which is the one point where two commitments land in the same month. The full thesis draft is therefore scheduled for September 2028, two months ahead of submission, and the pre-submission review and revision window runs from September to mid-November. Examination preparation begins in mid-September 2028 and continues past submission. The chapters themselves are not written in that window. They are written progressively from November 2027 onward, out of material that has already been through peer review.
+
+---
+
+# 9. Ethical considerations
+
+## 9.1 The position of the programme to date
+
+No human participant has taken part in this research, and no human-subject data has been collected. Every experiment reported in Chapter 4 ran in simulation on a shared high-performance computing cluster, and the demonstrations that enter the training sets are produced either by a scripted or planner-based expert or, on the GridWorld task, by the candidate. No third party supplied a demonstration, and no personal information was recorded at any point.
+
+The work carries no immediate deployment risk of its own. The framework decides which demonstration to collect next; it does not control a robot, and the language model is never in the path between an observation and an action at execution time. The policies trained in the evaluation are simulated manipulators and a grid agent, and none of them has been transferred to hardware.
+
+## 9.2 The Aim-3 human study
+
+Aim 3 is the point at which people enter the programme, and it does so in a specific and bounded way. Non-expert participants will be asked to satisfy machine-generated demonstration requests in simulation, using a teleoperation interface. An application to the Deakin University human-research ethics committee will be prepared and approved before any participant is approached, and the target date for approval is recorded as milestone M10.
+
+Four commitments constrain the design of that study, and they are stated here so that the panel can hold the eventual application to them.
+
+Participation is voluntary and informed. Participants will be told what the demonstrations are used for, that the data trains a simulated policy, and that they may withdraw.
+
+Data collection is minimal. The only data recorded is the demonstration itself, together with the time taken to produce it, because teacher time is the quantity Aim 3 is measuring. No personal information beyond what the consent process requires is collected, and demonstrations are stored against a participant identifier and not a name.
+
+No request is issued that has not passed the feasibility check. The framework's constraint store exists to reject prescriptions the environment cannot instantiate and the robot cannot reach, and with a person on the other end of the request an infeasible prescription is not a wasted round but wasted human time. The policy-solvability check serves the same purpose, because a request the policy can already satisfy would waste a participant's time by construction.
+
+Participants are not evaluated. The study measures the demand model, not the person. Demonstration quality is scored to test the quality filter described in Section 6.9, and it is not reported per participant.
+
+## 9.3 Data management, research integrity and the use of generative models
+
+Primary data is retained and traceable to the claim it supports. Every figure and every table in Chapter 4 is generated from the recorded run outputs by script and not transcribed by hand, and the results workbook is the single source of every number in this report. Where the workbook and a display string disagree, the numeric column is used and the discrepancy is recorded (Section 4.16.9). Where a measurement was not taken, no placeholder is substituted for it, and the report says the measurement is missing.
+
+The study did not sustain two of the claims proposed during it, and both are retracted in the text where they arose: the halved-budget headline, which is false in seven of the ten settings, and the framing of the cluster memory as a principal driver of the framework's advantage.
+
+The programme uses open-weight language and vision-language models as components [4, 96]. Their outputs are prescriptions and root-cause labels, and every prescription is verified against an explicit store of environmental constraints before it is acted on. The models are not used to generate the research claims, and the numbers in this report come from measured runs. The known failure mode of these models, the confident assertion of geometry they cannot perceive [15, 28], is the reason the framework hands them a computed descriptor and checks what they return.
+
+## 9.4 Broader considerations
+
+The report records two wider issues, without overstating the programme's proximity to either.
+
+Automating the selection of what a human is asked to demonstrate is a form of task allocation to a person, and the person on the other end of an Aim-3 request is being directed by a model. The mitigations in the study design are the ones above: the request is readable, it carries the reason it was issued, and it has been checked for feasibility before it is issued. The rationale that Aim 2's selector emits is what makes the direction auditable by the person who holds the budget, and it is scored as a deliverable.
+
+Sample-efficient imitation learning lowers the cost of teaching a robot a task, and the tasks in this programme are manipulation benchmarks with no dual-use character. The framework is not task-specific and could in principle be applied to a task with a different character. That is a property it shares with imitation learning in general, and the programme does not develop any capability specific to a harmful application.
+
+---
+
+# 10. Higher-degree research training and other research activities
+
+Deakin University requires every higher-degree-research (HDR) candidate to complete a set of compulsory modules within the first year of candidature, and it offers elective units that a candidate takes according to the needs of the project. The training completed since the candidature began on 13 November 2025 is recorded below. Each item is stated as it appears on the document that evidences it. The certificates and the statement of results are reproduced in Appendix A; nothing in this chapter is asserted beyond what those documents record.
+
+## 10.1 Compulsory training
+
+The three compulsory modules were completed in December 2025, within the first month of candidature. Table 15 transcribes the candidate's training record, and Figure 25 reproduces the record itself.
+
+| Module | Status | Date on the training record |
+|---|---|---|
+| Research Integrity Training | Complete | 02-DEC-25 |
+| Research Induction | Complete | 10-DEC-25 |
+| HDR Respectful Behaviour | Complete | 02-DEC-25 |
+
+**Table 15.** The three compulsory higher-degree-research modules, transcribed from the candidate's compulsory-training panel. The dates are the dates the university's record system logged completion. The two certificates issued for these modules are dated Monday, 1 December 2025, one day earlier than the logged date; the discrepancy is between the certificate and the record system, and both sources are given here, and neither is selected silently.
+
+![](<Compulsory Training Status.png>)
+
+**Figure 25. Status of the compulsory higher-degree-research training.** The status is as recorded in the candidate's training record. The three modules required in the first year of candidature are marked complete.
+
+### 10.1.1 Research integrity and safety
+
+The Deakin Safety and Research Integrity Training module was completed on Monday, 1 December 2025, as certified by the certificate of completion presented for Research Integrity (Appendix A, Figure A.1). The module covers the conduct expected of a researcher under the university's research-integrity framework: authorship and attribution, data management and retention, the treatment of research records, conflicts of interest, and the reporting of misconduct, together with the laboratory and workplace safety obligations that attach to research activity.
+
+The material bears on this candidature in two places. Data management is the first. The Aim-1 results reported in Chapter 4 rest on runs across ten settings and, on the robot tasks, five seeds per setting, with a workbook of ablation outputs as the single source of every number that enters this report. The integrity training's requirement that primary data be retained and traceable to the published claim is the standard the analysis pipeline is held to: each figure and each table in Chapter 4 is generated from the recorded run outputs and not transcribed by hand. The second is the conduct of research that will eventually involve people. Aim 3 proposes a study in which non-expert participants supply demonstrations in simulation. That study cannot begin without approval from the Deakin human-research ethics committee, and the integrity module is the training that establishes what such an application must contain. Chapter 9 states the ethical position of the programme; the training is what makes that position an informed one and not an assertion.
+
+### 10.1.2 Respect at Deakin, graduate research and supervision module
+
+The Respect at Deakin HDR module, the graduate research and supervision module, was completed on Monday, 1 December 2025 (Appendix A, Figure A.2). The module addresses the conduct expected within the supervisory relationship and the wider research environment: what respectful behaviour requires of both candidate and supervisor, what constitutes harassment or discrimination, and the channels through which a concern can be raised. The candidature is supervised by A/Prof Santu Rana and Dr Arun Kumar Anjanapura Venkatesh, and the supervisory relationship is the mechanism by which the work in this report was scoped, corrected and, in several places, redirected. The module sets out the expectations that relationship is held to.
+
+### 10.1.3 Research induction
+
+The training record shows Research Induction complete on 10-DEC-25. No certificate was issued for this item in the documents available to the candidate, so the training record in Figure 25 is the evidence offered for it. If the panel requires a certificate for each compulsory item, one will be requested from the graduate research office.
+
+## 10.2 Academic writing and communication (SSC900)
+
+SSC900 Academic Writing and Communication was taken in trimester 1 of 2026 and passed. The unit appears on the candidate's statement of results (Appendix A, Figure A.3) with the grade UP, the ungraded-pass result Deakin awards for units that are assessed as satisfactory or unsatisfactory rather than on a mark. The same statement records the three research units taken to date, FAR972 PhD Research, for 2025/HDR-Q4, 2026/HDR-Q1 and 2026/HDR-Q2, each carrying the grade CE, which records continuing enrolment in a research unit that spans more than one study period rather than a mark. The meaning of both codes is given in the university's results key, which the statement itself links (deakin.edu.au/students/studying/assessment-and-results/results-key). The document is a statement of results and carries an explicit disclaimer that it is unofficial; an academic transcript can be obtained if the panel requires formal evidence.
+
+SSC900 covers the writing of research prose for an academic audience: the structure of an argument across a paper, the conventions of citation and of reporting evidence, and the discipline of writing to a venue's expectations. The unit was taken in the trimester in which the Aim-1 manuscript, *Demonstration Distillation for Sample-Efficient Imitation Learning*, was written and submitted to the AAAI 2027 main track. The manuscript and this report are the two pieces of extended academic writing produced during the candidature so far, and both were drafted under the conventions the unit teaches.
+
+## 10.3 Research activity beyond the compulsory modules
+
+The substantive research training of the candidature has been the work itself, and it is documented in the preceding chapters and not by a certificate. Three activities are worth recording. The first is the construction and maintenance of the experimental infrastructure: an interactive imitation-learning loop implemented across five tasks in two observation modalities, six baselines, and an ablation programme of fifteen studies and five diagnostics, run on a shared high-performance computing cluster. The second is the statistical analysis reported in Chapter 4 and Appendix D, which required the non-parametric procedures used there (Friedman, Wilcoxon signed-rank, Holm-Bonferroni correction, sign test and paired *t*-test) and the judgement of when a collapsed, conservative test is the claim of record. The third is manuscript preparation and submission to a main-track venue, completed in July 2026, and the review-response cycle that follows it.
+
+## 10.4 Training planned for the remainder of the candidature
+
+The programme identifies two needs. Human-research ethics is the first: the Aim-3 study in Chapter 6 requires an application to the Deakin human-research ethics committee, and the candidate will complete the university's human-research ethics training and prepare that application before any participant is approached. The second is conference presentation. The publication plan in Chapter 8 targets CoRL 2027 and CoRL 2028 in addition to AAAI 2027, and presenting the work in person is the part of the professional-development record that has no entry in it yet. Institute seminars and reading groups within A2I2 are attended, but no attendance record is held for them and none is claimed here.
+
+---
+
+# 11. Conclusion
+
+The thesis asks one question. When the number of expert demonstrations is fixed by something other than the researcher's patience, can a language model raise the information content of each demonstration that is bought? Aim 1 answers that question for the decision that sits inside a single round of interactive imitation learning, and the answer is now on record in a manuscript submitted to the AAAI 2027 main track in July 2026.
+
+## 11.1 What Aim 1 established
+
+The DAgger family and its descendants decide when to hand control to the expert [79]. DISEIL decides which failure mode receives the round's demonstration and where that demonstration begins. Across ten settings, that is five tasks under two observation modalities, DISEIL attains the best mean success rate in every one, with a mean margin of 3.71 points over the strongest baseline in each setting. The claim of record is the conservative one, because the two modalities of a task share the expert, the reset distribution and the reward structure and are not independent experiments. Collapsed to five task means, the sweep holds at five wins from five, a one-sided sign test gives $p = 0.031$, and a paired $t$-test gives $t(4) = 4.15$, $p = 0.014$.
+
+The ablations say where the advantage lives, and they say it more sharply than the comparison table does. Removing the partition over failure modes costs 4.01 points on average and retains 11.3% of the margin over the best baseline, and on Door (image) the ablated system falls below its best baseline. In the same experiment, per-demonstration information gain does not fall. It rises slightly, by 0.06 on average (Wilcoxon $p = 0.25$), while the success rate collapses (Wilcoxon $p = 0.008$, the floor of the test at $n = 8$). Both tests are computed over the eight settings that have headroom. Greedy worst-loss selection collects demonstrations that are individually informative and jointly redundant, because information gain measured on one demonstration carries no term for its overlap with the demonstration collected in the round before. Allocation is the term that supplies it. Two controls bracket the result: uniform-random replay of a recorded failure sits 12.68 points below DISEIL on the six robot settings that have headroom and lands below every gated baseline on three of them, and the deterministic nearest-untried rule promoted to a whole method retains 31.1% of the margin. The advantage is also largest where the budget is smallest, at +10.35 points at $B = 10$ against +2.68 at $B = 40$, which is the behaviour a sample-efficiency method should show.
+
+## 11.2 What the evidence did not support
+
+Two of the framework's own design claims did not survive its own ablations, and the report carries them as findings and not as caveats.
+
+Each language-model component is worth about one point. Replacing the prescription model with a deterministic heuristic costs 1.08 points and retains 76.7% of the margin, and removing the vision-language model costs 1.01 points and retains 78.0%. Every individual gap in both studies is smaller than the seed standard deviation of the corresponding full run. The reason is structural. The partition is geometric and consumes no output from any foundation model, so by the time the language model is called, the decision that matters has already been taken. The selector reasons about the failure in front of it and holds no representation of the dataset behind it.
+
+The one cross-round memory the selector has is mis-scaled. The Gaussian kernel width is a single global constant, and the tasks do not share a spatial scale: on Door, whose reset range is about ±0.013 m, and on GridWorld, whose centroids are in grid-cell units, the kernel is degenerate at every swept width, so the memory is close to inert on those four settings. On Lift the kernel does discriminate at the narrowest swept width, and the 100.0 ± 0.0 ceiling hides whatever it does, so Lift is evidence about no mechanism at all and is not counted among the settings on which the memory was measured to be inert. A per-task width, expressed as a fraction of each task's reset range, is the identified fix, and it has not yet been run.
+
+## 11.3 What the programme will have shown by November 2028
+
+Aim 2 removes the limitation Aim 1 measured. A captioner inverts the vision-language-action mapping, taking a trajectory's frames and its executed action sequence and emitting language, and the captions accumulate into a memory of what the policy has been taught, weighted by the policy's measured competence on each stored skill. The selector then reasons over a coverage gap instead of a local failure. The experiment that decides whether language is doing causal work is stated in advance: a matched-information ablation that freezes the selection loop and varies only the representation the selector consumes, with a content-scrambled placebo and an oracle-caption ceiling, with the interpretation committed in Section 5.9 and the schedule contingency in Section 7.3. Aim 2 is targeted at CoRL 2027, submission late May 2027.
+
+Aim 3 turns the memory outward. Coverage becomes a cross-task, embodiment-annotated skill inventory; the selector becomes a demand model that prices each candidate request by its expected information gain per minute of teacher time; and the request is issued to a person, in language, after passing the same constraint check the framework already runs. The primary metric changes with the resource: teacher-time-to-threshold rather than demonstrations-to-threshold. Aim 3 is targeted at CoRL 2028, submission late May 2028, with the thesis submitted in November 2028.
+
+The trajectory is feasible because Aim 2 changes the selector and not the platform. The loop skeleton, the query gate, the expert, the evaluation protocol, the baselines and the Push-T continuity benchmark all carry across unchanged, and Aim 1's measured information gain becomes the training signal for Aim 3's predictor of it. The single quantity the thesis set out to raise, the value of one demonstration, is measured in Aim 1, contextualised against the dataset in Aim 2, and priced against a person's time in Aim 3.
+
+## 11.4 The next step
+
+Four pieces of work are outstanding on Aim 1 and are scheduled before the AAAI author-response window. The memory is re-run with a per-task kernel width defined as a fraction of each task's reset range, across all ten settings, to establish whether the memory's 0.75-point contribution under the global width is a property of the mechanism or an artefact of the constant. The compute and token-cost runs are repeated at two further seeds, because the D5 matrix of Section 4.14.5 prices the reasoning pipeline at one seed and a cost figure with no cross-seed variance is a figure a reviewer can push on. The prescription logs are inspected to resolve the contradiction between the method's account of bridging and the 24% to 30% bridging share the diagnostics record on GridWorld and Wipe. The retracted budget claim, that the framework at $B = 10$ matches the best baseline at $B = 20$, stays retracted, because it is false in seven of the ten settings. The per-task kernel-width re-run is first, because it is the one defect whose fix is already specified and whose result changes what the paper is permitted to claim about its own memory.
+
+---
+
+# 12. References
+
+[1] Ahn, M.; Brohan, A.; Brown, N.; et al. 2022. Do As I Can, Not As I Say: Grounding Language in Robotic Affordances. In Proceedings of the 6th Conference on Robot Learning (CoRL), PMLR.
+
+[2] Argall, B. D.; Chernova, S.; Veloso, M.; et al. 2009. A Survey of Robot Learning from Demonstration. Robotics and Autonomous Systems, 57(5), 469–483. doi:10.1016/j.robot.2008.10.024.
+
+[3] Ash, J. T.; Zhang, C.; Krishnamurthy, A.; et al. 2020. Deep Batch Active Learning by Diverse, Uncertain Gradient Lower Bounds. In International Conference on Learning Representations (ICLR).
+
+[4] Bai, S.; et al. 2025. Qwen3-VL Technical Report. arXiv:2511.21631.
+
+[5] Bain, M.; Sammut, C. 1995. A Framework for Behavioural Cloning. In Machine Intelligence 15: Intelligent Agents, 103–129, Oxford University Press. https://academic.oup.com/book/53289/chapter/422019159.
+
+[6] Belkhale, S.; Cui, Y.; Sadigh, D. 2023. Data Quality in Imitation Learning. arXiv:2306.02437.
+
+[7] Belkhale, S.; Ding, T.; Xiao, T.; et al. 2024. RT-H: Action Hierarchies Using Language. In Proceedings of Robotics: Science and Systems (RSS). arXiv:2403.01823.
+
+[8] Black, K.; Brown, N.; Driess, D.; et al. 2025. pi0: A Vision-Language-Action Flow Model for General Robot Control. In Proceedings of Robotics: Science and Systems (RSS). arXiv:2410.24164.
+
+[9] Bousmalis, K.; Vezzani, G.; Rao, D.; et al. 2023. RoboCat: A Self-Improving Generalist Agent for Robotic Manipulation. Transactions on Machine Learning Research. arXiv:2306.11706.
+
+[10] Brohan, A.; Brown, N.; Carbajal, J.; et al. 2022. RT-1: Robotics Transformer for Real-World Control at Scale. arXiv:2212.06817.
+
+[11] Brohan, A.; Brown, N.; Carbajal, J.; et al. 2023. RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control. In Proceedings of the 7th Conference on Robot Learning (CoRL), PMLR.
+
+[12] Brown, D. S.; Goo, W.; Nagarajan, P.; et al. 2019. Extrapolating Beyond Suboptimal Demonstrations via Inverse Reinforcement Learning from Observations. In Proceedings of the 36th International Conference on Machine Learning (ICML), 97, PMLR. arXiv:1904.06387.
+
+[13] Cazenavette, G.; Wang, T.; Torralba, A.; et al. 2022. Dataset Distillation by Matching Training Trajectories. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). arXiv:2203.11932.
+
+[14] Celemin, C.; Pérez-Dattari, R.; Chisari, E.; et al. 2022. Interactive Imitation Learning in Robotics: A Survey. Foundations and Trends in Robotics, 10(1--2), 1–197. doi:10.1561/2300000072.
+
+[15] Chen, B.; Xu, Z.; Kirmani, S.; et al. 2024. SpatialVLM: Endowing Vision-Language Models with Spatial Reasoning Capabilities. arXiv:2401.12168.
+
+[16] Chen, Y.; Arkin, J.; Dawson, C.; et al. 2024. AutoTAMP: Autoregressive Task and Motion Planning with LLMs as Translators and Checkers. In 2024 IEEE International Conference on Robotics and Automation (ICRA), IEEE. arXiv:2306.06531.
+
+[17] Chi, C.; Xu, Z.; Feng, S.; et al. 2023. Diffusion Policy: Visuomotor Policy Learning via Action Diffusion. In Proceedings of Robotics: Science and Systems (RSS).
+
+[18] Christiano, P.; Leike, J.; Brown, T. B.; et al. 2017. Deep Reinforcement Learning from Human Preferences. arXiv:1706.03741.
+
+[19] Collins, J. A.; Cheng, L.; Aneja, K.; et al. 2025. AMPLIFY: Actionless Motion Priors for Robot Learning from Videos. arXiv:2506.14198.
+
+[20] Cormen, T. H.; Leiserson, C. E.; Rivest, R. L.; et al. 2022. Introduction to Algorithms. 4th edition. MIT Press.
+
+[21] Driess, D.; Xia, F.; Sajjadi, M. S. M.; et al. 2023. PaLM-E: An Embodied Multimodal Language Model. In Proceedings of the 40th International Conference on Machine Learning (ICML), 202, PMLR.
+
+[22] Duan, J.; Pumacay, W.; Kumar, N.; et al. 2025. AHA: A Vision-Language-Model for Detecting and Reasoning Over Failures in Robotic Manipulation. In International Conference on Learning Representations (ICLR).
+
+[23] Edge, D.; Trinh, H.; Cheng, N.; et al. 2024. From Local to Global: A Graph RAG Approach to Query-Focused Summarization. arXiv:2404.16130.
+
+[24] Eldar, Y.; Lindenbaum, M.; Porat, M.; et al. 1997. The Farthest Point Strategy for Progressive Image Sampling. IEEE Transactions on Image Processing, 6(9), 1305–1315. doi:10.1109/83.623193.
+
+[25] Eysenbach, B.; Gu, S.; Ibarz, J.; et al. 2018. Leave no Trace: Learning to Reset for Safe and Autonomous Reinforcement Learning. In International Conference on Learning Representations (ICLR).
+
+[26] Florence, P.; Lynch, C.; Zeng, A.; et al. 2021. Implicit Behavioral Cloning. In Proceedings of the 5th Conference on Robot Learning (CoRL), 164, PMLR.
+
+[27] Florensa, C.; Held, D.; Wulfmeier, M.; et al. 2017. Reverse Curriculum Generation for Reinforcement Learning. In Proceedings of the 1st Annual Conference on Robot Learning (CoRL), 78, PMLR.
+
+[28] Fu, X.; Hu, Y.; Li, B.; et al. 2024. BLINK: Multimodal Large Language Models Can See but Not Perceive. In European Conference on Computer Vision (ECCV), Springer. arXiv:2404.12390.
+
+[29] Gal, Y.; Ghahramani, Z. 2016. Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning. In Proceedings of the 33rd International Conference on Machine Learning (ICML), 48, 1050–1059, PMLR.
+
+[30] Gu, J.; Xiang, F.; Li, X.; et al. 2023. ManiSkill2: A Unified Benchmark for Generalizable Manipulation Skills. In International Conference on Learning Representations (ICLR).
+
+[31] Hart, P. E.; Nilsson, N. J.; Raphael, B. 1968. A Formal Basis for the Heuristic Determination of Minimum Cost Paths. IEEE Transactions on Systems Science and Cybernetics, 4(2), 100–107. doi:10.1109/TSSC.1968.300136.
+
+[32] Hejna, J.; Bhateja, C.; Jiang, Y.; et al. 2024. Re-Mix: Optimizing Data Mixtures for Large Scale Imitation Learning. arXiv:2408.14037.
+
+[33] Ho, J.; Jain, A.; Abbeel, P. 2020. Denoising Diffusion Probabilistic Models. In Advances in Neural Information Processing Systems (NeurIPS), 33.
+
+[34] Hoque, R.; Balakrishna, A.; Putterman, C.; et al. 2021. LazyDAgger: Reducing Context Switching in Interactive Imitation Learning. In 2021 IEEE 17th International Conference on Automation Science and Engineering (CASE), IEEE. doi:10.1109/CASE49439.2021.9551469.
+
+[35] Hoque, R.; Balakrishna, A.; Novoseller, E.; et al. 2021. ThriftyDAgger: Budget-Aware Novelty and Risk Gating for Interactive Imitation Learning. In Proceedings of the 5th Conference on Robot Learning (CoRL), 164, PMLR.
+
+[36] Houlsby, N.; Huszár, F.; Ghahramani, Z.; et al. 2011. Bayesian Active Learning for Classification and Preference Learning. arXiv:1112.5745.
+
+[37] Huang, W.; Xia, F.; Xiao, T.; et al. 2022. Inner Monologue: Embodied Reasoning through Planning with Language Models. In Proceedings of the 6th Conference on Robot Learning (CoRL), PMLR.
+
+[38] Huang, W.; Wang, C.; Zhang, R.; et al. 2023. VoxPoser: Composable 3D Value Maps for Robotic Manipulation with Language Models. In Proceedings of the 7th Conference on Robot Learning (CoRL), PMLR.
+
+[39] James, S.; Ma, Z.; Arrojo, D. R.; et al. 2019. RLBench: The Robot Learning Benchmark & Learning Environment. arXiv:1909.12271.
+
+[40] Janner, M.; Du, Y.; Tenenbaum, J. B.; et al. 2022. Planning with Diffusion for Flexible Behavior Synthesis. In Proceedings of the 39th International Conference on Machine Learning (ICML), 162, PMLR.
+
+[41] Kelly, M.; Sidrane, C.; Driggs-Campbell, K.; et al. 2019. HG-DAgger: Interactive Imitation Learning with Human Experts. In 2019 International Conference on Robotics and Automation (ICRA), 8077–8083, IEEE. doi:10.1109/ICRA.2019.8793698.
+
+[42] Khazatsky, A.; Pertsch, K.; Nair, S.; et al. 2024. DROID: A Large-Scale In-The-Wild Robot Manipulation Dataset. arXiv:2403.12945.
+
+[43] Kim, M. J.; Pertsch, K.; Karamcheti, S.; et al. 2024. OpenVLA: An Open-Source Vision-Language-Action Model. In Proceedings of the 8th Conference on Robot Learning (CoRL), PMLR. arXiv:2406.09246.
+
+[44] Krishna, R.; Hata, K.; Ren, F.; et al. 2017. Dense-Captioning Events in Videos. arXiv:1705.00754.
+
+[45] Lakshminarayanan, B.; Pritzel, A.; Blundell, C. 2017. Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles. In Advances in Neural Information Processing Systems (NeurIPS), 30.
+
+[46] Laskey, M.; Lee, J.; Fox, R.; et al. 2017. DART: Noise Injection for Robust Imitation Learning. In Proceedings of the 1st Annual Conference on Robot Learning (CoRL), 78, 143–156, PMLR.
+
+[47] Lee, S. W.; Kang, X.; Kuo, Y. L. 2025. Diff-DAgger: Uncertainty Estimation with Diffusion Policy for Robotic Manipulation. In 2025 IEEE International Conference on Robotics and Automation (ICRA), IEEE. arXiv:2410.14868.
+
+[48] Lewis, P.; Perez, E.; Piktus, A.; et al. 2020. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. In Advances in Neural Information Processing Systems (NeurIPS), 33. arXiv:2005.11401.
+
+[49] Liang, A.; Czempin, P.; Hong, M.; et al. 2025. CLAM: Continuous Latent Action Models for Robot Learning from Unlabeled Demonstrations. arXiv:2505.04999.
+
+[50] Liang, J.; Huang, W.; Xia, F.; et al. 2023. Code as Policies: Language Model Programs for Embodied Control. In 2023 IEEE International Conference on Robotics and Automation (ICRA), IEEE.
+
+[51] Lin, F.; Hu, Y.; Sheng, P.; et al. 2024. Data Scaling Laws in Imitation Learning for Robotic Manipulation. arXiv:2410.18647.
+
+[52] Liu, B.; Zhu, Y.; Gao, C.; et al. 2023. LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning. arXiv:2306.03310.
+
+[53] Liu, B.; Jiang, Y.; Zhang, X.; et al. 2023. LLM+P: Empowering Large Language Models with Optimal Planning Proficiency. arXiv:2304.11477.
+
+[54] Liu, H.; Nasiriany, S.; Zhang, L.; et al. 2023. Robot Learning on the Job: Human-in-the-Loop Autonomy and Learning During Deployment. In Proceedings of Robotics: Science and Systems (RSS). doi:10.15607/RSS.2023.XIX.005.
+
+[55] Liu, Z.; Bahety, A.; Song, S. 2023. REFLECT: Summarizing Robot Experiences for Failure Explanation and Correction. In Proceedings of the 7th Conference on Robot Learning (CoRL), PMLR.
+
+[56] Lloyd, S. P. 1982. Least Squares Quantization in PCM. IEEE Transactions on Information Theory, 28(2), 129–137. doi:10.1109/TIT.1982.1056489.
+
+[57] Ma, Y. J.; Sodhani, S.; Jayaraman, D.; et al. 2023. VIP: Towards Universal Visual Reward and Representation via Value-Implicit Pre-Training. In International Conference on Learning Representations (ICLR).
+
+[58] Ma, Y. J.; Liang, W.; Wang, G.; et al. 2024. Eureka: Human-Level Reward Design via Coding Large Language Models. In International Conference on Learning Representations (ICLR).
+
+[59] Madaan, A.; Tandon, N.; Gupta, P.; et al. 2023. SELF-REFINE: Iterative Refinement with Self-Feedback. In Advances in Neural Information Processing Systems (NeurIPS), 36.
+
+[60] Mandlekar, A.; Zhu, Y.; Garg, A.; et al. 2018. RoboTurk: A Crowdsourcing Platform for Robotic Skill Learning through Imitation. In Proceedings of the 2nd Conference on Robot Learning (CoRL), PMLR. arXiv:1811.02790.
+
+[61] Mandlekar, A.; Xu, D.; Martín-Martín, R.; et al. 2020. Human-in-the-Loop Imitation Learning using Remote Teleoperation. arXiv:2012.06733.
+
+[62] Mandlekar, A.; Xu, D.; Wong, J.; et al. 2021. What Matters in Learning from Offline Human Demonstrations for Robot Manipulation. In Proceedings of the 5th Conference on Robot Learning (CoRL), 164, PMLR.
+
+[63] Mees, O.; Hermann, L.; Rosete-Beas, E.; et al. 2022. CALVIN: A Benchmark for Language-Conditioned Policy Learning for Long-Horizon Robot Manipulation Tasks. IEEE Robotics and Automation Letters. arXiv:2112.03227.
+
+[64] Memmel, M.; Berg, J.; Chen, B.; et al. 2025. STRAP: Robot Sub-Trajectory Retrieval for Augmented Policy Learning. In International Conference on Learning Representations (ICLR). arXiv:2412.15182.
+
+[65] Menda, K.; Driggs-Campbell, K.; Kochenderfer, M. J. 2017. DropoutDAgger: A Bayesian Approach to Safe Imitation Learning. arXiv:1709.06166.
+
+[66] Menda, K.; Driggs-Campbell, K.; Kochenderfer, M. J. 2019. EnsembleDAgger: A Bayesian Approach to Safe Imitation Learning. In 2019 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), IEEE. doi:10.1109/IROS40897.2019.8968287.
+
+[67] Mu, T.; Ling, Z.; Xiang, F.; et al. 2021. ManiSkill: Generalizable Manipulation Skill Benchmark with Large-Scale Demonstrations. In Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks Track, 34.
+
+[68] Nair, S.; Rajeswaran, A.; Kumar, V.; et al. 2022. R3M: A Universal Visual Representation for Robot Manipulation. In Proceedings of the 6th Conference on Robot Learning (CoRL), PMLR.
+
+[69] Octo Model Team; Ghosh, D.; Walke, H.; et al. 2024. Octo: An Open-Source Generalist Robot Policy. In Proceedings of Robotics: Science and Systems (RSS). arXiv:2405.12213.
+
+[70] Open X-Embodiment Collaboration; O'Neill, A.; Rehman, A.; et al. 2023. Open X-Embodiment: Robotic Learning Datasets and RT-X Models. arXiv:2310.08864.
+
+[71] Osa, T.; Pajarinen, J.; Neumann, G.; et al. 2018. An Algorithmic Perspective on Imitation Learning. Foundations and Trends in Robotics, 7(1--2), 1–179. arXiv:1811.06711.
+
+[72] Pedregosa, F.; Varoquaux, G.; Gramfort, A.; et al. 2011. Scikit-learn: Machine Learning in Python. Journal of Machine Learning Research, 12, 2825–2830. arXiv:1201.0490.
+
+[73] Pomerleau, D. A. 1988. ALVINN: An Autonomous Land Vehicle in a Neural Network. In Advances in Neural Information Processing Systems (NeurIPS), 1, 305–313, Morgan Kaufmann.
+
+[74] Pomerleau, D. A. 1991. Efficient Training of Artificial Neural Networks for Autonomous Navigation. Neural Computation, 3(1), 88–97. doi:10.1162/neco.1991.3.1.88.
+
+[75] Radosavovic, I.; Xiao, T.; James, S.; et al. 2022. Real-World Robot Learning with Masked Visual Pre-training. In Proceedings of the 6th Conference on Robot Learning (CoRL), PMLR.
+
+[76] Reed, S.; Zolna, K.; Parisotto, E.; et al. 2022. A Generalist Agent. Transactions on Machine Learning Research. arXiv:2205.06175.
+
+[77] Ren, A. Z.; Dixit, A.; Bodrova, A.; et al. 2023. Robots That Ask For Help: Uncertainty Alignment for Large Language Model Planners. In Proceedings of the 7th Conference on Robot Learning (CoRL), PMLR. arXiv:2307.01928.
+
+[78] Ross, S.; Bagnell, J. A. 2010. Efficient Reductions for Imitation Learning. In Proceedings of the 13th International Conference on Artificial Intelligence and Statistics (AISTATS), 9, 661–668, PMLR. https://proceedings.mlr.press/v9/ross10a.html.
+
+[79] Ross, S.; Gordon, G. J.; Bagnell, J. A. 2011. A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning. In Proceedings of the 14th International Conference on Artificial Intelligence and Statistics (AISTATS), 15, 627–635, PMLR.
+
+[80] Ross, S.; Bagnell, J. A. 2014. Reinforcement and Imitation Learning via Interactive No-Regret Learning. arXiv:1406.5979.
+
+[81] Rousseeuw, P. J. 1987. Silhouettes: A Graphical Aid to the Interpretation and Validation of Cluster Analysis. Journal of Computational and Applied Mathematics, 20, 53–65. doi:10.1016/0377-0427(87)90125-7.
+
+[82] Schulman, J.; Wolski, F.; Dhariwal, P.; et al. 2017. Proximal Policy Optimization Algorithms. arXiv:1707.06347.
+
+[83] Sener, O.; Savarese, S. 2018. Active Learning for Convolutional Neural Networks: A Core-Set Approach. In International Conference on Learning Representations (ICLR).
+
+[84] Settles, B. 2009. Active Learning Literature Survey. University of Wisconsin--Madison, Computer Sciences Technical Report 1648.
+
+[85] Shimodaira, H. 2000. Improving Predictive Inference under Covariate Shift by Weighting the Log-Likelihood Function. Journal of Statistical Planning and Inference, 90(2), 227–244. doi:10.1016/S0378-3758(00)00115-4.
+
+[86] Shinn, N.; Cassano, F.; Berman, E.; et al. 2023. Reflexion: Language Agents with Verbal Reinforcement Learning. In Advances in Neural Information Processing Systems (NeurIPS), 36.
+
+[87] Singh, I.; Blukis, V.; Mousavian, A.; et al. 2023. ProgPrompt: Generating Situated Robot Task Plans using Large Language Models. In 2023 IEEE International Conference on Robotics and Automation (ICRA), IEEE.
+
+[88] Sun, W.; Venkatraman, A.; Gordon, G. J.; et al. 2017. Deeply AggreVaTeD: Differentiable Imitation Learning for Sequential Prediction. In Proceedings of the 34th International Conference on Machine Learning (ICML), 70, 3309–3318, PMLR.
+
+[89] Suzuki, K.; Shimizu, S.; Ogata, T. 2025. Proprioception Enhances Vision Language Model in Generating Captions and Subtask Segmentations for Robot Task. arXiv:2512.20876.
+
+[90] Tao, S.; Xiang, F.; Shukla, A.; et al. 2024. ManiSkill3: GPU Parallelized Robotics Simulation and Rendering for Generalizable Embodied AI. arXiv:2410.00425.
+
+[91] Tenorth, M.; Beetz, M. 2013. KnowRob: A Knowledge Processing Infrastructure for Cognition-Enabled Robots. The International Journal of Robotics Research, 32(5), 566–590. doi:10.1177/0278364913481635.
+
+[92] Wang, G.; Xie, Y.; Jiang, Y.; et al. 2023. Voyager: An Open-Ended Embodied Agent with Large Language Models. arXiv:2305.16291.
+
+[93] Ward, J. H. 1963. Hierarchical Grouping to Optimize an Objective Function. Journal of the American Statistical Association, 58(301), 236–244. doi:10.1080/01621459.1963.10500845.
+
+[94] Wulff, T.; Maharjan, R. S.; Chi, X.; et al. 2025. Joint Action Language Modelling for Transparent Policy Execution. arXiv:2504.10055.
+
+[95] Xu, S.; Liberatori, B.; Varol, G.; Rota, P. 2026. Dense Motion Captioning. In International Conference on 3D Vision (3DV). arXiv:2511.05369.
+
+[96] Yang, A.; et al. 2025. Qwen3 Technical Report. arXiv:2505.09388.
+
+[97] Yu, T.; Quillen, D.; He, Z.; et al. 2019. Meta-World: A Benchmark and Evaluation for Multi-Task and Meta Reinforcement Learning. In Proceedings of the 3rd Conference on Robot Learning (CoRL), PMLR. arXiv:1910.10897.
+
+[98] Yu, W.; Gileadi, N.; Fu, C.; et al. 2023. Language to Rewards for Robotic Skill Synthesis. In Proceedings of the 7th Conference on Robot Learning (CoRL), PMLR.
+
+[99] Yue, S.; Liu, J.; Hua, X.; et al. 2024. How to Leverage Diverse Demonstrations in Offline Imitation Learning. In Proceedings of the 41st International Conference on Machine Learning (ICML), PMLR. arXiv:2405.17476.
+
+[100] Zawalski, M.; Chen, W.; Pertsch, K.; et al. 2024. Robotic Control via Embodied Chain-of-Thought Reasoning. In Proceedings of the 8th Conference on Robot Learning (CoRL), PMLR. arXiv:2407.08693.
+
+[101] Zhang, J.; Cho, K. 2017. Query-Efficient Imitation Learning for End-to-End Simulated Driving. In Proceedings of the AAAI Conference on Artificial Intelligence, 31(1), AAAI Press. doi:10.1609/aaai.v31i1.10857.
+
+[102] Zhu, Y.; Wong, J.; Mandlekar, A.; et al. 2020. robosuite: A Modular Simulation Framework and Benchmark for Robot Learning. arXiv:2009.12293.
+
+---
+
+# Appendix A. Higher-degree research training certificates
+
+The documents reproduced in this appendix are the evidence for the training record transcribed in Chapter 10. Nothing in Chapter 10 is asserted beyond what these documents record. The two certificates are reproduced as issued; the statement of results is reproduced as issued and carries the university's own unofficial-document disclaimer.
+
+![](certs_png/cert_research_integrity.png)
+
+**Figure A.1.** Certificate of completion, Deakin Safety and Research Integrity Training, issued to the candidate and dated Monday, 1 December 2025. The training record in Figure 25 logs the same module as complete on 02-DEC-25; both dates are given in Section 10.1, and neither is selected silently.
+
+![](certs_png/cert_respect_at_deakin.png)
+
+**Figure A.2.** Certificate of completion, Respect at Deakin, the higher-degree-research graduate research and supervision module, issued to the candidate and dated Monday, 1 December 2025.
+
+![](<SSC900 Academic Writing Result.pdf>)
+
+**Figure A.3.** Statement of results, recording SSC900 Academic Writing and Communication with the grade UP, the ungraded pass, together with the three FAR972 PhD Research enrolments carrying the grade CE for continuing enrolment. The document is a statement of results and is unofficial on its own terms; an academic transcript can be obtained if the panel requires formal evidence.
+
+No certificate was issued for the Research Induction module in the documents available to the candidate. The training record reproduced as Figure 25 in Section 10.1 is the evidence offered for that item.
+
+
+---
+
+# Appendix B. Full ablation tables
+
+Chapter 4 reports the ablation programme on three primary settings and gives aggregates over the eight settings with headroom. This appendix gives the knockout matrix in full, over all ten settings, so that every aggregate quoted in Chapter 4 can be recomputed from it. The source is the ablation workbook held with this report, in `ablations_results/`. Where a sheet carries both a human-readable display string and a numeric helper column, the numeric column is used, which is the convention stated in Section 4.14.1; the two disagree on the knowledge-graph sheet (A6), and Table B.1 therefore differs from that sheet's display strings by up to half a point.
+
+The seven knockouts are: A1, the cluster memory switched off ($\lambda = 0$); A3, the clustering step removed in favour of greedy worst-loss selection; A4, the prescription model replaced by the dominant-representative heuristic; A5, the vision-language model removed; A6, the knowledge-augmented graph removed from the prompts; A7, bridging placement disabled; and A8, the deterministic nearest-untried fallback rule promoted to the whole method.
+
+| Setting | Full DISEIL | Best baseline | A3 | A8 | A6 | A7 | A4 | A5 | A1 |
+|---|---|---|---|---|---|---|---|---|---|
+| GridWorld (state) | 89.9 | 86.8 | 86.9 | 87.9 | 88.5 | 89.0 | 89.0 | 89.2 | 89.4 |
+| GridWorld (image) | 89.6 | 87.1 | 87.4 | 87.8 | 88.1 | 88.3 | 89.1 | 89.0 | 89.0 |
+| Push-T (state) | 96.1 | 90.7 | 92.0 | 92.5 | 93.4 | 95.0 | 94.2 | 94.1 | 95.7 |
+| Push-T (image) | 93.9 | 89.0 | 89.3 | 90.2 | 90.0 | 92.7 | 93.1 | 93.1 | 93.1 |
+| Lift (state) | 100.0 | 99.2 | 99.1 | 99.7 | 99.7 | 99.9 | 99.9 | 99.8 | 99.9 |
+| Lift (image) | 100.0 | 99.6 | 99.5 | 99.9 | 99.7 | 99.8 | 99.8 | 99.7 | 99.9 |
+| Wipe (state) | 95.5 | 90.8 | 91.7 | 92.2 | 93.8 | 94.8 | 94.3 | 94.7 | 94.4 |
+| Wipe (image) | 95.3 | 89.6 | 90.2 | 90.7 | 92.5 | 92.4 | 94.0 | 93.9 | 94.1 |
+| Door (state) | 98.4 | 95.2 | 95.9 | 96.7 | 95.8 | 98.0 | 98.0 | 98.0 | 98.2 |
+| Door (image) | 99.2 | 92.8 | 92.4 | 94.8 | 96.3 | 97.8 | 97.6 | 97.8 | 98.0 |
+
+**Table B.1.** Final held-out success rate (per cent, mean over seeds) of full DISEIL, of the strongest DAgger-family baseline in each setting, and of each of the seven knockouts, on all ten settings. Columns are ordered by mean damage over the eight settings with headroom. Lift is at the ceiling and separates nothing.
+
+| Setting | A3 | A8 | A6 | A7 | A4 | A5 | A1 |
+|---|---|---|---|---|---|---|---|
+| GridWorld (state) | -3.0 (3.2%) | -2.0 (35.5%) | -1.4 (54.8%) | -0.9 (71.0%) | -0.9 (71.0%) | -0.7 (77.4%) | -0.5 (83.9%) |
+| GridWorld (image) | -2.2 (12.0%) | -1.8 (28.0%) | -1.5 (40.0%) | -1.3 (48.0%) | -0.5 (80.0%) | -0.6 (76.0%) | -0.6 (76.0%) |
+| Push-T (state) | -4.1 (24.1%) | -3.6 (33.3%) | -2.7 (50.0%) | -1.1 (79.6%) | -1.9 (64.8%) | -2.0 (63.0%) | -0.4 (92.6%) |
+| Push-T (image) | -4.6 (6.1%) | -3.7 (24.5%) | -3.9 (20.4%) | -1.2 (75.5%) | -0.8 (83.7%) | -0.8 (83.7%) | -0.8 (83.7%) |
+| Lift (state) | -0.9 (-12.5%) | -0.3 (62.5%) | -0.3 (62.5%) | -0.1 (87.5%) | -0.1 (87.5%) | -0.2 (75.0%) | -0.1 (87.5%) |
+| Lift (image) | -0.5 (-25.0%) | -0.1 (75.0%) | -0.3 (25.0%) | -0.2 (50.0%) | -0.2 (50.0%) | -0.3 (25.0%) | -0.1 (75.0%) |
+| Wipe (state) | -3.8 (19.1%) | -3.3 (29.8%) | -1.7 (63.8%) | -0.7 (85.1%) | -1.2 (74.5%) | -0.8 (83.0%) | -1.1 (76.6%) |
+| Wipe (image) | -5.1 (10.5%) | -4.6 (19.3%) | -2.8 (50.9%) | -2.9 (49.1%) | -1.3 (77.2%) | -1.4 (75.4%) | -1.2 (78.9%) |
+| Door (state) | -2.5 (21.9%) | -1.7 (46.9%) | -2.6 (18.7%) | -0.4 (87.5%) | -0.4 (87.5%) | -0.4 (87.5%) | -0.2 (93.7%) |
+| Door (image) | -6.8 (-6.2%) | -4.4 (31.2%) | -2.9 (54.7%) | -1.4 (78.1%) | -1.6 (75.0%) | -1.4 (78.1%) | -1.2 (81.2%) |
+
+**Table B.2.** Change in success rate against full DISEIL, in points, with the margin retained over the strongest baseline in brackets. A negative margin retained means the ablated system has fallen beneath the baseline it was built to beat, which happens in one cell outside Lift: A3 on Door (image). The Lift rows carry negative and erratic margins retained because the denominator, the margin over the baseline, is 0.8 and 0.4 points; they are reported for completeness and are evidence about nothing.
+
+| Ablation | Mean change in success rate, eight settings with headroom | Mean margin retained |
+|---|---|---|
+| A3, clustering off | -4.01 | 11.3% |
+| A8, fallback rule only | -3.14 | 31.1% |
+| A6, knowledge graph off | -2.44 | 44.2% |
+| A7, bridging off | -1.24 | 71.7% |
+| A4, prescription model off (root-cause reasoning call retained) | -1.08 | 76.7% |
+| A5, vision-language model off | -1.01 | 78.0% |
+| A1, cluster memory off | -0.75 | 83.3% |
+
+**Table B.3.** The knockout ranking of Section 4.14.2, recomputed from Table B.2 over the ten settings minus the two Lift settings. These are the figures quoted throughout Chapter 4.
+
+| Setting | Strongest gate | Diff-DAgger | Stagger (uniform-random allocation) | DISEIL | DISEIL − Stagger |
+|---|---|---|---|---|---|
+| Push-T (state) | 90.7 | 90.7 ± 4.5 | 82.3 ± 4.2 | 96.1 ± 4.5 | +13.8 |
+| Push-T (image) | 89.0 | 89.0 ± 4.8 | 81.8 ± 5.9 | 93.9 ± 4.9 | +12.1 |
+| Lift (state) | 99.2 | 99.2 ± 1.0 | 97.9 ± 4.4 | 100.0 ± 0.0 | +2.1 |
+| Lift (image) | 99.6 | 99.6 ± 0.8 | 96.2 ± 5.4 | 100.0 ± 0.0 | +3.8 |
+| Wipe (state) | 90.8 | 90.4 ± 6.0 | 83.9 ± 5.1 | 95.5 ± 6.0 | +11.6 |
+| Wipe (image) | 89.6 | 89.6 ± 3.2 | 83.2 ± 3.5 | 95.3 ± 3.2 | +12.1 |
+| Door (state) | 95.2 | 95.2 ± 4.3 | 87.1 ± 4.7 | 98.4 ± 4.2 | +11.3 |
+| Door (image) | 92.8 | 89.2 ± 3.5 | 84.0 ± 6.3 | 99.2 ± 3.4 | +15.2 |
+
+**Table B.4.** A2, uniform-random allocation of the budget over recorded failures, on the eight robot settings. A2 is the control for the GridWorld-only Stagger baseline and it does not exist on GridWorld, where Stagger is already run in the main comparison. Over the six robot settings with headroom, A2 averages 83.72 against DISEIL's 96.40, a gap of 12.68 points; over all eight robot settings the gap is 10.25 points.
+
+
+---
+
+# Appendix C. Supplementary results
+
+Chapter 4 discusses the ablation programme on GridWorld (image), Push-T (state) and Door (image). The seven settings held for the supplementary material appear in the tables of Appendix B and in the diagnostics below, which are given on all ten settings.
+
+## C.1 D1. Cluster purity and geometric separation
+
+| Setting | Mean cluster purity | Mean distinct root causes per cluster | Mean silhouette |
+|---|---|---|---|
+| GridWorld (state) | 0.91 | 1.38 | 0.61 |
+| GridWorld (image) | 0.89 | 1.62 | 0.58 |
+| Push-T (state) | 0.91 | 1.35 | 0.64 |
+| Push-T (image) | 0.90 | 1.30 | 0.61 |
+| Lift (state) | 0.93 | 1.31 | 0.52 |
+| Lift (image) | 0.92 | 1.43 | 0.49 |
+| Wipe (state) | 0.83 | 1.78 | 0.55 |
+| Wipe (image) | 0.78 | 1.91 | 0.53 |
+| Door (state) | 0.86 | 1.71 | 0.58 |
+| Door (image) | 0.84 | 1.86 | 0.56 |
+
+**Table C.1.** D1. Purity is the fraction of a geometric cluster's failures that share the reasoning model's dominant root-cause label. Over the eight settings with headroom, purity and silhouette are strongly correlated (Pearson $r = 0.93$, $p = 0.0008$), which is the finding reported in Section 4.14.4 and which replaces the near-zero correlation an earlier analysis obtained by including the two Lift settings. Purity is scored against the reasoning model's own labels and not against a human-labelled set.
+
+## C.2 D2. The distribution of the selected cluster count
+
+| Setting | $k = 2$ | $k = 3$ | $k = 4$ | $k = 5$ | $k = 6$ | Rounds that skip the sweep |
+|---|---|---|---|---|---|---|
+| GridWorld (state) | 27 | 35 | 38 | 26 | 23 | 31 |
+| GridWorld (image) | 19 | 39 | 35 | 27 | 23 | 37 |
+| Push-T (state) | 13 | 23 | 26 | 15 | 8 | 15 |
+| Push-T (image) | 13 | 26 | 25 | 5 | 2 | 29 |
+| Lift (state) | 21 | 11 | 16 | 2 | 19 | 31 |
+| Lift (image) | 13 | 14 | 17 | 22 | 11 | 23 |
+| Wipe (state) | 12 | 19 | 22 | 16 | 12 | 19 |
+| Wipe (image) | 13 | 21 | 13 | 16 | 12 | 25 |
+| Door (state) | 12 | 18 | 10 | 14 | 12 | 34 |
+| Door (image) | 14 | 19 | 11 | 24 | 12 | 20 |
+| **All settings** | **157** | **225** | **213** | **167** | **134** | **264** |
+
+**Table C.2.** D2. Rounds selecting each cluster count, pooled over seeds. Over the 896 clustered rounds the shares are 17.5%, 25.1%, 23.8%, 18.6% and 15.0% for $k = 2$ to $k = 6$, so the count is adaptive and $k = 3$ is the most frequently selected value and not a fixed one. The last column counts the rounds in which fewer than four failures remain, the silhouette sweep is skipped and each failure becomes its own cluster; those rounds are 15 to 34 per cent of the budget depending on the setting, and they are allocated by the fallback rule.
+
+## C.3 D3. Targeted and bridged prescriptions
+
+| Setting | Targeted (%) | Bridged (%) |
+|---|---|---|
+| GridWorld (state) | 70 | 30 |
+| GridWorld (image) | 76 | 24 |
+| Push-T (state) | 72 | 28 |
+| Push-T (image) | 81 | 19 |
+| Lift (state) | 82 | 18 |
+| Lift (image) | 81 | 19 |
+| Wipe (state) | 72 | 28 |
+| Wipe (image) | 73 | 27 |
+| Door (state) | 70 | 30 |
+| Door (image) | 79 | 21 |
+
+**Table C.3.** D3. The share of accepted prescriptions taking each arm. On the tasks whose knowledge-augmented graph admits the bridging arm the shares are 19 to 28 per cent on Push-T, 18 to 19 per cent on Lift and 21 to 30 per cent on Door. The GridWorld and Wipe entries are the contradiction recorded in Section 4.16.9: the method text says the arm cannot exist on those tasks and the logs record it as taken. The logs are the source of truth and the discrepancy is unresolved.
+
+## C.4 A11. The budget sweep
+
+| Setting | Margin at $B = 10$ | Margin at $B = 20$ | Margin at $B = 40$ |
+|---|---|---|---|
+| GridWorld (state) | +7.4 | +3.1 | +1.9 |
+| GridWorld (image) | +6.0 | +2.5 | +1.5 |
+| Push-T (state) | +12.4 | +5.4 | +3.2 |
+| Push-T (image) | +11.0 | +4.9 | +2.9 |
+| Lift (state) | +3.2 | +0.8 | +0.0 |
+| Lift (image) | +2.4 | +0.4 | +0.0 |
+| Wipe (state) | +11.0 | +4.7 | +2.8 |
+| Wipe (image) | +13.0 | +5.7 | +3.4 |
+| Door (state) | +7.5 | +3.2 | +1.9 |
+| Door (image) | +14.5 | +6.4 | +3.8 |
+| **Mean, eight settings with headroom** | **+10.35** | **+4.49** | **+2.68** |
+
+**Table C.4.** A11. Margin over the strongest DAgger-family baseline at each budget, per setting. The margin decreases monotonically in the budget in all ten settings. The claim that DISEIL at $B = 10$ matches the strongest baseline at $B = 20$ was proposed during the study and is retracted: it is false in seven of the ten settings.
+
+
+---
+
+# Appendix D. Statistical appendix
+
+Every statistic quoted in Chapter 4 is recomputed from the ablation workbook by script, with `scipy` 1.17.1, and none is transcribed by hand. This appendix states the procedures, the tests' resolution limits, and the two conventions that govern which aggregate a number belongs to.
+
+## D.1 The unit of analysis
+
+A *setting* is one task under one observation modality, and the sweep has ten of them. The two modalities of a task share the expert, the reward structure and the reset distribution, so the ten settings are correlated by construction and the effective sample size is nearer five than ten. The report therefore uses two collapses, and names them wherever they appear.
+
+*The five task means.* Each task's two settings are averaged, giving five paired differences. This is the claim of record for the main comparison, and it is the conservative reading.
+
+*The eight settings with headroom.* The ten settings minus the two Lift settings. Lift reaches 100.0 ± 0.0 under DISEIL in both modalities, with neither headroom above the mean nor variance across seeds, so a null result on Lift cannot discriminate between a component that does nothing and a component whose effect cannot be observed. Every mechanism claim in Chapter 4, and every mean reported for an ablation, is computed on these eight. Lift is retained in the sweep, because dropping it would be selective reporting.
+
+*The eight robot settings.* The ten minus the two GridWorld settings. This is the scope of A2 alone, which requires a diffusion policy, and it is never used as a mechanism aggregate.
+
+## D.2 The tests
+
+The comparison against the baselines is paired by setting, and both a sign test and a Wilcoxon signed-rank test are reported (`binomtest`, `wilcoxon`). The paired $t$-test on the five task means is reported alongside them (`ttest_rel`).
+
+The ablation sweeps over a constant with more than two levels are treated as matched blocks, one block per setting, and are tested with a Friedman test (`friedmanchisquare`), followed by two-sided Wilcoxon signed-rank post-hoc tests of the reference value against each alternative. Holm–Bonferroni correction is applied inside each constant's family of comparisons and never across constants, which is stated with each corrected $p$-value in Section 4.14.4.
+
+Correlations are Pearson product-moment correlations over settings (`pearsonr`), and the set of settings is named at every use. Two of them carry an argument in Chapter 4: the correlation between cluster purity and mean silhouette, which is $r = 0.93$, $p = 0.0008$ over the eight settings with headroom; and the correlation between a setting's bridging share and the cost of removing bridging, which is $r = -0.23$, $p = 0.58$ over the same eight and is flat.
+
+## D.3 The resolution limits of the paired tests
+
+A two-sided Wilcoxon signed-rank test on $n$ non-zero pairs cannot return a $p$-value below a floor that depends only on $n$: 0.0020 at $n = 10$, 0.0039 at $n = 9$, 0.0078 at $n = 8$, 0.0156 at $n = 7$, 0.0625 at $n = 5$ and 0.1250 at $n = 4$. Several comparisons in Chapter 4 return exactly their floor, which means every non-tied setting favoured the reference and the test is already as significant as it is arithmetically able to be. The kernel-width sweep ties on six of the ten settings, and two consequences follow.
+
+The A3 success-rate collapse over the eight settings with headroom returns $p = 0.008$, which is the floor at $n = 8$. The information-gain comparison on the same eight settings returns $p = 0.25$, which is not significant and is not meant to be: the finding is the dissociation between the two columns.
+
+The kernel-width sweep in A13 ties on six of the ten settings, because the kernel is degenerate there, so the effective $n$ falls to four and five in the two comparisons against the neighbouring widths. Their returned $p$-values, 0.125 and 0.0625, are the floors at those sample sizes, and significance at the 0.05 level is unreachable in those comparisons however large the effect is. The evidence is one-directional and the test has run out of resolution, which is a statement about the design and not about the effect.
+
+## D.4 Internal consistency
+
+Setting $\lambda = 0$ in the A13 sweep is the same experiment as the A1 memory-off knockout, and the two were produced by independent runs; the $\lambda = 0$ column reproduces A1 to the decimal in all ten settings. The round accounting in D2 reproduces the seed counts independently: clustered rounds plus skipped rounds total 180 for each GridWorld setting and 100 for each robot setting, which is seeds times the budget in both cases.
+
+Two internal inconsistencies in the workbook were found during the analysis and are reported where they arise: the knowledge-graph sheet's display strings disagree with the numeric column that its own arithmetic uses, and the numeric column is used throughout; and the recorded bridging rate contradicts the method's stated precondition for bridging on GridWorld and Wipe. The compute sheet was empty during the analysis and now holds the D5 matrix of Section 4.14.5, whose figures are read out of the SLURM jobs' own telemetry.
+
+
+---
+
+# List of figures
+
+Figure 1. The demonstration-distillation loop  
+Figure 2. The failure modes discovered on Push-T (image) by clustering the six-dimensional geometric descriptor at the…  
+Figure 3. The DISEIL framework  
+Figure 4. DISEIL attains the higher mean in all ten settings, with a mean margin of 3.71 points over the strongest…  
+Figure 5. Success rate against the number of demonstrations added, for the five tasks, showing the observation modality…  
+Figure 6. Distribution of per-demonstration information gain on GridWorld (image), the setting on which the…  
+Figure 7. The confidence the prescription model reports for a prescription, against the change in the policy's success…  
+Figure 8. The allocation ladder, on the three primary settings  
+Figure 9. Information gain is necessary and is not sufficient  
+Figure 10. Grounding and feasibility  
+Figure 11. The reasoning model and the vision-language model are each worth about one point  
+Figure 12. Bridging placement and its measured value  
+Figure 13. Every knockout, on every setting  
+Figure 14. Mean silhouette of the failure clusters against the dimensionality of the geometric descriptor, one thin line…  
+Figure 15. Three ablations of the machinery inside individual steps, on the primary settings, with arms ordered by effect  
+Figure 16. How many failure modes the method actually discovers, per round  
+Figure 17. Margin over the strongest DAgger-family baseline as a function of the budget B, one line per setting, with the…  
+Figure 18. Final success rate against the number of demonstrations prescribed per round, with the total expert labour held…  
+Figure 19. Sensitivity of the three memory constants, each swept alone with the other two held at their reference values…  
+Figure 20. Semantic purity of the geometric clusters against their geometric separation, one point per setting, marker…  
+Figure 21. Mean number of recorded failures per round over the budget, on Push-T (image), averaged over five seeds  
+Figure 22. Where a round's wall-clock goes: the shared policy retrain and held-out evaluation, and the DISEIL-specific…  
+Figure 23. Proposed architecture for Aim 2  
+Figure 24. Project plan for the full candidature at month resolution, from the candidature start on 13 November 2025 to…  
+Figure 25. Status of the compulsory higher-degree-research training, as recorded in the candidate's training record  
+Figure A.1. Certificate of completion, Deakin Safety and Research Integrity Training  
+Figure A.2. Certificate of completion, Respect at Deakin, graduate research and supervision module  
+Figure A.3. Statement of results recording SSC900 Academic Writing and Communication  
+
+---
+
+# List of tables
+
+Table 1. One quantity, three levels  
+Table 2. The five published query gates of the DAgger family, presented as instances of one template: a scalar score, a…  
+Table 3. Selection methods by what they choose and where the data they choose from comes from  
+Table 4. The six-dimensional geometric descriptor, per task  
+Table 5. Final held-out success rate (per cent, mean ± standard deviation over seeds; nine seeds on GridWorld, five on…  
+Table 6. Per-demonstration information gain: the policy's per-step loss on each newly acquired demonstration, measured…  
+Table 7. Memory-constant sweep  
+Table 8. Per-round wall-clock and token cost, DISEIL against SafeDAgger, under two protocols  
+Table 9. Component-by-component subsumption of Aim 1 by Aim 2  
+Table 10. The matched-information ablation  
+Table 11. The four literatures Aim 3 draws on, and what each of them does not do  
+Table 12. The lineage of each component across the three aims  
+Table 13. The Aim-3 metrics, each traced to the Aim-1 or Aim-2 quantity it succeeds  
+Table 14. Candidature milestones  
+Table 15. The three compulsory higher-degree-research modules, transcribed from the candidate's compulsory-training panel  
+Table B.1. Final held-out success rate of full DISEIL, the strongest baseline and the seven knockouts, on all ten settings  
+Table B.2. Change in success rate and margin retained, per knockout and per setting  
+Table B.3. The knockout ranking over the eight settings with headroom  
+Table B.4. A2, uniform-random allocation on the eight robot settings  
+Table C.1. D1, cluster purity and geometric separation  
+Table C.2. D2, the distribution of the selected cluster count  
+Table C.3. D3, targeted and bridged prescriptions  
+Table C.4. A11, the budget sweep  

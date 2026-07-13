@@ -1,0 +1,35 @@
+=== KAG — TASK KNOWLEDGE GRAPH ===
+Domain: robosuite_ur5e_wipe_surface_coverage
+Description: Knowledge graph for the robosuite Wipe task: a UR5e with a 0-DOF wiping pad presses down and sweeps along a trail of dirt markers on the table until all are cleared. The dirt is a randomized PATH of ~100 markers (no single object pose), so the demonstration choice is SELECT-only (re-run and correct a real failed episode) — there is no middle-ground scene to BRIDGE. Consumed by the P4-LLM reasoning + decision components to ground failure analysis. Coordinates are world-frame metres.
+
+[Robot]
+  - UR5e + WipingGripper (id=robot): arm_joints=6, gripper=wiping_pad_0dof, controller=OSC_POSE (6-DOF)
+
+[Object]
+  - Dirt-marker path (id=dirt): controllable_via=none (arena-randomized set of ~100 markers along a path), cleared_by=pad contact + sweep
+
+[Goal]
+  - Wipe all dirt (id=goal): criterion=all markers wiped (coverage=1.0)
+
+[EndEffector]
+  - Wiping pad (id=eef): role=maintain downward contact force while sweeping along the dirt path
+
+[Metric]
+  - Coverage (id=coverage): info=fraction of markers wiped; partial credit signal alongside binary success
+
+[SuccessCondition]
+  - Surface clean (id=succ): metric=all dirt markers wiped, info_key=success
+
+[RELATIONS]
+  UR5e + WipingGripper --[HAS_END_EFFECTOR]--> Wiping pad
+  Wiping pad --[WIPES]--> Dirt-marker path
+  Dirt-marker path --[SUCCEEDS_WHEN]--> Surface clean
+  Wiping pad --[CAUSES_FAILURE]--> Dirt-marker path
+
+[REASONING IMPLICATIONS]
+  * contact_instability: The pad loses downward contact and skips markers: SELECT a failure where the expert re-demonstrates maintaining wiping pressure along the path.
+  * approach_failure: The pad sweeps off the dirt path (misses the remaining-marker centroid): SELECT a failure that re-demonstrates tracking the dirt trail.
+  * placement_error: Leaves the last scattered markers uncovered: SELECT a failure re-demonstrating finishing coverage of the tail markers.
+  * timeout: Slow/oscillating sweep that runs out of steps before full coverage: SELECT a failure re-demonstrating an efficient continuous sweep.
+  * select_only: Wipe randomizes a whole marker PATH, not a single object pose, so BRIDGE is infeasible — always choose SELECT of the most representative failed episode.
+  * non_emptiness: A failure IS present, so the decision MUST cite a concrete episode id for SELECT — never refuse.

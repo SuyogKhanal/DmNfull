@@ -14,6 +14,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+from ..compute_log import log_round, round_row
 from .collect import _demo  # noqa: F401  (kept for symmetry / potential reuse)
 from .env import bfs_path, make_maze, render_frames, reset_to, scene_of
 from .layouts import sample_layout, sample_layouts
@@ -89,13 +90,19 @@ def run_distil_gridworld(cfg, device, log_fn=print, init_demos=None, work_dir=".
 
     for rnd in range(int(cfg["max_rounds"])):
         t0 = time.time()
+        # D5 compute telemetry (additive side-file; no schema/control-flow change).
+        sec_train = sec_eval = sec_screen = sec_llm = sec_prescribe = 0.0
         steps = cfg["initial_train_steps"] if rnd == 0 else cfg["round_train_steps"]
         log_fn(f"\n===== GW Round {rnd} | demos={len(demos)} =====")
         policy = new_policy()
+        _t = time.time()
         policy.train_from_scratch(demos, steps=steps, batch_size=cfg["batch_size"],
                                   lr=cfg["lr"], weight_decay=cfg["weight_decay"],
                                   seed=cfg["seed"], log_fn=log_fn)
+        sec_train = time.time() - _t
+        _t = time.time()
         sr = _eval_sr(policy, heldout, eval_ms)
+        sec_eval = time.time() - _t
         log_fn(f"  [eval] heldout SR={sr:.3f} ({len(heldout)} layouts)")
         n_at_eval = len(demos)
 
@@ -103,19 +110,28 @@ def run_distil_gridworld(cfg, device, log_fn=print, init_demos=None, work_dir=".
             log_fn(f"[stop] reached final_demos={final_demos}")
             history.append(_rec(rnd, sr, n_at_eval, 0, None, None, None, None, None, 0,
                                 round(time.time() - t0, 1)))
+            log_round(work_dir, round_row(rnd, "distil", n_demos_at_eval=n_at_eval,
+                                          sec_total=time.time() - t0, sec_train=sec_train,
+                                          sec_eval=sec_eval))
             break
 
+        _t = time.time()
         layouts = [sample_layout(screen_base + rnd * n_screen + i) for i in range(n_screen)]
         fails = screen_failures_gw(policy, layouts, max_steps=max_steps, patience=patience)
+        sec_screen = time.time() - _t
         log_fn(f"  [screen] {len(fails)}/{n_screen} failures")
         if not fails:
             history.append(_rec(rnd, sr, n_at_eval, 0, None, None, None, None, None, 0,
                                 round(time.time() - t0, 1)))
+            log_round(work_dir, round_row(rnd, "distil", n_demos_at_eval=n_at_eval,
+                                          sec_total=time.time() - t0, sec_train=sec_train,
+                                          sec_eval=sec_eval, sec_screen=sec_screen))
             continue
 
         planner.set_round(rnd, fails)
         label, confidence, conf_rat, tokens = None, None, "", {}
         if llm is not None:
+            _t = time.time()
             try:
                 fdir = os.path.join(work_dir, "frames", f"round_{rnd:04d}")
                 pdir = os.path.join(work_dir, "prompts", f"round_{rnd:04d}")
@@ -140,7 +156,9 @@ def run_distil_gridworld(cfg, device, log_fn=print, init_demos=None, work_dir=".
                        f"conf={confidence} tokens={tokens.get('total')}")
             except Exception as e:
                 log_fn(f"  [gw-llm] failed ({e}); geometric fallback")
+            sec_llm = time.time() - _t
 
+        _t = time.time()
         mode, n_infeas = None, 0
         for attempt in range(infeas):
             spec = planner.decide(label if attempt == 0 else None, attempt)
@@ -151,10 +169,16 @@ def run_distil_gridworld(cfg, device, log_fn=print, init_demos=None, work_dir=".
             if ok:
                 demos.append(demo); mode = spec.mode; break
             n_infeas += 1
+        sec_prescribe = time.time() - _t
         history.append(_rec(rnd, sr, n_at_eval, len(fails), mode, confidence, conf_rat,
                             planner.k_star(), planner.target_label(), n_infeas,
                             round(time.time() - t0, 1), tokens=tokens,
                             cluster_method=planner.cluster_method()))
+        log_round(work_dir, round_row(rnd, "distil", n_demos_at_eval=n_at_eval,
+                                      sec_total=time.time() - t0, sec_train=sec_train,
+                                      sec_eval=sec_eval, sec_screen=sec_screen,
+                                      sec_llm=sec_llm, sec_prescribe=sec_prescribe,
+                                      tokens=tokens))
 
     result = {
         "history": history,

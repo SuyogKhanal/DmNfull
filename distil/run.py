@@ -177,8 +177,24 @@ def _run_gridworld(cfg, args, out, device, n_init, log):
     if out:
         _copy_kag("GridWorld", out, log)
         _write_config_yaml(cfg, out)
-    from .gridworld.loop import run_distil_gridworld
+    from .config import BASELINE_ARMS
     t0 = time.time()
+    # when-to-query baseline arm (SafeDAgger*/Stagger) — same loop, different gate.
+    # Without this branch a GridWorld run with --ablation safe silently ran full DISTIL.
+    if cfg["ablation"] in BASELINE_ARMS:
+        from .gridworld.baselines import run_baseline_gridworld
+        result = run_baseline_gridworld(cfg, cfg["ablation"], device, log_fn=log,
+                                        init_demos=init, work_dir=(out or "."))
+        result["wall_sec"] = round(time.time() - t0, 1)
+        result["task"], result["modality"] = cfg["task"], cfg["modality"]
+        result["ablation"], result["seed"] = cfg["ablation"], cfg["seed"]
+        log(f"DONE in {result['wall_sec']}s | final_success={result.get('final_success')}")
+        if out:
+            with open(os.path.join(out, "result.json"), "w") as f:
+                json.dump(result, f, indent=2, default=str)
+            log(f"[write] {os.path.join(out, 'result.json')}")
+        return
+    from .gridworld.loop import run_distil_gridworld
     result = run_distil_gridworld(cfg, device, log_fn=log, init_demos=init, work_dir=(out or "."))
     result["wall_sec"] = round(time.time() - t0, 1)
     result["task"], result["modality"] = cfg["task"], cfg["modality"]

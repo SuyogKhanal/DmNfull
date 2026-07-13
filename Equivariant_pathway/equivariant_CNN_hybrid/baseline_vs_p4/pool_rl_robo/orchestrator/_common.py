@@ -195,6 +195,17 @@ def run_method(*, method: str, spec, cfg, env, eval_env, reposition_env, expert,
     env_id = ws.env_id
     seed, budget = k["seed"], k["budget"]
 
+    # D5 compute telemetry (paper D5_Compute table). INERT unless D5_TELEMETRY=1:
+    # install() returns immediately, so every existing run is unchanged. When on,
+    # it only wraps stage functions (call-through) and appends per-round wall-clock
+    # + per-LLM-call token usage to a NEW side file results/<method>/telemetry/
+    # d5_events.jsonl. No prompt, threshold, default or output schema is touched.
+    try:
+        from .. import telemetry_d5 as _D5
+        _D5.install(str(results_dir), method)
+    except Exception:
+        pass
+
     if method == "p4_top3":
         # Motion-planner tasks (StackCube/…) use the SUITE-SIDE p4_top3 arm
         # (VLM→reason→prescribe CUBE layout→StackCube-Start-v0→motion-planner solve);

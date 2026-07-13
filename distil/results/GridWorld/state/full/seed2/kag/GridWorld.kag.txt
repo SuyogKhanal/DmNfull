@@ -1,0 +1,50 @@
+=== KAG — TASK KNOWLEDGE GRAPH ===
+Domain: gridworld_5x5_navigation
+Description: A 5x5 grid navigation task. An agent moves UP/DOWN/LEFT/RIGHT from a start cell to a GOAL cell; stepping on a FIRE cell fails the episode. Layouts have 3 fires placed so a fire-free path exists (Manhattan(start,goal) >= 4). Grounds DISTIL failure analysis + prescribed corridor layouts. Coordinates are (row, col), origin top-left, cells in [0..4]^2.
+
+[Robot]
+  - Grid agent (id=agent): moves=UP/DOWN/LEFT/RIGHT, obs_state=14-d [agent_rc/4, goal_rc/4, 3x3 nbhd/3, steps_remaining/200]
+
+[Goal]
+  - Goal cell (id=goal): reach=episode succeeds when the agent steps onto it, info_key=success
+
+[Object]
+  - Fire hazard cells (id=fire): count=3, effect=stepping on a fire terminates the episode as a FAILURE, impassable_for_expert=True
+
+[Workspace]
+  - 5x5 grid (id=grid): rows=5, cols=5, coord=(row,col) in [0..4]
+
+[Observation]
+  - state_dict (id=obs): state=14-d vector, image=80x80x3 bird-eye
+
+[SuccessCondition]
+  - reach goal (id=succ): metric=agent cell == goal cell, info_key=success
+
+[FailureMode]
+  - wrong_direction (id=fm_wrong_direction): description=The policy steers away from the goal / toward a dead pocket, increasing distance-to-goal.
+  - hit_fire (id=fm_hit_fire): description=The policy walks the agent onto a fire cell, terminating in failure.
+  - wall_thrashing (id=fm_wall_thrash): description=The policy repeatedly picks a move blocked by the boundary, oscillating without progress.
+  - timeout (id=fm_timeout): description=Horizon reached without arriving at the goal (hesitation / looping).
+
+[Phase]
+  - approach (id=ph_approach): description=moving from the start region toward the goal quadrant
+  - corridor (id=ph_corridor): description=threading the fire-free corridor between hazards
+  - junction (id=ph_junction): description=a branch cell where two routes are equally optimal (multimodal choice)
+
+[RELATIONS]
+  Grid agent --[OBSERVES]--> state_dict
+  Grid agent --[MUST_REACH]--> Goal cell
+  Grid agent --[MOVES_WITHIN]--> 5x5 grid
+  Grid agent --[SUCCEEDS_WHEN]--> reach goal
+  Grid agent --[CAUSES_FAILURE]--> wrong_direction
+  Fire hazard cells --[CAUSES_FAILURE]--> hit_fire
+  5x5 grid --[CAUSES_FAILURE]--> wall_thrashing
+  Grid agent --[CAUSES_FAILURE]--> timeout
+
+[REASONING IMPLICATIONS]
+  * wrong_direction: Prescribe a start cell mid-corridor so the demo teaches the correct heading toward the goal quadrant.
+  * hit_fire: Prescribe a start adjacent to the fire barrier on the SAFE side so the demo teaches skirting the hazard, not crossing it.
+  * wall_thrashing: Prescribe a start away from the boundary so the demo emphasises interior progress toward the goal.
+  * timeout: Prescribe a single direct fire-free corridor from start to goal (no oscillation).
+  * workspace_constraint: Every prescribed layout MUST keep start, goal, and the 3 fires as DISTINCT in-grid cells in [0..4]^2, with start != goal, Manhattan(start,goal) >= 4, and a fire-free BFS path from start to goal (fires never block all routes). Out-of-grid or unsolvable layouts are rejected and waste the round.
+  * non_emptiness: A failure is present, so the prescription MUST be a concrete, fully-specified layout (non-empty start, goal, fire cells). Never emit an empty prescription.

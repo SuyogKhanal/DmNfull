@@ -13,7 +13,7 @@ from typing import Sequence, Tuple
 
 import numpy as np
 
-from envs.maze_env import (
+from .maze_env import (
     AGENT_COLOR,
     TILE_COLORS,
     TILE_FIRE,

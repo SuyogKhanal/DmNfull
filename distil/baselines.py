@@ -19,6 +19,7 @@ a policy rollout; the expert then completes the episode and that segment is the 
 from __future__ import annotations
 
 import gc
+import time
 from collections import deque
 from typing import Dict, List
 
@@ -123,6 +124,7 @@ def run_baseline(cfg, arm, make_env_fn, make_expert_fn, device, log_fn=print,
     history = []
 
     for rnd in range(int(cfg["max_rounds"])):
+        t_round = time.time()          # per-round wall-clock (compute table, 09_..md #6)
         steps = cfg["initial_train_steps"] if rnd == 0 else cfg["round_train_steps"]
         log_fn(f"\n===== {arm} Round {rnd} | dataset={len(trajs)} =====")
         # diff-dagger needs the calibrated threshold; others just BC. Ensemble/Thrifty
@@ -145,7 +147,8 @@ def run_baseline(cfg, arm, make_env_fn, make_expert_fn, device, log_fn=print,
         n_at_eval = len(trajs)
         if len(trajs) >= final_demos:
             history.append({"round": rnd, "n_demos_at_eval": n_at_eval,
-                            "eval_success": ev["success_rate"]})
+                            "eval_success": ev["success_rate"],
+                            "sec": round(time.time() - t_round, 1)})
             break
 
         # roll the policy on fresh seeds; the gate decides where the expert takes over.
@@ -155,7 +158,8 @@ def run_baseline(cfg, arm, make_env_fn, make_expert_fn, device, log_fn=print,
         if demo is not None:
             trajs.append(demo)
         history.append({"round": rnd, "n_demos_at_eval": n_at_eval,
-                        "eval_success": ev["success_rate"]})
+                        "eval_success": ev["success_rate"],
+                        "sec": round(time.time() - t_round, 1)})
         del policies; gc.collect(); torch.cuda.is_available() and torch.cuda.empty_cache()
 
     for e in (env, eval_env):

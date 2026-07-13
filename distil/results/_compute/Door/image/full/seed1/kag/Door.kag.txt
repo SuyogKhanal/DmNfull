@@ -1,0 +1,39 @@
+=== KAG — TASK KNOWLEDGE GRAPH ===
+Domain: robosuite_ur5e_door_articulated_manipulation
+Description: Knowledge graph for the robosuite Door task: a UR5e with a parallel-jaw gripper reaches a door handle and pulls the door open past a hinge angle of 0.3 rad. The door frame's position and yaw are randomized each episode. Consumed by the P4-LLM reasoning + decision components to ground failure analysis and the SELECT/BRIDGE demonstration choice. Coordinates are world-frame metres; the scripted expert uses closed-loop hinge feedback and is reliable inside the stated door-frame range.
+
+[Robot]
+  - UR5e + Robotiq85 (id=robot): arm_joints=6, gripper=parallel_jaw, controller=OSC_POSE (6-DOF) + gripper
+
+[Object]
+  - Door (frame+panel+handle) (id=door): controllable_via=engage handle then pull, frame_body_xyz_world=[x,y,1.10], hinge_axis=z, hinge_range_rad=[0.0, 0.4]
+  - Door handle/latch (id=handle): role=engagement point the gripper drives to pull the panel
+
+[Goal]
+  - Open the door (id=goal): criterion=hinge angle > 0.3 rad
+
+[EndEffector]
+  - Gripper TCP (id=eef): role=reach the handle then pull along the door-opening arc
+
+[Workspace]
+  - Reliable door-frame range (id=ws_door): x=[-0.135, -0.108], y=[-0.366, -0.34], z=1.1, yaw_rad=[-1.82, -1.57]
+
+[SuccessCondition]
+  - Door open (id=succ): metric=hinge_qpos > 0.3 rad, info_key=success
+
+[RELATIONS]
+  UR5e + Robotiq85 --[HAS_END_EFFECTOR]--> Gripper TCP
+  Gripper TCP --[ENGAGES]--> Door handle/latch
+  Door handle/latch --[OPENS]--> Door (frame+panel+handle)
+  Door (frame+panel+handle) --[INIT_WITHIN]--> Reliable door-frame range
+  Door (frame+panel+handle) --[SUCCEEDS_WHEN]--> Door open
+  Gripper TCP --[CAUSES_FAILURE]--> Door (frame+panel+handle)
+
+[REASONING IMPLICATIONS]
+  * approach_failure: The gripper misses the handle (wrong xy/height for the randomized door pose): prescribe/select a scene whose door pose forces a clean approach onto the handle.
+  * grasp_failure: The gripper reaches the handle but fails to engage it enough to pull: emphasize a firmer engagement before pulling.
+  * pose_mismatch: The pull direction does not follow the hinge arc for this door yaw: demonstrate the correct pull direction for the cited door orientation.
+  * contact_instability: The gripper slips off the handle mid-pull: emphasize maintaining contact through the opening arc.
+  * timeout: Hesitation at the handle without opening past 0.3 rad: commit to engage-then-pull with the door well inside the reliable range.
+  * workspace_constraint: Every prescribed door frame xy MUST stay within x[-0.135,-0.108] y[-0.366,-0.340] at z=1.10 (world), yaw within [-1.82,-1.57]. Out-of-range poses are unreliable and waste the round.
+  * non_emptiness: A failure IS present, so the decision MUST cite concrete episode ids for SELECT or BRIDGE — never refuse.

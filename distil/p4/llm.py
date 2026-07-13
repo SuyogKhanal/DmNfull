@@ -140,20 +140,50 @@ def parse_confidence(text: str):
 
 
 class _Usage:
+    """Token accounting. Keeps the original aggregate keys (prompt/completion/total/
+    calls) AND a per-stage breakdown + reasoning tokens, for the compute table
+    (09_..md Tier-4 #6: sec/round and tokens/round, split VLM vs reasoning LLM).
+
+    Stage is derived from the call label: 'vlm_ep7' -> vlm, 'analysis_ep7' ->
+    analysis, 'decision' -> decision. OpenRouter reports the reasoning-token count
+    under usage.completion_tokens_details.reasoning_tokens even when the reasoning
+    text is excluded from the content, so the hidden thinking cost is observable.
+    """
+
+    STAGES = ("vlm", "analysis", "decision")
+
     def __init__(self):
         self.prompt = self.completion = self.total = self.calls = 0
+        self.reasoning = 0
+        self.by_stage = {s: {"prompt": 0, "completion": 0, "total": 0,
+                             "reasoning": 0, "calls": 0} for s in self.STAGES}
 
-    def add(self, u):
+    def add(self, u, stage: str = None):
         if u is None:
             return
-        self.prompt += int(getattr(u, "prompt_tokens", 0) or 0)
-        self.completion += int(getattr(u, "completion_tokens", 0) or 0)
-        self.total += int(getattr(u, "total_tokens", 0) or 0)
+        p = int(getattr(u, "prompt_tokens", 0) or 0)
+        c = int(getattr(u, "completion_tokens", 0) or 0)
+        t = int(getattr(u, "total_tokens", 0) or 0)
+        det = getattr(u, "completion_tokens_details", None)
+        r = int(getattr(det, "reasoning_tokens", 0) or 0) if det is not None else 0
+        self.prompt += p
+        self.completion += c
+        self.total += t
+        self.reasoning += r
         self.calls += 1
+        b = self.by_stage.get(stage)
+        if b is not None:
+            b["prompt"] += p
+            b["completion"] += c
+            b["total"] += t
+            b["reasoning"] += r
+            b["calls"] += 1
 
     def asdict(self):
         return {"prompt": self.prompt, "completion": self.completion,
-                "total": self.total, "calls": self.calls}
+                "total": self.total, "calls": self.calls,
+                "reasoning": self.reasoning,
+                "by_stage": {s: dict(v) for s, v in self.by_stage.items()}}
 
 
 class DistilLLM:
@@ -182,7 +212,8 @@ class DistilLLM:
                 model=model, messages=messages, max_tokens=self.max_tokens,
                 extra_body=extra or None)
         r = _oai_retry(_do)
-        usage.add(getattr(r, "usage", None))
+        usage.add(getattr(r, "usage", None),
+                  stage=(label.split("_")[0] if label else None))
         content = (r.choices[0].message.content or "") if r.choices else ""
         content = _strip_think(content)
         if dump is not None:
@@ -252,6 +283,16 @@ class DistilLLM:
                        f"phase={analysis['phase']}")
         raw = self._decision(task_desc, kag, members, bridge_supported, usage, dump)
         conf, conf_rat = parse_confidence(raw)
+        # KAG accounting for the compute table: the KAG block is inserted verbatim into
+        # every analysis prompt (one per analysed failure) and into the single decision
+        # prompt. Its per-round token contribution is therefore
+        #   kag_calls * tokens(kag_block),
+        # where tokens(kag_block) is measured against the SERVING tokenizer by a paired
+        # prompt-token diff (scripts/measure_kag_tokens.py). We log the multiplicand
+        # (kag_calls) and the raw size here so the product is reproducible.
+        tok = usage.asdict()
+        tok["kag_calls"] = (len(members) + 1) if (self.use_kag and kag) else 0
+        tok["kag_chars"] = len(kag) if self.use_kag else 0
         if prompt_dir:
             try:
                 self._write_prompts(prompt_dir, dump, kag)
@@ -264,7 +305,7 @@ class DistilLLM:
                              "phase": m["analysis"]["phase"],
                              "rationale": m["analysis"]["rationale"],
                              "vlm_report": m["vlm_report"]} for m in members],
-                "tokens": usage.asdict(),
+                "tokens": tok,
                 "models": {"vlm": self.vlm_model, "llm": self.llm_model,
                            "use_vlm": self.use_vlm, "use_kag": self.use_kag}}
 

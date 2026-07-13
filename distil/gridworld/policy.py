@@ -24,8 +24,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .encoder import encode_state
+from .encoder_rgb import encode_state as encode_rgb
 from .equivariant import EquivariantUNetPolicy
 from .expert import AStarExpert, build_grid, compute_distance_map, optimal_action_mask
+from .rgb_policy import RGBCNNPolicy
 
 
 class EmpiricalCDF:
@@ -52,22 +54,32 @@ class GridWorldPolicy:
     def __init__(self, modality: str = "state", grid_size: int = 5,
                  alpha: float = 0.99, patience_window: int = 2, patience: int = 2,
                  channels: Sequence[int] = (16, 32, 64), device: str = "cpu"):
-        assert modality == "state", "GridWorld image modality is Phase 2 (RGB CNN)"
+        assert modality in ("state", "image"), modality
         self.modality = modality
         self.grid_size = grid_size
         self.alpha = alpha
         self.patience_window = patience_window
         self.patience = patience
         self.device = device
-        self.net = EquivariantUNetPolicy(in_channels=5, channels=tuple(channels),
-                                         num_actions=4).to(device)
+        self.channels = tuple(channels)
+        self.net = self._new_net()
         self.loss_threshold = float("inf")
         self._violations = deque(maxlen=patience_window)
 
+    def _new_net(self) -> nn.Module:
+        """state -> p4m-equivariant CNN over the 5-channel semantic grid.
+        image -> plain RGB CNN over the 80x80 bird-eye raster (same 4-way logit head,
+        so every downstream contract — entropy, threshold, BCE mask — is unchanged)."""
+        if self.modality == "image":
+            return RGBCNNPolicy(in_channels=3, num_actions=4).to(self.device)
+        return EquivariantUNetPolicy(in_channels=5, channels=self.channels,
+                                     num_actions=4).to(self.device)
+
     # ── scene -> policy input tensor ──────────────────────────────────────────
     def _encode(self, grid, agent, goal, fires) -> np.ndarray:
-        return encode_state(np.asarray(grid, dtype=np.int32), tuple(agent), tuple(goal),
-                            [tuple(f) for f in fires])
+        enc = encode_rgb if self.modality == "image" else encode_state
+        return enc(np.asarray(grid, dtype=np.int32), tuple(agent), tuple(goal),
+                   [tuple(f) for f in fires])
 
     def _batch(self, scenes: List[Tuple]) -> torch.Tensor:
         arrs = [self._encode(*s) for s in scenes]
@@ -124,8 +136,7 @@ class GridWorldPolicy:
         if not samples:
             log_fn("  [gw-train] no samples; skipping")
             return []
-        self.net = EquivariantUNetPolicy(in_channels=5, channels=self.net.channels,
-                                         num_actions=4).to(self.device)
+        self.net = self._new_net()
         opt = torch.optim.AdamW(self.net.parameters(), lr=lr, weight_decay=weight_decay)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, steps))
         self.net.train()

@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "domain": "robosuite_ur5e_lift_prehensile_manipulation",
+    "description": "Knowledge graph for the robosuite Lift task: a UR5e with a parallel-jaw (Robotiq85) gripper grasps a small cube on a table and lifts it above a height threshold. Consumed by the P4-LLM reasoning + decision components to ground failure analysis and the SELECT/BRIDGE demonstration choice. Coordinates are world-frame metres; the scripted expert is reliable only inside the stated cube-placement range."
+  },
+  "nodes": [
+    {"id": "robot", "type": "Robot", "label": "UR5e + Robotiq85", "properties": {"arm_joints": 6, "gripper": "parallel_jaw", "controller": "OSC_POSE (6-DOF) + gripper"}},
+    {"id": "cube", "type": "Object", "label": "Movable cube", "properties": {"controllable_via": "grasp+lift", "init_xyz_world": "[x,y,~0.831]", "rests_on": "table"}},
+    {"id": "goal", "type": "Goal", "label": "Lift the cube", "properties": {"criterion": "cube z above table by a threshold while grasped"}},
+    {"id": "eef", "type": "EndEffector", "label": "Gripper TCP", "properties": {"role": "must center on the cube and close before lifting", "grasp_check": "contact on both fingers"}},
+    {"id": "ws_cube", "type": "Workspace", "label": "Reliable cube init range", "properties": {"x": [-0.03, 0.03], "y": [-0.03, 0.03], "z": 0.831}},
+    {"id": "succ", "type": "SuccessCondition", "label": "Cube lifted", "properties": {"metric": "cube height above table > threshold AND grasped", "info_key": "success"}}
+  ],
+  "edges": [
+    {"source": "robot", "relation": "HAS_END_EFFECTOR", "target": "eef"},
+    {"source": "eef", "relation": "GRASPS", "target": "cube"},
+    {"source": "cube", "relation": "INIT_WITHIN", "target": "ws_cube"},
+    {"source": "cube", "relation": "SUCCEEDS_WHEN", "target": "succ"},
+    {"source": "eef", "relation": "CAUSES_FAILURE", "target": "cube"}
+  ],
+  "reasoning_implications": {
+    "grasp_failure": "Fingers close off-center or the cube slips: prescribe/select a scene where the expert demonstrates a centered, secure grasp before lifting.",
+    "approach_failure": "The gripper approaches the wrong xy or height: prescribe a scene whose cube position forces a clean top-down approach onto the cube center.",
+    "contact_instability": "The cube is bumped away during approach/close: emphasize a slower, aligned descent onto the cube.",
+    "timeout": "Hesitation/oscillation near the cube: commit to a direct grasp-then-lift with the cube well inside the reliable range.",
+    "workspace_constraint": "Every prescribed cube xy MUST stay within x[-0.03,0.03] y[-0.03,0.03] at z=0.831 (world). Out-of-range placements are unreliable and waste the round.",
+    "non_emptiness": "A failure IS present, so the decision MUST cite concrete episode ids for SELECT or BRIDGE — never refuse."
+  }
+}

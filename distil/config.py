@@ -180,11 +180,9 @@ def get_config(task: str, modality: str = "state", ablation: str = "full",
     stop threshold final_demos is set to n_init + budget in run.py once n_init is known."""
     assert task in TASKS, task
     assert modality in ("state", "image"), modality
-    if modality == "image" and task == "GridWorld":
-        raise NotImplementedError(
-            "GridWorld image modality (RGB CNN head on the bird-eye obs) not built yet; "
-            "robot tasks (Lift/Wipe/Door) support image via the spatial-softmax encoder. "
-            "The descriptor stays GEOMETRIC either way (02_..md #4).")
+    # GridWorld image = the SAME loop with a plain RGB CNN policy head on the 80x80
+    # bird-eye raster (gridworld/rgb_policy.py + encoder_rgb.py); robot tasks use the
+    # spatial-softmax encoder. The descriptor stays GEOMETRIC either way (02_..md #4).
     cfg = copy.deepcopy(BASE)
     cfg.update(TASKS[task])
     cfg["task"] = task

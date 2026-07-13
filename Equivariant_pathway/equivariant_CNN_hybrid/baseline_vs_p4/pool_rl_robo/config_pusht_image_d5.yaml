@@ -1,0 +1,84 @@
+# config_pusht_image_d5.yaml — ONE-ROUND compute measurement (paper D5_Compute).
+#
+# NEW FILE; nothing else in the suite is touched. It is a verbatim copy of
+# config_pusht_image.yaml with exactly TWO knobs moved:
+#     budget: 100 -> 1      (one successfully collected demo ends the arm)
+#     max_rounds: 100 -> 1
+# and one INERT clarification: an explicit `baselines:` block whose values are
+# IDENTICAL to the code defaults used when the block is absent
+# (safe_dagger tau=0.1, diff_dagger alpha=0.99/patience=1 — cf. config.yaml), so
+# the SafeDAgger arm is documented rather than implicit. Everything that costs
+# time per round (nd_retrain=1, round_epochs=200, max_train_steps=30000,
+# rollout_episodes=60, heldout_n=100, eval_num_envs=10, the V3-hybrid p4 subtask
+# block with visual clustering) is UNCHANGED, so the measured second is the same
+# second the real study pays.
+#
+# Both arms reuse the finished image bootstrap of run_111 byte-identically via
+# P4_REUSE_INIT_CKPT, so the measured round is a round of the REAL policy, and no
+# bootstrap training is re-paid.
+#
+# Baseline arm = safe_dagger, matching the RoboSuite D5 jobs (ablation=safe).
+
+n_runs: 1
+initial_demos: 20         # MUST stay 20: it is the bootstrap that init_ckpt was trained on
+budget: 1                 # <-- D5: exactly ONE demo => exactly ONE round
+demos_per_round: 1
+target_sr: 1.0            # never early-stop
+max_rounds: 1             # <-- D5
+max_steps: 200
+heldout_n: 100
+seed: 1
+
+nd_retrain: 1             # retrain from scratch after the demo (as in the real study)
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10
+rollout_episodes: 60
+max_episodes_per_arm: 5000
+
+methods: ["safe_dagger", "p4_subtask"]
+
+environments: ["PushT-v1"]
+
+# Decision-rule knobs — identical to the code defaults / config.yaml (inert).
+baselines:
+  safe_dagger:
+    tau: 0.1              # action discrepancy threshold (L2, joint-delta space)
+  diff_dagger:
+    alpha: 0.99
+    patience: 1
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  prompts_dir: null
+
+  subtask:
+    enabled: true
+    collect: hybrid
+    signal: diffusion
+
+    cluster_features: visual
+    embed_model: r3m
+    embed_pool: concat
+    embed_pca_dim: 16
+
+    snap_eps: 0.02
+    bridge_max_xy: 0.10
+    bridge_max_theta: 0.6
+    confirm_target_with_heldout: true
+    max_clusters: 6
+    diversity: true
+    memory_gamma: 0.6
+    memory_sigma: 0.06
+    perturb_max_xy: 0.06
+    perturb_max_theta: 0.4
+    exact_anchor_fallback: true

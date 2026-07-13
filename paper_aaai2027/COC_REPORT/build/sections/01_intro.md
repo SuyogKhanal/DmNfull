@@ -1,0 +1,107 @@
+## Introduction and research vision
+
+### The demonstration is the scarce resource
+
+Imitation learning turns expert demonstrations into a policy. The earliest working system fitted a network to logged pairs of camera image and steering angle and drove a vehicle with the result [@pomerleau1988alvinn], and the framework that generalises it fits a policy to logged expert state-action pairs [@bain1995cloning; @argall2009survey]. Model capacity and observation richness have grown since. The premise has not: somebody, at some point, produced the demonstrations.
+
+Every other input to that pipeline has become cheap. Compute is bought. Simulators are free and run faster than real time. Architectures and pre-trained encoders are downloaded. The demonstration is the one input whose cost has not fallen, because it is produced by a person operating a robot one trajectory at a time, or by a scripted oracle written by an engineer who first had to solve the task by hand. Collecting demonstrations at scale is a logistics problem in its own right, and the projects that have done it read as such: a distributed teleoperation platform and a year of coordinated collection across dozens of institutions [@mandlekar2018roboturk; @khazatsky2024droid]. The number of demonstrations available to a given project is bounded by something other than the researcher's willingness to wait.
+
+That bound would not matter if demonstrations did not help, and they do. Imitation-learning performance follows a scaling relationship in the number of demonstrations and in their diversity [@lin2024datascaling]. The demonstration is therefore both the input that most improves the policy and the input that is hardest to obtain, which is what makes it the binding cost of the whole enterprise. The realistic constraint in a deployment setting is not "collect more data". It is "you hold a budget of $B$ demonstrations, and you must spend it well".
+
+The budget is the object this thesis is built on, so it is worth naming its parts once and keeping the names. A *budget* $B$ is the total number of demonstrations the expert will supply over the run. Demonstrations are acquired in rounds, $D$ of them per round, and the policy is retrained after each round. $B$ and $D$ are symbols throughout the method and the algorithm; the particular values validated in this work appear only in the experimental setup, because the framework does not depend on them.
+
+Under a fixed $B$, the quantity that can still be raised is not the number of demonstrations. It is the *information content of each demonstration*: how much of what the policy does not yet know is contained in the one trajectory the expert is about to record. The claim this programme develops and tests is that a large language model, given a structured description of how the policy is failing and an explicit statement of what the environment permits, can raise it.
+
+![Figure 1](../figures/Teaser_Diagram.pdf)
+
+**Figure 1. The demonstration-distillation loop.** A policy trained on a small demonstration set fails repeatedly on the same configurations. Those failures are summarised and read by a language model, which prescribes the configuration at which the next demonstration should be collected. The expert supplies one demonstration at that configuration, the demonstration is added to the training set, and the policy is retrained. Each turn of the loop spends a single unit of the demonstration budget, so the decision the loop makes is which configuration is worth one unit.
+
+### What interactive imitation learning answers, and what it leaves open
+
+A policy cloned offline from expert data is trained on the expert's state distribution and deployed on its own, and the two distributions come apart as soon as the learner's actions determine what it sees next [@shimodaira2000covariate]. Small action errors move the learner off the demonstrated manifold, where its errors are larger, and the error compounds over the horizon [@ross2010reductions]. Dataset aggregation removes the compounding by labelling the states the learner actually visits: roll out the current policy, ask the expert what to do at the states it reached, add those labels to the training set, retrain, repeat [@ross2011dagger]. The interactive branch of imitation learning that grew out of this is now a field with its own taxonomy of feedback types [@celemin2022iil].
+
+Its members share one skeleton and differ in one component. The skeleton is roll out, decide whether to hand control to the expert, aggregate the expert's labels, retrain. The component that differs is the scalar signal that opens the gate. SafeDAgger trains a classifier to predict when the policy is about to deviate from the expert by more than a tolerance [@zhang2017safedagger]. DropoutDAgger reads the spread of a Monte-Carlo dropout ensemble over the novice's action [@menda2017dropoutdagger]. EnsembleDAgger reads the variance of a bootstrap ensemble and combines it with the discrepancy between novice and expert action [@menda2019ensembledagger]. ThriftyDAgger combines a novelty estimate with a learned risk estimate and calibrates the pair against a target switching rate [@hoque2021thriftydagger]. Diff-DAgger reads the diffusion policy's own per-step training loss, which is available for free and requires no second model [@lee2025diffdagger].
+
+Every one of those gates answers the same question, which is *when* to ask the expert for help. Three consequences follow from answering only that question, and they are the opening this programme works in.
+
+A per-state gate cannot see a batch. It fires on the state in front of it. Given twenty rollouts that all failed, it has no representation in which two of them are the same mistake and a third is a different one, so it cannot tell a redundant correction from a novel one. Under an unbounded budget this costs nothing, because every failure is eventually labelled. Under a budget of twenty demonstrations it is the whole problem.
+
+A per-state gate has no memory across rounds. Nothing in the signal records that the region it is firing on was already corrected in the previous round and the round before that. One failure that persists can therefore absorb a large share of a small budget, while a failure that occurs less often is never reached.
+
+A per-state gate inherits the state that tripped it. The corrective demonstration begins wherever the policy happened to be when the signal crossed the threshold, and that state is frequently one the policy has already ruined: the object has been knocked out of reach, or the gripper has closed on nothing. The expert then spends the demonstration recovering from a situation that would not arise under a competent policy, rather than teaching the behaviour that would have avoided it.
+
+So *when* is one decision, and it is one of three. The other two are unclaimed: **which** failure to correct, and **where** the corrective demonstration begins.
+
+Choosing a demonstration is not the same problem as choosing a data point, and the distinction matters because a large literature already chooses data points. Active learning scores an unlabelled example by an acquisition function and pays for its label [@settles2009active; @houlsby2011bald]. Coreset and diversity selection cover a representation space instead of chasing uncertainty [@sener2018coreset; @ash2020badge]. Demonstration curation retrieves sub-trajectories from a corpus that has already been collected [@memmel2025strap]. All of them select from an existing pool. The framework proposed here prescribes a demonstration that does not exist yet, and then has an expert produce it, which is why those methods appear in this report as background and not as baselines. The word *distillation* in the title of the Aim-1 paper carries the same distinction and should not be read as the dataset-distillation sense, in which a collected dataset is compressed into a smaller synthetic one that trains as well [@cazenavette2022mtt]. Dataset distillation compresses data that exists. Demonstration distillation decides which demonstration to collect next.
+
+### Central idea and thesis statement
+
+A language model is not a controller in this work, and the point is worth settling before a reader assumes otherwise. A large language model is a model over token sequences; it does not close a control loop here, it does not output torques, and it is never in the path between an observation and an action at execution time. It is the component that reads a structured summary of the policy's own failures, together with an explicit statement of what the environment permits, and returns a request for one specific demonstration.
+
+The division of labour follows from what these models are measured to be good at. Language and vision-language models name causes reliably when they are handed structured evidence: a vision-language model can summarise a robot's experience and say why an episode failed, and can be trained specifically to reason over manipulation failures [@liu2023reflect; @duan2025aha]. They are unreliable at metric and spatial reasoning from pixels alone [@chen2024spatialvlm; @fu2024blink], and their proposals must be grounded in what the robot can actually do before they are acted on [@ahn2022saycan]. The framework is built around both findings. The model is handed a low-dimensional geometric descriptor of each failure rather than raw pixels alone, the partition of failures into modes is computed geometrically and not by the model, and every prescription the model emits is checked against an explicit store of environmental constraints and revised until it is feasible. What is left to the model is the decision that structured evidence supports, which is what kind of correction the selected region of the failure distribution needs, and where the demonstration that supplies it should begin.
+
+The thesis statement is one sentence. *Language models can raise the information content of each demonstration under a restricted budget, and raising it is what makes imitation learning sample-efficient.*
+
+The framework that tests this at the first of three levels is DISEIL, named after the title of the paper that reports it, *Demonstration Distillation for Sample-Efficient Imitation Learning*.
+
+### Research questions
+
+The programme traces a single quantity, the value of one demonstration, through the three levels at which it can be raised. Table 1 states the three levels, and the three research questions are its three rows.
+
+| Aim | What the selector reasons over | What it decides | Level at which the value of a demonstration is raised |
+|---|---|---|---|
+| Aim 1 (DISEIL) | this round's failures, partitioned into failure modes, plus the environment's explicit constraints | which failure mode to correct, and where the corrective demonstration begins | within a round |
+| Aim 2 (reverse vision-language-action model) | the same failures, plus a language index of everything the policy has already been taught | whether a failure is a genuine coverage gap or a re-teaching of material the dataset already holds | across the dataset |
+| Aim 3 (demonstration demand) | the coverage of a skill inventory shared across tasks, embodiments and teachers, priced against human time | which demonstration to buy next, from whom, and what it is worth | across tasks and teachers |
+
+**Table 1. One quantity, three levels.** Each aim raises the information content of a demonstration at a different level and inherits the limitation the previous aim's evaluation exposed.
+
+**RQ1.** Under a fixed budget $B$, does choosing which failure mode to correct and where the corrective demonstration begins yield a policy with a higher final success rate than choosing only when to intervene? The question is answerable by holding the interactive loop, the policy class, the expert and the evaluation protocol fixed and varying only the demonstration-acquisition rule, which is the design of the Aim-1 experiments reported in Chapter 4.
+
+**RQ2.** Can the demonstration selector be given a model of what it has already taught, by inverting the mapping that vision-language-action models learn so that an executed trajectory is turned into language rather than language into an action, and does selection driven by a coverage gap beat selection driven by the failure in front of the policy? The forward mapping takes vision and language to an action [@brohan2023rt2; @kim2024openvla; @octo2024]. Aim 2 inverts it, so that a trajectory's frames and its executed actions produce a language description that accumulates into a memory of what the dataset contains. Chapter 5 states the question, the method and the experiment that decides it.
+
+**RQ3.** Can demonstration demand be made explicit, priced against a teacher's time, and satisfied across tasks and embodiments, so that a generalist policy asks a non-expert human for exactly the demonstrations it lacks? Generalist policies already pool demonstration *supply* across many robots and many tasks [@oneill2023openx]. No framework represents the *demand*: an explicit ledger of the skills a policy is short of, priced against the minutes of human time each request would cost [@khazatsky2024droid; @houlsby2011bald]. Chapter 6 proposes one.
+
+The three questions compose. Aim 1's selector reasons about the failure in front of it and knows nothing about the dataset behind it, which is the limitation Aim 2 exists to remove. Aim 2's memory is task-local and its supplier is a scripted expert who is always available, always correct and always the same price, which is the limitation Aim 3 exists to remove. Each aim is the correction to the defect the previous aim's own evaluation exposed, and the report earns that claim in Chapter 7 by tracing the same quantity through all three.
+
+### Contributions to date
+
+The work completed at the time of this report is Aim 1. Its contributions are the following, each traceable to a section.
+
+1. **A demonstration-acquisition framework that allocates a fixed budget across discovered failure modes.** DISEIL localises each failed rollout at its peak-loss step, reduces that step to a six-dimensional geometric descriptor, partitions the round's failures into failure modes, rotates the target mode across rounds under a memory of what has already been corrected, and prescribes the configuration at which the next demonstration begins. The framework requires only that the policy expose a per-step loss, so the same loop runs on a multilayer perceptron, on a convolutional network and on a diffusion policy without modification. Chapter 4, §4.4.
+
+2. **A prescription that is verified before expert time is spent on it, by two distinct checks.** A prescription is checked for feasibility against a knowledge-augmented graph that stores the environment's explicit constraints, with violations returned to the model for revision until a feasible prescription is produced. Separately, the prescribed scenario is rolled out under the current policy, and a scenario the policy already solves is revised, because it would teach nothing. Chapter 4, §4.4.4 and §4.5.
+
+3. **An evaluation over five tasks under two observation modalities, against six demonstration-acquisition baselines, five of which apply in any one setting.** DISEIL attains the best mean final success rate in all ten settings, with a mean margin of 3.71 points (standard deviation 2.05) over the strongest baseline in each setting. The ten settings are not ten independent experiments, so the claim of record is the conservative one: collapsed to five task means the sweep is five out of five, one-sided sign test $p = 0.031$, paired $t(4) = 4.15$, $p = 0.014$. Chapter 4, §4.7.
+
+4. **Evidence that the mechanism is the allocation, and that per-demonstration information gain does not license the claim on its own.** Removing the partition costs 4.01 success-rate points on average and retains 11.3% of the margin over the best baseline, while the per-demonstration information gain of the ablated system does not fall (mean $+0.06$, Wilcoxon $p = 0.23$) even as its success rate collapses ($p = 0.002$). Greedy worst-loss selection collects demonstrations that are individually informative and jointly redundant, because information gain measured on one demonstration carries no term for its overlap with the demonstration collected in the previous round. Chapter 4, §4.8 and §4.9.1.
+
+5. **An ablation programme of fifteen studies and five diagnostics whose findings are reported against the framework's own narrative rather than in support of it.** The reasoning stack contributes about one success-rate point (replacing the prescription model with a heuristic costs 1.08 points; removing the vision-language model costs 1.01), because the allocation decision is made by a geometric descriptor before either model is called. The memory kernel width is mis-scaled for the narrow-reset tasks and is inert on six of the ten settings, and the identified fix has not yet been run. The advantage is largest where the budget is smallest, rising from 2.67 points at a budget of 40 demonstrations to 10.35 points at a budget of 10. Chapter 4, §4.9 and §4.10.
+
+6. **A manuscript reporting Aim 1**, submitted to the AAAI 2027 main track in July 2026. Chapter 4, §4.12.
+
+### Scope and constraints
+
+All experiments in this programme to date are conducted in simulation. Five tasks are used: a 5×5 GridWorld with three obstacles and a start-to-goal objective; Push-T, implemented in ManiSkill [@mu2021maniskill; @tao2024maniskill3]; and Lift, Wipe and Door on a UR5 and UR5e in RoboSuite [@zhu2020robosuite]. Each task is run under two observation modalities, state and image, and one task under one observation modality is called a *setting*. Five tasks and two modalities give ten settings. The word *mode* is reserved for failure modes, which are the clusters the framework discovers, and is never used for an observation modality.
+
+The experts are scripted or planner-based, other than on GridWorld, where the expert is human. On GridWorld, A\* and breadth-first search check that a prescribed configuration admits a valid path from start to goal [@hart1968astar; @cormen2022algorithms]; they are the feasibility and path-validity checker and never the expert. The human cost that the thesis is ultimately about is therefore modelled in Aims 1 and 2 and not measured, and Aim 3 is where it is measured.
+
+Results are reported over nine seeds on GridWorld and five seeds on each robot task. The counts differ, and the asymmetry is stated wherever seeded results are reported rather than smoothed into a single number.
+
+No human-subject data has been collected at any point in the programme so far. The only stage at which human participants enter is the Aim-3 teaching study, which will be submitted for Deakin human-research ethics approval before any participant is recruited. Chapter 9 sets out the position in full.
+
+### Report outline
+
+Chapter 2 reviews the background the programme rests on: behaviour cloning and covariate shift, dataset aggregation and the interactive loop, the query gates of the DAgger family presented as instances of one template, the policy classes used here, the standard machinery this work uses without claiming (agglomerative clustering, the silhouette criterion, farthest-point selection, A\* and breadth-first search), language and vision-language models as reasoners in robotics, structured environmental knowledge, demonstration selection and active learning, and vision-language-action models. It closes on three open problems, one per aim.
+
+Chapter 3 states the research programme as a whole: one question in three stages, and the matched-comparison design by which each stage is validated.
+
+Chapter 4 is Aim 1 and the core of the report. It formalises the problem, presents the DISEIL framework and its architecture, gives the experimental setup, reports the comparison against six baselines over the ten settings, develops the information-gain argument, and works through the ablation programme on three primary settings. It closes on what the ablations changed in the framework and on the limitations they exposed, one of which is the motivation for Aim 2.
+
+Chapter 5 is Aim 2. It states the limitation Aim 1 leaves, proposes the inversion of the vision-language-action mapping as a coverage memory of what the policy has been taught, sets out the method and the architecture, and names in advance the single experiment that decides whether language does causal work in the selection loop or is a readable veneer on it.
+
+Chapter 6 is Aim 3. It makes demonstration demand an explicit, priced and transferable object, renders a demand into a request a non-expert human can satisfy, and states the evaluation, including the human study that is the first point in the programme at which people enter.
+
+Chapter 7 shows the coherence of the three aims by tracing the value of one demonstration through all of them, records which components of Aim 1 survive into Aims 2 and 3, and states the contingencies that apply if an aim's decisive experiment returns a negative result.
+
+Chapter 8 gives the project plan, the milestone table and the Gantt chart through to thesis submission in November 2028. Chapter 9 addresses ethics. Chapter 10 records the higher-degree research training completed. Chapter 11 states what has been established, what is under way, and the next concrete step.

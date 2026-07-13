@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "schema_version": "1.0",
+    "document_type": "knowledge_augmented_generation",
+    "domain": "gridworld_5x5_navigation",
+    "description": "A 5x5 grid navigation task. An agent moves UP/DOWN/LEFT/RIGHT from a start cell to a GOAL cell; stepping on a FIRE cell fails the episode. Layouts have 3 fires placed so a fire-free path exists (Manhattan(start,goal) >= 4). Grounds DISTIL failure analysis + prescribed corridor layouts. Coordinates are (row, col), origin top-left, cells in [0..4]^2.",
+    "robot": "point agent (4 discrete moves)",
+    "control_mode": "discrete: 0=UP,1=DOWN,2=LEFT,3=RIGHT",
+    "action_dim": 4
+  },
+  "nodes": [
+    {"id": "agent", "type": "Robot", "label": "Grid agent", "properties": {"moves": "UP/DOWN/LEFT/RIGHT", "obs_state": "14-d [agent_rc/4, goal_rc/4, 3x3 nbhd/3, steps_remaining/200]"}},
+    {"id": "goal", "type": "Goal", "label": "Goal cell", "properties": {"reach": "episode succeeds when the agent steps onto it", "info_key": "success"}},
+    {"id": "fire", "type": "Object", "label": "Fire hazard cells", "properties": {"count": 3, "effect": "stepping on a fire terminates the episode as a FAILURE", "impassable_for_expert": true}},
+    {"id": "grid", "type": "Workspace", "label": "5x5 grid", "properties": {"rows": 5, "cols": 5, "coord": "(row,col) in [0..4]"}},
+    {"id": "obs", "type": "Observation", "label": "state_dict", "properties": {"state": "14-d vector", "image": "80x80x3 bird-eye"}},
+    {"id": "succ", "type": "SuccessCondition", "label": "reach goal", "properties": {"metric": "agent cell == goal cell", "info_key": "success"}},
+    {"id": "fm_wrong_direction", "type": "FailureMode", "label": "wrong_direction", "properties": {"description": "The policy steers away from the goal / toward a dead pocket, increasing distance-to-goal."}},
+    {"id": "fm_hit_fire", "type": "FailureMode", "label": "hit_fire", "properties": {"description": "The policy walks the agent onto a fire cell, terminating in failure."}},
+    {"id": "fm_wall_thrash", "type": "FailureMode", "label": "wall_thrashing", "properties": {"description": "The policy repeatedly picks a move blocked by the boundary, oscillating without progress."}},
+    {"id": "fm_timeout", "type": "FailureMode", "label": "timeout", "properties": {"description": "Horizon reached without arriving at the goal (hesitation / looping)."}},
+    {"id": "ph_approach", "type": "Phase", "label": "approach", "properties": {"description": "moving from the start region toward the goal quadrant"}},
+    {"id": "ph_corridor", "type": "Phase", "label": "corridor", "properties": {"description": "threading the fire-free corridor between hazards"}},
+    {"id": "ph_junction", "type": "Phase", "label": "junction", "properties": {"description": "a branch cell where two routes are equally optimal (multimodal choice)"}}
+  ],
+  "edges": [
+    {"source": "agent", "target": "obs", "relation": "OBSERVES"},
+    {"source": "agent", "target": "goal", "relation": "MUST_REACH"},
+    {"source": "agent", "target": "grid", "relation": "MOVES_WITHIN"},
+    {"source": "agent", "target": "succ", "relation": "SUCCEEDS_WHEN"},
+    {"source": "agent", "target": "fm_wrong_direction", "relation": "CAUSES_FAILURE"},
+    {"source": "fire", "target": "fm_hit_fire", "relation": "CAUSES_FAILURE"},
+    {"source": "grid", "target": "fm_wall_thrash", "relation": "CAUSES_FAILURE"},
+    {"source": "agent", "target": "fm_timeout", "relation": "CAUSES_FAILURE"}
+  ],
+  "reasoning_implications": {
+    "wrong_direction": "Prescribe a start cell mid-corridor so the demo teaches the correct heading toward the goal quadrant.",
+    "hit_fire": "Prescribe a start adjacent to the fire barrier on the SAFE side so the demo teaches skirting the hazard, not crossing it.",
+    "wall_thrashing": "Prescribe a start away from the boundary so the demo emphasises interior progress toward the goal.",
+    "timeout": "Prescribe a single direct fire-free corridor from start to goal (no oscillation).",
+    "workspace_constraint": "Every prescribed layout MUST keep start, goal, and the 3 fires as DISTINCT in-grid cells in [0..4]^2, with start != goal, Manhattan(start,goal) >= 4, and a fire-free BFS path from start to goal (fires never block all routes). Out-of-grid or unsolvable layouts are rejected and waste the round.",
+    "non_emptiness": "A failure is present, so the prescription MUST be a concrete, fully-specified layout (non-empty start, goal, fire cells). Never emit an empty prescription."
+  }
+}

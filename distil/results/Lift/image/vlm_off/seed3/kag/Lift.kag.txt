@@ -1,0 +1,36 @@
+=== KAG — TASK KNOWLEDGE GRAPH ===
+Domain: robosuite_ur5e_lift_prehensile_manipulation
+Description: Knowledge graph for the robosuite Lift task: a UR5e with a parallel-jaw (Robotiq85) gripper grasps a small cube on a table and lifts it above a height threshold. Consumed by the P4-LLM reasoning + decision components to ground failure analysis and the SELECT/BRIDGE demonstration choice. Coordinates are world-frame metres; the scripted expert is reliable only inside the stated cube-placement range.
+
+[Robot]
+  - UR5e + Robotiq85 (id=robot): arm_joints=6, gripper=parallel_jaw, controller=OSC_POSE (6-DOF) + gripper
+
+[Object]
+  - Movable cube (id=cube): controllable_via=grasp+lift, init_xyz_world=[x,y,~0.831], rests_on=table
+
+[Goal]
+  - Lift the cube (id=goal): criterion=cube z above table by a threshold while grasped
+
+[EndEffector]
+  - Gripper TCP (id=eef): role=must center on the cube and close before lifting, grasp_check=contact on both fingers
+
+[Workspace]
+  - Reliable cube init range (id=ws_cube): x=[-0.03, 0.03], y=[-0.03, 0.03], z=0.831
+
+[SuccessCondition]
+  - Cube lifted (id=succ): metric=cube height above table > threshold AND grasped, info_key=success
+
+[RELATIONS]
+  UR5e + Robotiq85 --[HAS_END_EFFECTOR]--> Gripper TCP
+  Gripper TCP --[GRASPS]--> Movable cube
+  Movable cube --[INIT_WITHIN]--> Reliable cube init range
+  Movable cube --[SUCCEEDS_WHEN]--> Cube lifted
+  Gripper TCP --[CAUSES_FAILURE]--> Movable cube
+
+[REASONING IMPLICATIONS]
+  * grasp_failure: Fingers close off-center or the cube slips: prescribe/select a scene where the expert demonstrates a centered, secure grasp before lifting.
+  * approach_failure: The gripper approaches the wrong xy or height: prescribe a scene whose cube position forces a clean top-down approach onto the cube center.
+  * contact_instability: The cube is bumped away during approach/close: emphasize a slower, aligned descent onto the cube.
+  * timeout: Hesitation/oscillation near the cube: commit to a direct grasp-then-lift with the cube well inside the reliable range.
+  * workspace_constraint: Every prescribed cube xy MUST stay within x[-0.03,0.03] y[-0.03,0.03] at z=0.831 (world). Out-of-range placements are unreliable and waste the round.
+  * non_emptiness: A failure IS present, so the decision MUST cite concrete episode ids for SELECT or BRIDGE — never refuse.
