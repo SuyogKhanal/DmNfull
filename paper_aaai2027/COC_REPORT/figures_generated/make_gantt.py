@@ -59,7 +59,7 @@ STREAMS = {
     "aim1": (VERM, "Aim 1 (DISEIL)"),
     "aim2": (GREEN, "Aim 2 (reverse vision-language-action)"),
     "aim3": (PURPLE, "Aim 3 (demonstration demand)"),
-    "thesis": (ORANGE, "Thesis and examination"),
+    "thesis": (ORANGE, "Thesis and candidature"),
 }
 
 # (label, start, end, stream, low_intensity)
@@ -96,7 +96,6 @@ BARS = [
     ("Thesis writing (chapters from CoC and papers)", date(2027, 11, 1), date(2028, 8, 31), "thesis", False),
     ("Thesis integration and full draft",           date(2028, 6, 1),   date(2028, 9, 30),  "thesis", False),
     ("Pre-submission review and revision",          date(2028, 9, 1),   date(2028, 11, 15), "thesis", False),
-    ("Examination preparation",                     date(2028, 9, 15),  date(2028, 11, 30), "thesis", False),
 ]
 
 # (label, date, done)  -- done = already achieved at the time of writing (13 Jul 2026)
@@ -180,10 +179,10 @@ ax.spines["bottom"].set_color(MUTED)
 
 # The Confirmation of Candidature rule separates completed work from planned work.
 coc = date(2026, 8, 13)
-ax.axvline(coc, color=VERM, lw=1.4, zorder=5)
+ax.axvline(coc, color=INK, lw=1.4, zorder=5)
 ax.text(coc, MLANE - 2.55, "Confirmation of Candidature, 13 Aug 2026",
-        ha="center", va="bottom", fontsize=8.2, color=VERM, zorder=7,
-        bbox=dict(boxstyle="round,pad=0.22", fc="white", ec=VERM, lw=0.7))
+        ha="center", va="bottom", fontsize=8.2, color=INK, zorder=7,
+        bbox=dict(boxstyle="round,pad=0.22", fc="white", ec=INK, lw=0.7))
 
 handles = [Patch(facecolor=c, edgecolor=c, label=l) for c, l in STREAMS.values()]
 handles.append(Patch(facecolor="white", edgecolor=MUTED, hatch="///",

@@ -56,9 +56,22 @@ def _lines(p: Path):
     return out
 
 
+def _last_run(L):
+    """run.log is opened in APPEND mode, so a run dir that was re-submitted (after a crash
+    or a scancel) holds the concatenated logs of EVERY attempt. Parsing the whole file
+    invents phantom rounds from the aborted attempts (e.g. a killed run's round 0, which has
+    a [train] and a [calibrate] but never reached [eval]).
+
+    Every attempt begins with run.py's banner:
+        ===== DISTIL | task=... ablation=... seed=... =====
+    so keep only the lines from the LAST banner onward -- i.e. the attempt that completed."""
+    starts = [i for i, (_, m) in enumerate(L) if m.startswith("===== DISTIL |")]
+    return L[starts[-1]:] if starts else L
+
+
 def parse_full(p: Path):
     """-> list of dicts, one per DISEIL round."""
-    L = _lines(p)
+    L = _last_run(_lines(p))
     rounds, cur = [], None
     for t, msg in L:
         if t is None:
@@ -154,6 +167,74 @@ def parse_safe(p: Path):
             d["gate_s"] = r["t_gate"] - r["t_eval"]
         if "t_gate" in r:
             d["round_s_from_log"] = r["t_gate"] - s
+        out.append(d)
+    return out
+
+
+def parse_diffdagger(p: Path):
+    """Diff-DAgger (distil/diffdagger.py::run_diffdagger) prints, in order:
+
+        ===== Round N | dataset=D trajs =====      (untimestamped header)
+        [train] D trajs, W windows, ... steps=S    (timestamped -> the round anchor)
+        train step k/S ...
+        [calibrate] threshold(alpha=0.99)=...      (the diffusion-loss CDF quantile)
+        [eval] pure-policy success=...             (fixed 100-ep held-out set)
+        [dagger ep1..epK] ... maxloss=... (interv k/Nd)
+
+    so the round decomposes as
+        train     = [train]      -> [calibrate]    (train + CDF calibration; SHARED with
+                                                    DISEIL, which calls the same
+                                                    train_and_calibrate)
+        eval      = [calibrate]  -> [eval]         (SHARED: same fixed held-out set)
+        gate      = [eval]       -> last [dagger]  (Diff-DAgger's OWN when-to-query cost:
+                                                    uncertainty-gated rollouts + the
+                                                    expert interventions they trigger)
+    and round wall-clock = [train] -> last [dagger].
+
+    NOTE: unlike the DISEIL arm, run_diffdagger's history carries NO per-round `sec`
+    (baselines.py::_wrap_history omits it), so round_s_from_log is the ONLY source of
+    Diff-DAgger round wall-clock. Every value here still traces to a printed,
+    timestamped log event.
+    """
+    L = _last_run(_lines(p))          # drop any aborted earlier attempt's appended log
+    rounds, cur = [], None
+    for t, msg in L:
+        if t is None:
+            continue
+        if "[train]" in msg and "trajs" in msg:
+            if cur is not None:
+                rounds.append(cur)
+            cur = {"t_train": t}
+        elif cur is None:
+            continue
+        elif "train step" in msg:
+            cur["t_last_step"] = t
+        elif "[calibrate]" in msg:
+            cur["t_calib"] = t
+        elif "[eval] pure-policy" in msg:
+            cur["t_eval"] = t
+        elif re.search(r"\[dagger ep\d+\]", msg):
+            cur["t_dagger"] = t                      # keep the LAST one in the round
+            cur["n_dagger_eps"] = cur.get("n_dagger_eps", 0) + 1
+    if cur is not None:
+        rounds.append(cur)
+
+    out = []
+    for i, r in enumerate(rounds):
+        d = {"round": i}
+        if "t_calib" in r:
+            d["train_s"] = r["t_calib"] - r["t_train"]
+        if "t_last_step" in r and "t_calib" in r:
+            d["calibrate_s"] = r["t_calib"] - r["t_last_step"]
+        if "t_eval" in r and "t_calib" in r:
+            d["eval_s"] = r["t_eval"] - r["t_calib"]
+        if "t_dagger" in r and "t_eval" in r:
+            d["gate_s"] = r["t_dagger"] - r["t_eval"]
+        if "t_dagger" in r:
+            d["round_s_from_log"] = r["t_dagger"] - r["t_train"]
+        d["n_dagger_eps"] = r.get("n_dagger_eps")
+        # Diff-DAgger uses NO foundation model: token columns are 0 by construction.
+        d["tokens"] = {"prompt": 0, "completion": 0, "total": 0, "reasoning": 0, "calls": 0}
         out.append(d)
     return out
 

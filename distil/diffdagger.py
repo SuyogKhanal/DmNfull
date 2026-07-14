@@ -300,6 +300,7 @@ def run_diffdagger(cfg, make_env_fn, make_expert_fn, device, log_fn=print, ckpt_
         policy, eval_env, num_episodes=eval_eps,
         obs_horizon=cfg["obs_horizon"], act_horizon=cfg["act_horizon"],
         device=device, base_seed=eval_seed_base, max_steps=env_horizon,
+        image_size=image_size,
     )
     cov_str = f" coverage={final['mean_coverage']:.3f}" if "mean_coverage" in final else ""
     log_fn(f"\n[FINAL] pure-policy success={final['success_rate']:.3f}{cov_str} "

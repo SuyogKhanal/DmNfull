@@ -1,0 +1,23 @@
+% Preamble additions for the CoC report build.
+% Tables are set one step smaller than the body so that the wide results tables
+% (final success rate, information gain, per-round cost) keep every cell on one
+% line and no table exceeds the text width.
+\usepackage{etoolbox}
+\AtBeginEnvironment{longtable}{\footnotesize}
+\setlength{\tabcolsep}{4pt}
+
+% Algorithm 1 is a typeset algorithm float, not a verbatim block. algorithm.sty supplies the
+% float and its caption; algpseudocode supplies the numbered pseudocode body. Both are installed
+% in the local TinyTeX tree and both compile under xelatex, which is the engine this build uses.
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% The fourth heading level carries the ablation subsections (5.1.7.1 to 5.1.7.5), which run to
+% several pages each. LaTeX sets \paragraph as a run-in heading, which reads as a bold lead-in to
+% a paragraph rather than as a section. A positive "before" skip makes it a display heading.
+\makeatletter
+\renewcommand\paragraph{\@startsection{paragraph}{4}{\z@}%
+  {2.2ex \@plus 0.6ex \@minus 0.2ex}%
+  {0.8ex \@plus 0.2ex}%
+  {\normalfont\normalsize\bfseries}}
+\makeatother
