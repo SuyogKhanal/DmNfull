@@ -173,3 +173,26 @@ pick the demo, and both are counted honestly:
   **reported separately and not counted as a fault**.
 
 A run whose `run.log` is missing or truncated is failed, not passed.
+
+## 7. Comparability with Table 7 — read this before comparing any number
+
+These runs use the **code's** initial-demonstration counts (Lift Ni=8, Wipe Ni=12). Table 7 of
+`05_progress.md` was produced under the *reported* protocol of **Ni=20 for every task**
+(`05_progress.md:154`). The report itself notes the consequence at `:158`: "the uniform count of
+twenty over-provisions the easiest robot task, which is why one task in Table 7 begins the budget
+close to a perfect success rate."
+
+A cell run at Ni=8 therefore **cannot** be compared like-for-like with a Table-7 cell run at Ni=20:
+the Ni=8 policy starts far lower and has real headroom to climb. The effect is visible:
+
+| cell | Table 7 (DISEIL, Ni=20) | existing results in repo (Ni=8/12) | this re-run (Ni=8/12) |
+|---|---|---|---|
+| Lift (state) | 100.0 ± 0.0 | 99.6 | **99.6 ± 0.9** |
+| Lift (image) | 100.0 ± 0.0 | 77.8 | **86.6 ± 5.7** |
+
+Lift (state) sits at the ceiling either way, so it agrees. Lift (image) does **not**: neither this
+re-run nor the results already committed to the repo reproduce Table 7's 100.0 ± 0.0. This is a
+property of the initial-demonstration count, not of the OpenRouter migration — the existing repo
+results were produced on the old API and land at 77.8, below both.
+
+Nothing here was tuned to close that gap. The runs use the code's hyperparameters unchanged.
