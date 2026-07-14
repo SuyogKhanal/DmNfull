@@ -1,0 +1,88 @@
+# config_pusht_image_or20.yaml — Push-T (IMAGE), DISEIL (p4_subtask), B=20, OpenRouter.
+#
+# NEW FILE. A copy of the image study config `config_pusht_image.yaml` (the arm that
+# produced the report's Push-T (image) DISEIL row) with exactly TWO knobs moved, both
+# required by the CoC protocol:
+#
+#   budget:     100  -> 20     the CoC protocol is B = 20 acquired demonstrations.
+#   target_sr:  1.0  -> 1.01   the CoC protocol spends the WHOLE fixed budget. The
+#                              early-stop test is `sr >= target_sr` with sr in [0,1],
+#                              so 1.0 is NOT unreachable (a 60/60 rollout satisfies it).
+#                              1.01 is unreachable => the stop can never fire.
+#
+# and one SCOPE change: methods drops `diff_dagger`. Baseline results already exist and
+# are NOT re-run; this file runs the DISEIL arm only.
+#
+# EVERYTHING that defines the method or the task is UNCHANGED: initial_demos 20,
+# demos_per_round 1, nd_retrain 1, heldout_n 100 (frozen set, seed_base 7777),
+# eval_num_envs 10, rollout_episodes 60, max_steps 200, initial_epochs 300,
+# round_epochs 200, max_train_steps 30000, and the whole V3-hybrid p4.subtask block
+# (cluster_features: visual, R3M, PCA-16) — the visual-clustering study as run.
+#
+# RETRAIN CADENCE = EVERY 1 DEMO (nd_retrain: 1), as in the study config. Not changed.
+# (05_progress.md:150's "every fourth acquired demonstration" is a report-side error;
+# the code retrains after every demo. No hyperparameter is touched here.)
+#
+# The policy observes the camera image via $SUITE_HYDRA_CFG -> configs/hydra/pusht_image.yaml
+# (exported by the launcher), exactly as in the study.
+#
+# NODES: the DISEIL image arm is H100-ONLY (on h200l it hangs building the extra rgb
+# reposition env — multiple Vulkan render contexts; confirmed job 102948).
+
+n_runs: 1
+initial_demos: 20         # MUST stay 20: the bootstrap init_ckpt was trained on it
+budget: 20                # <-- CoC protocol: B = 20
+demos_per_round: 1        # D = 1
+target_sr: 1.01           # <-- unreachable: never early-stop, always spend the budget
+max_rounds: 100
+max_steps: 200
+heldout_n: 100            # frozen held-out set (seed_base 7777, same seeds every round)
+seed: 1                   # overridden per-job by the launcher (seeds 1..5)
+
+nd_retrain: 1             # Push-T retrain cadence AS IN THE SHIPPED STUDY CONFIGS
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10         # render-safe; heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60
+max_episodes_per_arm: 5000
+
+methods: ["p4_subtask"]   # DISEIL only. Baselines already exist; none are re-run.
+
+environments: ["PushT-v1"]
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  prompts_dir: null
+
+  # ── p4_subtask block — IDENTICAL to config_pusht_image.yaml ───────────────
+  subtask:
+    enabled: true
+    collect: hybrid
+    signal: diffusion
+
+    # IMAGE-based clustering: the point of this study (R3M over key-frames -> PCA).
+    cluster_features: visual
+    embed_model: r3m
+    embed_pool: concat
+    embed_pca_dim: 16
+
+    snap_eps: 0.02
+    bridge_max_xy: 0.10
+    bridge_max_theta: 0.6
+    confirm_target_with_heldout: true
+    max_clusters: 6
+    diversity: true
+    memory_gamma: 0.6
+    memory_sigma: 0.06
+    perturb_max_xy: 0.06
+    perturb_max_theta: 0.4
+    exact_anchor_fallback: true

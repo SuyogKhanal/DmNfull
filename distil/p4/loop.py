@@ -143,6 +143,12 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
                        f"decision={str(label).splitlines()[-1][:80] if label else '?'} "
                        f"confidence={confidence} tokens={tokens.get('total')}")
             except Exception as e:
+                if os.environ.get("DISEIL_STRICT_LLM", "0") == "1":
+                    # A run that loses the LLM part-way is not a DISEIL run. Abort rather
+                    # than finish on the geometric fallback and write a plausible result.
+                    raise RuntimeError(
+                        f"DISEIL_STRICT_LLM=1: LLM call failed in round {rnd} ({e!r}). "
+                        f"Aborting instead of falling back to the geometric planner.") from e
                 log_fn(f"  [distil-llm] failed ({e}); geometric fallback")
 
         # ── collect ONE successful demo (in-round escalation on infeasible) ──

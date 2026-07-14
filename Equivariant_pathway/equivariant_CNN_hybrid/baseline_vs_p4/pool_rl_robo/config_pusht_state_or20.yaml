@@ -1,0 +1,81 @@
+# config_pusht_state_or20.yaml — Push-T (STATE), DISEIL (p4_subtask), B=20, OpenRouter.
+#
+# NEW FILE. A copy of the state study config `config_p4_hybrid.yaml` (the arm that
+# produced the report's Push-T (state) DISEIL row: V3 hybrid = SELECT/BRIDGE, GEOMETRIC
+# clustering) with exactly TWO knobs moved, both required by the CoC protocol:
+#
+#   budget:     100  -> 20     the CoC protocol is B = 20 acquired demonstrations.
+#   target_sr:  1.0  -> 1.01   the CoC protocol spends the WHOLE fixed budget. The
+#                              early-stop test is `sr >= target_sr` with sr in [0,1]
+#                              (p4/select_arm.py:366, fork pipeline), so 1.0 is NOT
+#                              unreachable: a 60/60 rollout satisfies it. 1.01 is
+#                              mathematically unreachable => the stop can never fire.
+#
+# EVERYTHING that defines the method or the task is UNCHANGED and must stay so:
+#   initial_demos 20 (the bootstrap init_ckpt was trained on — MUST stay 20),
+#   demos_per_round 1, nd_retrain 1 (RETRAIN AFTER EVERY DEMO — see below),
+#   heldout_n 100 + heldout_seed_base 7777 (the frozen 100-episode held-out set, same
+#   seeds every round), eval_num_envs 10, rollout_episodes 60, max_steps 200,
+#   initial_epochs 300, round_epochs 200, max_train_steps 30000, and the whole
+#   p4/subtask block.
+#
+# RETRAIN CADENCE = EVERY 1 DEMO (nd_retrain: 1). This is the cadence of the method and
+# it is NOT changed here. Every Push-T config that was actually run sets nd_retrain: 1
+# (config_p4_hybrid.yaml:24, config_pusht_image.yaml:32, config_astar_p4top3.yaml:24);
+# the nd_retrain: 4 in the suite's master config.yaml:31 is an unused default that no
+# Push-T study config selects.
+#   NOTE for the write-up: 05_progress.md:150 states the robot tasks retrain "once every
+#   fourth acquired demonstration" and are "refreshed five times over the budget". That
+#   prose does not describe the code that produced the results. The REPORT is wrong here,
+#   not the code — this is a report-side fix, and no hyperparameter is touched.
+
+n_runs: 1
+initial_demos: 20         # MUST stay 20: the bootstrap init_ckpt was trained on it
+budget: 20                # <-- CoC protocol: B = 20
+demos_per_round: 1        # D = 1
+target_sr: 1.01           # <-- unreachable: never early-stop, always spend the budget
+max_rounds: 100
+max_steps: 200
+heldout_n: 100            # frozen held-out set (seed_base 7777, same seeds every round)
+seed: 1                   # overridden per-job by the launcher (seeds 1..5)
+
+nd_retrain: 1             # Push-T retrain cadence AS IN THE SHIPPED STUDY CONFIGS
+initial_epochs: 300
+round_epochs: 200
+max_train_steps: 30000
+eval_num_envs: 10         # render-safe; heldout_n(100) % eval_num_envs(10) == 0
+rollout_episodes: 60
+max_episodes_per_arm: 5000
+
+methods: ["p4_subtask"]   # DISEIL only. Baselines already exist; none are re-run.
+
+environments: ["PushT-v1"]
+
+p4:
+  model: null
+  vlm: null
+  reasoning_llm: null
+  config_llm: null
+  high_loss_percentile: 95
+  phase_b_workers: 8
+  batch_multiplier: 8
+  represcribe_attempts: 5
+  infeasible_attempts: 5
+  prompts_dir: null
+
+  # ── p4_subtask block — IDENTICAL to config_p4_hybrid.yaml ─────────────────
+  subtask:
+    enabled: true
+    collect: hybrid        # v3 SELECT/BRIDGE (the arm the report describes)
+    signal: diffusion
+    snap_eps: 0.02
+    bridge_max_xy: 0.10
+    bridge_max_theta: 0.6
+    confirm_target_with_heldout: true
+    max_clusters: 6
+    diversity: true
+    memory_gamma: 0.6
+    memory_sigma: 0.06
+    perturb_max_xy: 0.06
+    perturb_max_theta: 0.4
+    exact_anchor_fallback: true

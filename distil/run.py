@@ -58,6 +58,34 @@ def _load_dotenv(root: Path, log=print) -> None:
         log(f"[env] loaded {env_path}")
 
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _strict_llm() -> bool:
+    """DISEIL_STRICT_LLM=1 => an unusable LLM is a hard error, not a silent fallback."""
+    return os.environ.get("DISEIL_STRICT_LLM", "0") == "1"
+
+
+def _assert_openrouter(log=print) -> None:
+    """Fail loudly unless we are pointed at OpenRouter with an OpenRouter key.
+
+    p4/llm.py::_oai_client falls back to OPENAI_API_KEY and to an unset base_url, so a
+    missing OPENROUTER_API_KEY would silently route a Qwen model name at the real OpenAI
+    API, and a missing OPENAI_BASE_URL makes make_llm() return None (geometric fallback).
+    Both produce a plausible result.json that is not DISEIL. Refuse to start instead.
+    """
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    base = os.environ.get("OPENAI_BASE_URL", "")
+    if not key:
+        raise RuntimeError("DISEIL_STRICT_LLM=1: OPENROUTER_API_KEY is not set.")
+    if base.rstrip("/") != OPENROUTER_BASE_URL:
+        raise RuntimeError(
+            f"DISEIL_STRICT_LLM=1: OPENAI_BASE_URL must be exactly {OPENROUTER_BASE_URL}, "
+            f"got {base!r}.")
+    log(f"[llm-guard] OpenRouter asserted: base_url={base} key=OPENROUTER_API_KEY(len={len(key)}) "
+        f"vlm={os.environ.get('VLM_MODEL_NAME')} llm={os.environ.get('LLM_MODEL_NAME')}")
+
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -302,10 +330,16 @@ def main():
     llm = None
     if use_llm:
         from .p4.llm import make_llm
+        if _strict_llm():
+            _assert_openrouter(log)
         llm = make_llm(use_vlm=bool(p4f.get("vlm", True)), use_kag=bool(p4f.get("kag", True)))
         log(f"[llm] OpenRouter client " + ("READY" if llm else
             "UNAVAILABLE (no OPENROUTER creds); geometric fallback")
             + f" | vlm={p4f.get('vlm')} kag={p4f.get('kag')}")
+        if llm is None and _strict_llm():
+            raise RuntimeError(
+                "DISEIL_STRICT_LLM=1: make_llm() returned None (no OpenRouter creds). "
+                "Refusing to run — a silent geometric-fallback run is NOT DISEIL.")
 
     if out:
         _copy_kag(cfg["task"], out, log)

@@ -16,6 +16,7 @@ null (the fork's *_override path is the deferred Phase-B, not relied on here).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -30,6 +31,53 @@ from .collect import collect_subtask_demo_v2  # noqa: E402
 # reuse the p4_top3 wrapper's suite-curve writer + KAG resolver (no behaviour change)
 from ..p4 import kag as KAG               # noqa: E402
 from ..p4.pipeline import _suite_curve, _apply_prompt_overrides  # noqa: E402
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _strict_llm() -> bool:
+    """DISEIL_STRICT_LLM=1 => an unusable LLM aborts the run instead of degrading."""
+    return os.environ.get("DISEIL_STRICT_LLM", "0") == "1"
+
+
+def _preflight_openrouter() -> None:
+    """Assert OpenRouter is configured AND actually answering, before the loop starts.
+
+    The fork swallows every LLM error (llm_clients._oai_client raises lazily inside the
+    pipeline's try/except), so a missing key / wrong base_url / 404 does NOT crash: the
+    run finishes with n_queries=0 and writes a plausible learning_curve.json that is not
+    DISEIL at all. There is no fallback flag to catch it after the fact. So we make one
+    real call up front and refuse to start if it does not come back.
+    """
+    base = os.environ.get("OPENAI_BASE_URL", "")
+    if base.rstrip("/") != OPENROUTER_BASE_URL:
+        raise RuntimeError(
+            f"DISEIL_STRICT_LLM=1: OPENAI_BASE_URL must be exactly {OPENROUTER_BASE_URL}, "
+            f"got {base!r}. (run_pool_rl_robo.sh clobbers it with a local vLLM proxy URL — "
+            f"use the OpenRouter launcher instead.)")
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError("DISEIL_STRICT_LLM=1: OPENAI_API_KEY is not set.")
+    # The fork reads OPENAI_API_KEY only. An OpenAI sk-proj- key against OpenRouter is a
+    # 401, and an OpenRouter key against api.openai.com would be a silent model 404.
+    if not key.startswith("sk-or-"):
+        raise RuntimeError(
+            "DISEIL_STRICT_LLM=1: OPENAI_API_KEY is not an OpenRouter key (expected the "
+            "sk-or-... OPENROUTER_API_KEY). The fork reads OPENAI_API_KEY only.")
+
+    from types import SimpleNamespace
+    from diffdagger.main_analysis.llm_clients import PlainClient
+    llm_model = os.environ.get("LLM_MODEL_NAME", "qwen/qwen3-32b")
+    cfg = SimpleNamespace(model=llm_model, effort="low", max_output_tokens=512)
+    r = PlainClient(cfg).structure('Return ONLY this JSON: {"ok":true}')
+    text, ptok, ctok = r.get("text", ""), r.get("prompt_tokens", 0), r.get("completion_tokens", 0)
+    if not text.strip() or (ptok + ctok) <= 0:
+        raise RuntimeError(
+            f"DISEIL_STRICT_LLM=1: OpenRouter pre-flight returned no usable output "
+            f"(text={text!r}, prompt_tokens={ptok}, completion_tokens={ctok}). Aborting "
+            f"rather than running the deterministic no-LLM fallback.")
+    print(f"[llm-guard] OpenRouter pre-flight OK: base_url={base} model={llm_model} "
+          f"tokens={ptok}+{ctok} reply={text.strip()[:60]!r}", flush=True)
 
 
 def run_p4_subtask_arm(*, method: str, top_k: int, cfg, env, eval_env, reposition_env,
@@ -47,7 +95,13 @@ def run_p4_subtask_arm(*, method: str, top_k: int, cfg, env, eval_env, repositio
         raise RuntimeError(
             f"p4_subtask needs a PushT-Subtask-v0 reposition env for {suite_env_id}; "
             f"only PushT is wired (set need_repo + prefer_subtask in the orchestrator).")
-    if not llm_client_on:
+    if _strict_llm():
+        if not llm_client_on:
+            raise RuntimeError(
+                "DISEIL_STRICT_LLM=1: llm_client_on is False (--no-llm). Refusing to run — "
+                "a prescription from env-sampled configs is NOT DISEIL.")
+        _preflight_openrouter()
+    elif not llm_client_on:
         print("[p4_subtask] WARNING: LLM disabled (--no-llm); prescription falls back "
               "to env-sampled configs (the sub-task anchor still applies).")
 

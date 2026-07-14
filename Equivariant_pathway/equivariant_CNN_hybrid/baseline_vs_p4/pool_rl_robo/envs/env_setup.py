@@ -19,6 +19,7 @@ later phase, after PushT validates.
 """
 from __future__ import annotations
 
+import os
 import sys
 import types
 from dataclasses import dataclass
@@ -27,7 +28,10 @@ from typing import Dict, List, Optional
 
 # ---- paths --------------------------------------------------------------
 SUITE_ROOT = Path(__file__).resolve().parents[1]          # pool_rl_robo/
-RESULTS_ROOT = SUITE_ROOT / "results"
+# POOL_RESULTS_ROOT redirects the whole results tree (default: suite-local results/).
+# Used to write a re-run into its own namespace so published results cannot be
+# clobbered; unset => byte-identical behaviour to before.
+RESULTS_ROOT = Path(os.environ.get("POOL_RESULTS_ROOT") or (SUITE_ROOT / "results"))
 FORK_ROOT = (SUITE_ROOT / "external" / "diff_dagger").resolve()   # → the fork
 
 
