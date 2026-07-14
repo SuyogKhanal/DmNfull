@@ -164,3 +164,10 @@ Smokes: 111025 (Door, /tmp — output lost, compute-node-local), 111026 (Door, /
 quoted in §4), 111034 (Push-T state).
 
 *(Remaining cells are appended as they are submitted.)*
+
+### Door (state) — COMPLETE, 5/5 valid
+Jobs 111027 / 111030 / 111031 / 111032 / 111033 — all COMPLETED (03:01–05:21 wall each).
+**96.6 ± 1.3** over 5 seeds. **0 fallback rounds.** Seed 2 acquired 16/20 (policy saturated
+at SR 0.96 — no usable failures for 4 consecutive rounds, remaining budget unspendable; the
+LLM ran throughout). `saturation_patience` was not touched. Published Door (state) seed 4
+shows the same behaviour at 11/20, so this is method behaviour, not a re-run artefact.

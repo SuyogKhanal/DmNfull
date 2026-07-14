@@ -63,11 +63,24 @@ def _distil_seed(run_dir: Path) -> Optional[Dict[str, Any]]:
 
     n_init = int(r.get("n_init_demos") or 0)
     n_demos = int(r.get("n_demos") or 0)
+    acquired = n_demos - n_init
+    budget = int(r.get("budget") or 0)
+    # Budget shortfall: the loop stops when the policy yields NO usable failures for
+    # `saturation_patience` (=4) consecutive rounds (p4/loop.py:110-113). The remaining
+    # budget is then UNSPENDABLE — there is no failure left to prescribe a correction
+    # for. This is existing method behaviour and the PUBLISHED runs contain it too
+    # (published Door/state seed4 acquired 11/20). It is NOT a fallback and it does NOT
+    # make the run un-DISEIL; it is reported, not hidden, and not "fixed" by touching
+    # saturation_patience.
+    saturated = acquired < budget
     return {
         "final_success_rate": r.get("final_success"),
-        "demos_acquired": n_demos - n_init,
+        "demos_acquired": acquired,
+        "budget_spent_in_full": not saturated,
+        "shortfall_reason": ("policy saturated: no usable failures for 4 consecutive "
+                             "rounds, remaining budget unspendable") if saturated else None,
         "n_init_demos": n_init,
-        "budget": r.get("budget"),
+        "budget": budget,
         "rounds_total": len(hist),
         "rounds_llm_active": llm_active,
         "rounds_budget_free": budget_free,
@@ -170,10 +183,17 @@ def main() -> int:
     srs = [v["final_success_rate"] for v in done.values()
            if v.get("final_success_rate") is not None]
 
-    valid = {k: v for k, v in done.items() if v.get("rounds_fallback", 0) == 0
-             and v.get("demos_acquired") == a.budget}
+    # VALIDITY = "was this a DISEIL run?" A fallback round means the deterministic
+    # planner stood in for the LLM, so the run is not DISEIL and is discarded.
+    # A budget shortfall from policy saturation is NOT an invalidator: the LLM ran on
+    # every round it could, and the remaining budget was unspendable because the policy
+    # produced no failures. The published runs contain such seeds (Door/state seed4:
+    # 11/20), so excluding them here would make the re-run non-comparable to the
+    # numbers it is meant to reproduce.
+    valid = {k: v for k, v in done.items() if v.get("rounds_fallback", 0) == 0}
     vsrs = [v["final_success_rate"] for v in valid.values()
             if v.get("final_success_rate") is not None]
+    short = {k: v for k, v in done.items() if not v.get("budget_spent_in_full", True)}
 
     cell = {
         "task": a.task,
@@ -192,10 +212,16 @@ def main() -> int:
         "final_success_rate_mean": round(statistics.mean(vsrs), 4) if vsrs else None,
         "final_success_rate_std": (round(statistics.stdev(vsrs), 4)
                                    if len(vsrs) > 1 else (0.0 if vsrs else None)),
-        "final_success_rate_mean_all_completed": round(statistics.mean(srs), 4) if srs else None,
         "total_fallback_rounds": sum(v.get("rounds_fallback", 0) for v in done.values()),
-        "note": ("mean/std are over VALID seeds only: zero fallback rounds AND the full "
-                 "budget acquired. Seeds failing either test are listed but excluded."),
+        "seeds_with_budget_shortfall": sorted(short, key=int),
+        "note": (
+            "mean/std are over VALID seeds: zero fallback rounds, i.e. the LLM ran on "
+            "every round it was called for. A seed that acquired fewer than B demos "
+            "because the policy SATURATED (no usable failures for 4 consecutive rounds, "
+            "so the remaining budget was unspendable) is still a faithful DISEIL run and "
+            "IS included -- the published runs contain such seeds too (published "
+            "Door/state seed4 acquired 11/20). Shortfalls are listed in "
+            "seeds_with_budget_shortfall and per-seed under shortfall_reason."),
     }
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)

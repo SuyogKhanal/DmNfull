@@ -6,7 +6,11 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-gpu=8
 #SBATCH --mem=48G
-#SBATCH --time=2-00:00:00
+# A Push-T round is expensive: 60-episode failure rollout + from-scratch retrain
+# (nd_retrain=1) + 100-episode frozen held-out eval + the VLM/LLM stage. The D5 study
+# measured ~1,891 s/round on image, so B=20 is ~10-12 h, plus the Ni=20 bootstrap for
+# any seed with no published checkpoint. 3 days leaves real headroom.
+#SBATCH --time=3-00:00:00
 #SBATCH --output=distil/slurm_logs/%x_%j.out
 #SBATCH --error=distil/slurm_logs/%x_%j.err
 # ===========================================================================
