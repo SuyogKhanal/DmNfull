@@ -171,3 +171,13 @@ Jobs 111027 / 111030 / 111031 / 111032 / 111033 — all COMPLETED (03:01–05:21
 at SR 0.96 — no usable failures for 4 consecutive rounds, remaining budget unspendable; the
 LLM ran throughout). `saturation_patience` was not touched. Published Door (state) seed 4
 shows the same behaviour at 11/20, so this is method behaviour, not a re-run artefact.
+
+### Door (image) — COMPLETE, 5/5 valid
+Jobs 111103 (seed1) / 111173 / 111174 / 111175 / 111176 (seeds 2-5). **85.6 ± 7.3** over 5
+seeds, all 20/20 demos, **0 fallback rounds**.
+INFRASTRUCTURE NOTE: the first submission of seeds 2-5 (jobs 111115-111118) core-dumped at
+~7 min: SLURM packed all four onto h200l-m-03 and they crashed at the first image held-out
+eval, when the offscreen EGL renderer starts. This is the known h200l render fragility (the
+Push-T image study documents the same rgb-env hang on h200l). Seed 1 survived only because it
+landed on an a100. Resubmitted seeds 2-5 with `--exclude=h200l-m-01..04`; all four then ran to
+completion on a100. Not a method/protocol/LLM issue; no result affected.

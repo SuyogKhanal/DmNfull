@@ -32,7 +32,19 @@ Arm `full` · B=20 · D=1 · held-out 100 eps · VLM `qwen/qwen3-vl-30b-a3b-inst
 
 ## Door (image)
 
-**UNRUN** — no result file. Not reported, not invented.
+Arm `full` · B=20 · D=1 · held-out 100 eps · VLM `qwen/qwen3-vl-30b-a3b-instruct` · LLM `qwen/qwen3-32b`
+
+| seed | demos acquired | rounds | LLM-active | budget-free | **fallback** | VLM tokens | LLM tokens | final SR | valid (LLM ran) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 20/20 | 24 | 23 | 1 | **0** | 66,804 | 165,186 | 0.95 | YES |
+| 2 | 20/20 | 25 | 24 | 1 | **0** | 67,963 | 166,431 | 0.9 | YES |
+| 3 | 20/20 | 25 | 24 | 1 | **0** | 74,449 | 194,785 | 0.82 | YES |
+| 4 | 20/20 | 22 | 21 | 1 | **0** | 65,712 | 156,339 | 0.76 | YES |
+| 5 | 20/20 | 22 | 21 | 1 | **0** | 66,823 | 150,700 | 0.85 | YES |
+
+**Cell total fallback rounds: 0.** 5/5 completed seeds are valid (the LLM ran on every round it was called for).
+
+**Final held-out success rate: 85.6 ± 7.3** over 5 seeds.
 
 ---
 
