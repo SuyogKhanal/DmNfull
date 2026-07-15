@@ -269,7 +269,7 @@ class RobosuiteHybridPlanner:
     # ── collect one demo for a spec ──────────────────────────────────────────
     def collect(self, spec: LayoutSpec, env, expert, cfg) -> tuple:
         ms = int(cfg["env_horizon"])
-        img = int(cfg["image_size"]) if cfg.get("modality") == "image" else None
+        img = int(cfg["image_size"]) if cfg.get("modality") in ("image", "hybrid") else None
         if spec.mode == "select":
             demo, ok, t = collect_select(env, expert, seed=spec.cand["seed"],
                                          exec_actions=spec.cand["exec_actions"],

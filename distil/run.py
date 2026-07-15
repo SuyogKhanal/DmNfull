@@ -167,7 +167,7 @@ def _gw_bootstrap(n, bootstrap_dir, log):
 
 def _run_baseline(cfg, args, out, device, n_init, make_env_fn, make_expert_fn, log):
     env_h = cfg["env_horizon"]
-    img = int(cfg["image_size"]) if cfg["modality"] == "image" else None
+    img = int(cfg["image_size"]) if cfg["modality"] in ("image", "hybrid") else None
     init = _bootstrap(cfg["task"], cfg["modality"], n_init, args.bootstrap_dir,
                       make_env_fn, make_expert_fn, env_h, log, img)
     if args.make_bootstrap:
@@ -238,7 +238,7 @@ def main():
     p = argparse.ArgumentParser(description="DISTIL consolidated runner")
     p.add_argument("--task", required=True, choices=["Lift", "Wipe", "Door", "GridWorld"],
                    help="robot tasks (robosuite) + GridWorld (equivariant classifier). PushT = Phase 2.")
-    p.add_argument("--modality", default="state", choices=["state", "image"])
+    p.add_argument("--modality", default="state", choices=["state", "image", "hybrid"])
     p.add_argument("--ablation", default="full")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--budget", type=int, default=20,
@@ -293,12 +293,12 @@ def main():
     ek = dict(wipe_marker_obs_k=cfg.get("wipe_marker_obs_k", 0))
     # image modality: build the env with an offscreen renderer + the task's VLM/policy
     # camera so the loop can pull per-step RGB frames (descriptor stays geometric).
-    if cfg["modality"] == "image":
+    if cfg["modality"] in ("image", "hybrid"):
         from .p4.render import TASK_CAMERA
         ek.update(offscreen=True, render_camera=TASK_CAMERA.get(cfg["task"], "agentview"))
     make_env_fn = lambda h: make_env(cfg["task"], horizon=h, **ek)
     make_expert_fn = lambda: make_expert(cfg["task"])
-    img = int(cfg["image_size"]) if cfg["modality"] == "image" else None
+    img = int(cfg["image_size"]) if cfg["modality"] in ("image", "hybrid") else None
 
     # baseline arm (Safe/Dropout/Ensemble/Thrifty/Stagger/Diff-DAgger) — robot diffusion only
     if args.ablation in BASELINE_ARMS:

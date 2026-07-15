@@ -37,7 +37,7 @@ def run_distil(cfg, make_env_fn, make_expert_fn, device, log_fn=print,
     obs_h, act_h = cfg["obs_horizon"], cfg["act_horizon"]
     eval_seed_base, eval_eps = cfg["eval_seed_base"], cfg["eval_episodes"]
     patience = int(cfg.get("patience_window", 2))
-    img = int(cfg["image_size"]) if cfg.get("modality") == "image" else None
+    img = int(cfg["image_size"]) if cfg.get("modality") in ("image", "hybrid") else None
     p4 = dict(cfg.get("p4", {}) or {})
     p4["_seed"] = cfg["seed"]                 # for the planner's random-allocation rng
     n_screen = int(p4.get("screen_episodes", 40))

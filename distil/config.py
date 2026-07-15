@@ -179,7 +179,7 @@ def get_config(task: str, modality: str = "state", ablation: str = "full",
     budget counts SUCCESSFUL demos added on top of the bootstrap (09_..md); the loop's
     stop threshold final_demos is set to n_init + budget in run.py once n_init is known."""
     assert task in TASKS, task
-    assert modality in ("state", "image"), modality
+    assert modality in ("state", "image", "hybrid"), modality
     # GridWorld image = the SAME loop with a plain RGB CNN policy head on the 80x80
     # bird-eye raster (gridworld/rgb_policy.py + encoder_rgb.py); robot tasks use the
     # spatial-softmax encoder. The descriptor stays GEOMETRIC either way (02_..md #4).
