@@ -2,10 +2,17 @@
 """
 Publication figures for the CoC report (method name: DISEIL).
 
-Source of truth: ablations_results/DISTIL_ablation_results.xlsx  (24 sheets).
-Every number plotted is parsed from that workbook at run time. Nothing is
-hand-entered here. The workbook's method column carries the old internal name;
-it is relabelled DISEIL on every axis and legend.
+Source of truth: ablation_se.json (loaded through ablation_data.py), the tidy
+per-method table the DATA agent built from ablations_results/sheets/*.csv (the
+NEW run). Every number plotted is read from that file at run time; nothing is
+hand-entered here. The method is DISEIL on every axis, legend and label.
+
+Dispersion rule (the crux): the CSVs store mean +/- sample standard deviation.
+The report reports mean +/- STANDARD ERROR, SE = std / sqrt(n), with n = 9 for
+GridWorld 5x5 (9 seeds) and n = 5 for the robot tasks. The JSON already carries
+the precomputed `se` for every method row, so every error bar drawn here is SE
+(small), never std/variance. The A6 (F5) ablated bars now carry their SE bar,
+which the previous build was missing.
 
 Outputs: <fig>.pdf (vector, for LaTeX) and <fig>.png (preview) per figure.
 
@@ -15,32 +22,32 @@ Rules enforced by this script (supervisor revision spec, section D):
         labels and axis/legend keys stay; sentences do not;
   D-G3  Lift appears in no ablation figure, and no figure says that it was left out;
   E1    the ablations are drawn on three settings only: GridWorld (image),
-        Push-T (state), Door (image);
-  E4    displayed study labels use the renumbering A13->A12, A14->A13, A15->A14,
-        D1->A15, D2->A16, D3->A17, D4->A18, D5->A19. A12 (demonstrations per
-        round) is removed, so F9 no longer exists.
+        Push-T (state), Door (image).
 
-Two figures have been retired and their generating code removed: F10, the
-memory-constant sweep, whose study is deleted, and F14, the paired-margin forest.
+Two figures have been retired and their generating code removed: the memory-
+constant sweep and the paired-margin forest. The round-2 deletions
+(memory-constants, aggregate-significance, cluster-purity, compute-cost) are not
+resurrected.
 
 Typeface: Liberation Serif, metrically identical to Times New Roman and carrying
 the Greek glyphs the report needs. Palette: Okabe-Ito, minus both orange hues.
 """
 from __future__ import annotations
 
-import re
+import csv
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+from ablation_data import load
+
 ROOT = Path(__file__).resolve().parent.parent
-XLSX = ROOT / "ablations_results" / "DISTIL_ablation_results.xlsx"
+SHEETS = ROOT / "ablations_results" / "sheets"
 OUT = ROOT / "figures_generated"
 OUT.mkdir(exist_ok=True)
 
@@ -83,13 +90,6 @@ GREY, INK, MUTED, DARK = "#999999", "#222222", "#666666", "#404040"
 # Sequential single-hue ramp for ORDERED categories (a ladder is magnitude, not identity).
 SEQ = ["#08306B", "#2171B5", "#4292C6", "#6BAED6", "#9ECAE1", "#C6DBEF"]
 
-SETTINGS = [
-    ("GridWorld 5x5", "state"), ("GridWorld 5x5", "image"),
-    ("Push-T", "state"), ("Push-T", "image"),
-    ("Lift", "state"), ("Lift", "image"),
-    ("Wipe", "state"), ("Wipe", "image"),
-    ("Door", "state"), ("Door", "image"),
-]
 SHORT = {
     ("GridWorld 5x5", "state"): "GridWorld state", ("GridWorld 5x5", "image"): "GridWorld image",
     ("Push-T", "state"): "Push-T state", ("Push-T", "image"): "Push-T image",
@@ -101,7 +101,6 @@ SHORT = {
 PRIMARY = [("GridWorld 5x5", "image"), ("Push-T", "state"), ("Door", "image")]
 # Colour by setting, for the figures whose series ARE the settings.
 SETTING_COL = {PRIMARY[0]: BLUE, PRIMARY[1]: GREEN, PRIMARY[2]: PURPLE}
-N_SEEDS = {s: (9 if s[0].startswith("GridWorld") else 5) for s in SETTINGS}
 
 
 def save(fig, name: str) -> str:
@@ -112,127 +111,70 @@ def save(fig, name: str) -> str:
     return name
 
 
-def parse_ms(x):
-    """'89.4 ± 1.6' -> (89.4, 1.6). Returns (nan, nan) on anything else."""
-    if not isinstance(x, str):
-        return (float(x), np.nan) if isinstance(x, (int, float)) and not pd.isna(x) else (np.nan, np.nan)
-    m = re.match(r"\s*([-\d.]+)\s*±\s*([-\d.]+)", x)
-    return (float(m.group(1)), float(m.group(2))) if m else (np.nan, np.nan)
+# ----------------------------------------------------------------- data adapters
+def _rmap(sheet):
+    """(task, obs, method) -> row dict for a JSON sheet."""
+    return {(r["task"], r["obs"], r["method"]): r for r in load(sheet)}
 
 
-XL = pd.ExcelFile(XLSX)
+def ms(rmap, task, obs, method):
+    """Return (mean, se) for one cell; se may be nan where the source has none."""
+    r = rmap[(task, obs, method)]
+    se = r.get("se")
+    return (r["mean"], np.nan if se is None else se)
 
 
-def sheet(name):
-    return XL.parse(name, header=None)
+# Ground-truth success rate, keyed for quick lookup.
+_GT = _rmap("GT_SR")
 
 
-# ----------------------------------------------------------------- workbook adapters
-def load_gt_sr():
-    """GT_SR rows 4..13. Returns per-setting dict with baselines, DISEIL, best baseline."""
-    df = sheet("GT_SR")
-    cols = ["Safe", "Dropout", "Ensemble", "Thrifty", "Stagger", "Diff-DAgger"]
-    out = {}
-    for r in range(4, 14):
-        key = (df.iat[r, 0], df.iat[r, 1])
-        base = {}
-        for j, c in enumerate(cols, start=2):
-            m, s = parse_ms(df.iat[r, j])
-            if not np.isnan(m):
-                base[c] = (m, s)
-        dm, ds = parse_ms(df.iat[r, 8])
-        best_mean = float(df.iat[r, 9])
-        bname, bsd = next((k, v[1]) for k, v in base.items() if abs(v[0] - best_mean) < 1e-9)
-        out[key] = dict(baselines=base, diseil=(dm, ds),
-                        best=(best_mean, bsd), best_name=bname)
-    return out
+def diseil_full(s):
+    """Full DISEIL final SR (mean, SE) for a setting, from GT_SR."""
+    return ms(_GT, s[0], s[1], "DISEIL")
 
 
-def load_gt_ig():
-    df = sheet("GT_InfoGain")
-    return {(df.iat[r, 0], df.iat[r, 1]): float(df.iat[r, 8]) for r in range(4, 14)}
+def best_baseline(s):
+    """Best-baseline mean for a setting, read from the knockout sheets' ref column."""
+    r = _rmap("A3_Clustering_Off")[(s[0], s[1], "Best baseline (ref)")]
+    return r["mean"]
 
 
-def load_knockout(name):
+def a6_fallback():
+    """Fallback rate (% of rounds) with the knowledge graph off, from A6_KAG_Off.csv.
+
+    The JSON tidy table carries only the three success-rate arms; the fallback
+    column lives in the source CSV, so it is read straight from there. Column
+    layout: Task, Obs, Full ref, Best ref, mean +/- std, delta, margin, Fallback%.
     """
-    Knockout sheets share a layout: header at row 7, data rows 8..17.
-    col2 = full DISEIL, col3 = best baseline, col4 = 'mean ± std' DISPLAY string,
-    col5 = delta, col6 = margin retained (fraction), LAST col = numeric helper mean.
-
-    The A6 display strings are stale (they disagree with the sheet's own delta and
-    margin columns). The helper column is what the sheet's arithmetic uses, so the
-    MEAN always comes from the helper. The std is only available from the display
-    string; it is returned but must NOT be used for A6, and no A6 bar carries an
-    error bar in this script.
-
-    The delta and margin columns are FORMULAS and the workbook carries no cached
-    result for them, so pandas reads them as empty. They are re-evaluated here from
-    the sheet's own formula, which is
-        delta  = ablated mean − full DISEIL
-        margin = (ablated mean − best baseline) / (full DISEIL − best baseline)
-    No value is invented: only the workbook's arithmetic is applied to the
-    workbook's numbers.
-    """
-    df = sheet(name)
     out = {}
-    for r in range(8, 18):
-        key = (df.iat[r, 0], df.iat[r, 1])
-        _, sd = parse_ms(df.iat[r, 4])
-        full = float(df.iat[r, 2])
-        base = float(df.iat[r, 3])
-        mean = float(df.iat[r, -1])             # helper column
-        out[key] = dict(
-            full=full, base=base, mean=mean, sd=sd,
-            delta=mean - full,
-            margin=(np.nan if full == base else 100.0 * (mean - base) / (full - base)),
-        )
+    tasks = {"GridWorld 5x5", "Push-T", "Lift", "Wipe", "Door"}
+    with open(SHEETS / "A6_KAG_Off.csv", encoding="utf-8") as f:
+        for row in csv.reader(f):
+            if len(row) >= 8 and row[0] in tasks and row[1] in ("state", "image"):
+                out[(row[0], row[1])] = float(row[7])
     return out
-
-
-def load_wide(name, header_row, first_row, last_row, label_col=0, val_start=1):
-    """Sheets laid out one row per arm, one column per setting (A9, A10, A14, A15)."""
-    df = sheet(name)
-    hdr = [str(df.iat[header_row, c]).replace("\n", " ").strip()
-           for c in range(val_start, val_start + 10)]
-    keymap = {}
-    for c, h in zip(range(val_start, val_start + 10), hdr):
-        t, o = h.rsplit(" ", 1)
-        t = "GridWorld 5x5" if t.startswith("GridWorld") else t
-        keymap[c] = (t, o)
-    rows = {}
-    for r in range(first_row, last_row + 1):
-        arm = str(df.iat[r, label_col]).strip()
-        rows[arm] = {key: parse_ms(df.iat[r, c]) for c, key in keymap.items()}
-    return rows
-
-
-GT = load_gt_sr()
-IG = load_gt_ig()
-KO = {k: load_knockout(s) for k, s in [
-    ("A1", "A1_Memory_Off"), ("A3", "A3_Clustering_Off"), ("A4", "A4_LLM_vs_Heuristic"),
-    ("A5", "A5_VLM_Off"), ("A6", "A6_KAG_Off"), ("A7", "A7_Bridging_Off_"),
-    ("A8", "A8_Fallback_Only"),
-]}
 
 
 # --------------------------------------------------------------- shared bar-panel style
-def bar_panel(ax, labels, means, sds, colors, baseline=None, fmt="{:.1f}",
+def bar_panel(ax, labels, means, ses, colors, baseline=None, fmt="{:.1f}",
               floor=2.0, width=0.68, tick_fs=9, legend_loc="upper right",
               headroom_frac=0.30, rotation=28):
     """
-    The grouped-bar panel used by F1 and, by the spec's instruction, by F2, F4 and F5.
+    The grouped-bar panel used by F1, F2, F4 and F5.
 
     labels        x tick labels, one per arm
-    means/sds     arm values; sd may be nan, in which case no error bar is drawn
-    baseline      (mean, sd, name) of the best baseline, drawn as a dashed reference
+    means/ses     arm values; se may be nan, in which case no error bar is drawn
+    baseline      (mean, name) of the best baseline, drawn as a dashed reference
                   line and named in a legend key
     legend_loc    the corner of the panel that the arm ordering leaves empty
     headroom_frac top margin, as a fraction of the plotted range, reserved for the
                   value labels and the legend key
+
+    Error bars are STANDARD ERROR (SE = std / sqrt(n)); no bar carries std.
     """
     x = np.arange(len(labels))
-    lo_c = [m - (0.0 if np.isnan(sd) else sd) for m, sd in zip(means, sds)]
-    hi_c = [m + (0.0 if np.isnan(sd) else sd) for m, sd in zip(means, sds)]
+    lo_c = [m - (0.0 if np.isnan(se) else se) for m, se in zip(means, ses)]
+    hi_c = [m + (0.0 if np.isnan(se) else se) for m, se in zip(means, ses)]
     if baseline is not None:
         lo_c.append(baseline[0])
     span = max(max(hi_c) - min(lo_c), 1e-6)
@@ -240,16 +182,16 @@ def bar_panel(ax, labels, means, sds, colors, baseline=None, fmt="{:.1f}",
     hi = max(hi_c) + headroom_frac * span
     ax.set_ylim(lo, hi)
 
-    for xi, m, sd, c in zip(x, means, sds, colors):
+    for xi, m, se, c in zip(x, means, ses, colors):
         ax.bar(xi, m, width=width, color=c, edgecolor="white", linewidth=1.2, zorder=3)
-        if not np.isnan(sd):
-            ax.errorbar(xi, m, yerr=sd, fmt="none", ecolor=INK, elinewidth=1.0,
+        if not np.isnan(se):
+            ax.errorbar(xi, m, yerr=se, fmt="none", ecolor=INK, elinewidth=1.0,
                         capsize=3, zorder=4)
-        off = (0.0 if np.isnan(sd) else sd) + 0.012 * (hi - lo)
+        off = (0.0 if np.isnan(se) else se) + 0.012 * (hi - lo)
         ax.text(xi, m + off, fmt.format(m), ha="center", va="bottom",
                 fontsize=9, color=INK, zorder=5)
     if baseline is not None:
-        bm, bsd, bname = baseline
+        bm = baseline[0]
         ax.axhline(bm, color=INK, ls="--", lw=1.1, zorder=2)
         # The reference value is carried by a legend key, not by a floating label:
         # a label pinned to the line collides with the bar values beneath it. The
@@ -269,17 +211,17 @@ def bar_panel(ax, labels, means, sds, colors, baseline=None, fmt="{:.1f}",
 
 # ============================================================ F1 — allocation ladder
 def fig_allocation_ladder():
-    a2 = sheet("A2_RandomAlloc_Robots")
-    rnd = {}
-    for r in range(8, 16):
-        key = (a2.iat[r, 0], a2.iat[r, 1])
-        # A2 header: Task | Obs | Best gate baseline | Diff-DAgger | Stagger (random
-        # alloc) | DISEIL | DISEIL - Stagger.  Stagger is column 4, NOT column 3.
-        rnd[key] = parse_ms(a2.iat[r, 4])
-    # GridWorld has no A2 row: its random-allocation control is Stagger in Table 1.
-    for s in SETTINGS:
+    a2 = _rmap("A2_RandomAlloc_Robots")
+
+    def random_alloc(s):
+        # A2 supplies the uniform-random-allocation (Stagger) control for the robot
+        # tasks; GridWorld's random-allocation control is Stagger in GT_SR.
         if s[0].startswith("GridWorld"):
-            rnd[s] = GT[s]["baselines"]["Stagger"]
+            return ms(_GT, s[0], s[1], "Stagger")
+        return ms(a2, s[0], s[1], "Stagger (random alloc)")
+
+    a8 = _rmap("A8_Fallback_Only")
+    a3 = _rmap("A3_Clustering_Off")
 
     labels = ["Random alloc. (A2)", "Fallback only (A8)", "Clustering off (A3)",
               "DISEIL (full)"]
@@ -287,14 +229,13 @@ def fig_allocation_ladder():
 
     fig, axes = plt.subplots(1, 3, figsize=(FIGW, 3.5), gridspec_kw=dict(wspace=0.34))
     for ax, s in zip(axes, PRIMARY):
-        vals = [rnd[s], (KO["A8"][s]["mean"], KO["A8"][s]["sd"]),
-                (KO["A3"][s]["mean"], KO["A3"][s]["sd"]), GT[s]["diseil"]]
-        bm, bsd = GT[s]["best"]
+        vals = [random_alloc(s), ms(a8, s[0], s[1], "DISEIL (ablated)"),
+                ms(a3, s[0], s[1], "DISEIL (ablated)"), diseil_full(s)]
         # the ladder rises left to right, so the upper-left corner is the empty one
-        bar_panel(ax, labels, [m for m, _ in vals], [sd for _, sd in vals], colors,
-                  baseline=(bm, bsd, GT[s]["best_name"]), legend_loc="upper left")
+        bar_panel(ax, labels, [m for m, _ in vals], [se for _, se in vals], colors,
+                  baseline=(best_baseline(s),), legend_loc="upper left")
         ax.set_title(SHORT[s], pad=6)
-    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.d. over seeds")
+    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.e. over seeds")
     return save(fig, "F1_allocation_ladder")
 
 
@@ -302,35 +243,50 @@ def fig_allocation_ladder():
 def fig_gain_vs_success():
     """Grouped bars in the F1 style: success rate with the partition removed.
 
-    A single panel row. The information-gain row that this figure used to carry has
-    been withdrawn; the per-demonstration information gain is reported in the table
-    and in the text, not here.
+    A single panel row. The per-demonstration information gain is reported in the
+    table and in the text, not here.
     """
+    a3 = _rmap("A3_Clustering_Off")
     labels = ["DISEIL (full)", "Clustering off (A3)"]
     colors = [BLUE, SKY]
 
     fig, axes = plt.subplots(1, 3, figsize=(FIGW, 3.5), gridspec_kw=dict(wspace=0.34))
     for ax, s in zip(axes, PRIMARY):
         # DISEIL is the tallest bar and sits on the left, so the legend goes right
-        vals = [GT[s]["diseil"], (KO["A3"][s]["mean"], KO["A3"][s]["sd"])]
-        bm, bsd = GT[s]["best"]
-        bar_panel(ax, labels, [m for m, _ in vals], [sd for _, sd in vals], colors,
-                  baseline=(bm, bsd, GT[s]["best_name"]), legend_loc="upper right")
+        vals = [diseil_full(s), ms(a3, s[0], s[1], "DISEIL (ablated)")]
+        bar_panel(ax, labels, [m for m, _ in vals], [se for _, se in vals], colors,
+                  baseline=(best_baseline(s),), legend_loc="upper right")
         ax.set_title(SHORT[s], pad=6)
-    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.d. over seeds")
+    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.e. over seeds")
     return save(fig, "F2_gain_without_allocation")
 
 
 # ================================================== F3 — knockout summary (heatmap)
 def fig_knockout_heatmap():
     order = ["A3", "A8", "A6", "A7", "A4", "A5", "A1"]   # ranked by mean damage
+    sheetof = {
+        "A1": "A1_Memory_Off", "A3": "A3_Clustering_Off", "A4": "A4_LLM_vs_Heuristic",
+        "A5": "A5_VLM_Off", "A6": "A6_KAG_Off", "A7": "A7_Bridging_Off_",
+        "A8": "A8_Fallback_Only",
+    }
     names = {
         "A3": "A3  clustering off", "A8": "A8  fallback only", "A6": "A6  knowledge graph off",
         "A7": "A7  bridging off", "A4": "A4  reasoning model → heuristic",
         "A5": "A5  vision-language model off", "A1": "A1  cluster memory off",
     }
-    M = np.array([[KO[k][s]["margin"] for s in PRIMARY] for k in order])
-    D = np.array([[KO[k][s]["delta"] for s in PRIMARY] for k in order])
+    RM = {k: _rmap(sheetof[k]) for k in order}
+
+    def cell(k, s):
+        m = RM[k]
+        full = m[(s[0], s[1], "Full DISEIL (ref)")]["mean"]
+        base = m[(s[0], s[1], "Best baseline (ref)")]["mean"]
+        mean = m[(s[0], s[1], "DISEIL (ablated)")]["mean"]
+        delta = mean - full
+        margin = np.nan if full == base else 100.0 * (mean - base) / (full - base)
+        return margin, delta
+
+    M = np.array([[cell(k, s)[0] for s in PRIMARY] for k in order])
+    D = np.array([[cell(k, s)[1] for s in PRIMARY] for k in order])
 
     fig, ax = plt.subplots(figsize=(4.5, 3.6))
     cmap = plt.get_cmap("Blues_r")
@@ -339,6 +295,8 @@ def fig_knockout_heatmap():
     for i in range(M.shape[0]):
         for j in range(M.shape[1]):
             v, d = M[i, j], D[i, j]
+            if np.isnan(v):
+                v = 0.0
             if v < 0:
                 ax.add_patch(plt.Rectangle((j - .5, i - .5), 1, 1, fc=DARK,
                                            ec="white", lw=1.4, zorder=2))
@@ -372,36 +330,37 @@ def fig_knockout_heatmap():
 
 # ========================================== F4 — reasoning and vision (A4/A5)
 def fig_a4_a5_dotplot():
-    """Redrawn as grouped bars in the F1 style (spec, Fig 11)."""
+    """Redrawn as grouped bars in the F1 style."""
+    a4 = _rmap("A4_LLM_vs_Heuristic")
+    a5 = _rmap("A5_VLM_Off")
     labels = ["DISEIL (full)", "Reasoning → heuristic (A4)",
               "Vision-language model off (A5)"]
     colors = [BLUE, SKY, GREEN]
 
     fig, axes = plt.subplots(1, 3, figsize=(FIGW, 4.0), gridspec_kw=dict(wspace=0.34))
     for ax, s in zip(axes, PRIMARY):
-        vals = [GT[s]["diseil"], (KO["A4"][s]["mean"], KO["A4"][s]["sd"]),
-                (KO["A5"][s]["mean"], KO["A5"][s]["sd"])]
-        bm, bsd = GT[s]["best"]
-        bar_panel(ax, labels, [m for m, _ in vals], [sd for _, sd in vals], colors,
-                  baseline=(bm, bsd, GT[s]["best_name"]), legend_loc="upper right")
+        vals = [diseil_full(s), ms(a4, s[0], s[1], "DISEIL (ablated)"),
+                ms(a5, s[0], s[1], "DISEIL (ablated)")]
+        bar_panel(ax, labels, [m for m, _ in vals], [se for _, se in vals], colors,
+                  baseline=(best_baseline(s),), legend_loc="upper right")
         ax.set_title(SHORT[s], pad=6)
-    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.d. over seeds")
+    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.e. over seeds")
     return save(fig, "F4_reasoning_and_vision_small")
 
 
 # ============================================ F5 — grounding and feasibility (A6)
 def fig_kag_fallback():
-    """Redrawn as bars in the F1 style (spec, Fig 10).
+    """Bars in the F1 style.
 
     Top: success rate with the knowledge graph removed, against full DISEIL and the
-    best baseline. Bottom: the rate at which the feasibility screen has to fall back
-    to the deterministic rule once the graph is gone.
+    best baseline. Bottom: the rate at which the feasibility screen falls back to
+    the deterministic rule once the graph is gone.
 
-    The A6 display strings in the workbook are stale, so the A6 means come from the
-    sheet's own helper column and the A6 bars carry no error bar.
+    The A6 ablated bars now carry their SE error bar (SE = std / sqrt(n) from the
+    A6_KAG_Off sheet); the previous build drew them without one.
     """
-    a6 = sheet("A6_KAG_Off")
-    fb = {(a6.iat[r, 0], a6.iat[r, 1]): float(a6.iat[r, 7]) for r in range(8, 18)}
+    a6 = _rmap("A6_KAG_Off")
+    fb = a6_fallback()
 
     labels = ["DISEIL (full)", "Knowledge graph off (A6)"]
     colors = [BLUE, SKY]
@@ -410,13 +369,12 @@ def fig_kag_fallback():
     gs = fig.add_gridspec(2, 3, height_ratios=[1.5, 1.0], hspace=0.95, wspace=0.42)
     for j, s in enumerate(PRIMARY):
         ax = fig.add_subplot(gs[0, j])
-        vals = [GT[s]["diseil"], (KO["A6"][s]["mean"], np.nan)]
-        bm, bsd = GT[s]["best"]
-        bar_panel(ax, labels, [m for m, _ in vals], [sd for _, sd in vals], colors,
-                  baseline=(bm, bsd, GT[s]["best_name"]), legend_loc="upper right")
+        vals = [diseil_full(s), ms(a6, s[0], s[1], "DISEIL (ablated)")]
+        bar_panel(ax, labels, [m for m, _ in vals], [se for _, se in vals], colors,
+                  baseline=(best_baseline(s),), legend_loc="upper right")
         ax.set_title(SHORT[s], pad=6)
         if j == 0:
-            ax.set_ylabel("Final success rate (%),\nmean ± 1 s.d. over seeds")
+            ax.set_ylabel("Final success rate (%),\nmean ± 1 s.e. over seeds")
 
     axb = fig.add_subplot(gs[1, :])
     x = np.arange(len(PRIMARY))
@@ -435,16 +393,19 @@ def fig_kag_fallback():
     return save(fig, "F5_grounding_and_feasibility")
 
 
-# ================================================== F6 — bridging (A7 + A17)
+# ================================================== F6 — bridging (A7 + D3)
 def fig_bridging():
-    d3 = sheet("D3_Bridge_Split")          # study A17 after the renumbering
-    br = {(d3.iat[r, 0], d3.iat[r, 1]): (float(d3.iat[r, 2]), float(d3.iat[r, 3]))
-          for r in range(8, 18)}
+    d3 = _rmap("D3_Bridge_Split")
+
+    def split(s):
+        t = d3[(s[0], s[1], "Targeted %")]["mean"]
+        b = d3[(s[0], s[1], "Bridge %")]["mean"]
+        return t, b
 
     fig, ax = plt.subplots(figsize=(FIGW, 2.5))
     y = np.arange(len(PRIMARY))[::-1]
     for s, yi in zip(PRIMARY, y):
-        t, b = br[s]
+        t, b = split(s)
         ax.barh(yi, t, height=0.6, color=SKY, edgecolor="white", linewidth=1.4, zorder=3)
         ax.barh(yi, b, left=t, height=0.6, color=BLUE, edgecolor="white", linewidth=1.4,
                 zorder=3)
@@ -466,13 +427,22 @@ def fig_bridging():
 
 # =============================== F7 — descriptor dimensionality by silhouette (A10)
 def fig_descriptor_dims():
-    rows = load_wide("A10", header_row=9, first_row=10, last_row=16, val_start=1)
+    a10 = _rmap("A10")
+    # arm labels in the A10 sheet, in ascending dimensionality
+    arms = [
+        "2-D  — position only [p_x, p_y]",
+        "4-D  — + orientation (sinθ, cosθ)",
+        "5-D  — + task progress ρ",
+        "6-D  — FULL φ  (paper)",
+        "8-D  — + end-effector velocity (v_x, v_y)",
+        "10-D — + gripper state, z-height",
+        "12-D — + joint-angle summary",
+    ]
     dims = [2, 4, 5, 6, 8, 10, 12]
-    arms = list(rows.keys())
     fig, ax = plt.subplots(figsize=(FIGW, 4.0))
     M = []
     for s in PRIMARY:
-        ys = [rows[a][s][0] for a in arms]
+        ys = [a10[(s[0], s[1], a)]["mean"] for a in arms]
         M.append(ys)
         ax.plot(dims, ys, "-", lw=1.1, color=SKY, alpha=0.9, zorder=2)
     M = np.array(M)
@@ -497,21 +467,21 @@ def fig_descriptor_dims():
 
 # ================================================================ F8 — budget sweep
 def fig_budget():
-    df = sheet("A11")
+    a11 = _rmap("A11")
     B = [10, 20, 40]
-    dis, base = {}, {}
-    for r in range(8, 18):
-        key = (df.iat[r, 0], df.iat[r, 1])
-        base[key] = [float(df.iat[r, c]) for c in (2, 5, 8)]
-        dis[key] = [float(df.iat[r, c]) for c in (3, 6, 9)]
+
+    def series(s):
+        dis = [a11[(s[0], s[1], f"DISEIL B={b}")]["mean"] for b in B]
+        base = [a11[(s[0], s[1], f"Best baseline B={b}")]["mean"] for b in B]
+        return dis, base
 
     order = [("Push-T", "state"), ("GridWorld 5x5", "image"), ("Door", "image")]
     fig, axes = plt.subplots(1, 3, figsize=(FIGW, 3.3), gridspec_kw=dict(wspace=0.40))
     for ax, s in zip(axes, order):
-        ax.plot(B, dis[s], "-o", ms=6, color=BLUE, label="DISEIL")
-        ax.plot(B, base[s], "-s", ms=6, color=MUTED,
-                label="best DAgger-family baseline")
-        for b, a_, b_ in zip(B, dis[s], base[s]):
+        dis, base = series(s)
+        ax.plot(B, dis, "-o", ms=6, color=BLUE, label="DISEIL")
+        ax.plot(B, base, "-s", ms=6, color=MUTED, label="best DAgger-family baseline")
+        for b, a_, b_ in zip(B, dis, base):
             ax.annotate("", xy=(b, a_), xytext=(b, b_),
                         arrowprops=dict(arrowstyle="<->", color=MUTED, lw=0.9))
             ax.text(b * 1.06, (a_ + b_) / 2, f"+{a_ - b_:.1f}", fontsize=9, color=INK,
@@ -522,8 +492,8 @@ def fig_budget():
         ax.minorticks_off()
         ax.set_xlim(8.8, 50)
         ax.set_xlabel("Budget B (demonstrations)")
-        lo = min(base[s]) - 4.0
-        hi = max(dis[s]) + 3.0
+        lo = min(base) - 4.0
+        hi = max(dis) + 3.0
         ax.set_ylim(lo, min(hi, 102.5))
         ax.set_title(SHORT[s], pad=6)
         ax.grid(True)
@@ -533,67 +503,66 @@ def fig_budget():
     return save(fig, "F8_budget_sweep")
 
 
-# The memory-constant sweep (former F10) is retired: the study it drew is deleted.
-
-
-# ============================ F11 — context set, cluster count, cited episodes (A9/A13/A14)
+# ============================ F11 — context set, cluster count, cited episodes (A9/A14/A15)
 def fig_context_and_selection():
-    a9 = load_wide("A9", header_row=7, first_row=8, last_row=12)
-    a14 = load_wide("A14", header_row=7, first_row=8, last_row=12)     # now A13
-    a15 = load_wide("A15", header_row=7, first_row=8, last_row=14, val_start=2)  # now A14
+    a9 = _rmap("A9")
+    a14 = _rmap("A14")
+    a15 = _rmap("A15")
 
     panels = [
         ("A9  context-set composition", a9,
          ["Full S (rep + worst-loss + FPS)", "− worst-loss seed", "− FPS (random fill)",
           "− forced representative", "Random 3 from cluster"],
-         ["Full S", "− worst-loss seed", "− FPS (random fill)", "− forced rep.", "Random 3"]),
+         ["Full S", "− worst-loss seed", "− FPS (random fill)", "− forced rep.",
+          "Random 3"]),
         ("A13  cluster-count selection", a14,
-         ["Silhouette (adaptive, Eq 8)", "fixed k = 3", "fixed k = 4", "fixed k = 2", "fixed k = 5"],
+         ["Silhouette (adaptive, Eq 8)", "fixed k = 3", "fixed k = 4", "fixed k = 2",
+          "fixed k = 5"],
          ["silhouette (adaptive)", "fixed k = 3", "fixed k = 4", "fixed k = 2", "fixed k = 5"]),
         ("A14  number of cited episodes", a15,
-         ["Full S — rep + worst-loss + FPS (current)", "Top-3 by peak loss", "Top-5 by peak loss",
-          "Top-2 by peak loss", "All failures in target cluster", "Random 3 from target cluster"],
-         ["Full S (κ = 3)", "Top-3 by loss", "Top-5 by loss", "Top-2 by loss",
-          "all in cluster", "Random 3"]),
+         ["Full S — rep + worst-loss + FPS (current)", "Top-3 by peak loss",
+          "Top-2 by peak loss", "Random 3 from target cluster"],
+         ["Full S (κ = 3)", "Top-3 by loss", "Top-2 by loss", "Random 3"]),
     ]
+    # global y-floor so the deepest arm (Door image) is not clipped
+    lo_all = min(a[(s[0], s[1], arm)]["mean"]
+                 for _, a, arms, _ in panels for arm in arms for s in PRIMARY)
+
     fig, axes = plt.subplots(1, 3, figsize=(FIGW, 4.2), gridspec_kw=dict(wspace=0.34))
     for ax, (title, rows, arms, labels) in zip(axes, panels):
         n = len(arms)
         w = 0.26
         x = np.arange(n)
         for i, s in enumerate(PRIMARY):
-            ms = [rows[a][s] for a in arms]
-            ax.bar(x + (i - 1) * w, [m for m, _ in ms], width=w * 0.92,
+            cells = [rows[(s[0], s[1], a)] for a in arms]
+            means = [c["mean"] for c in cells]
+            ses = [(np.nan if c.get("se") is None else c["se"]) for c in cells]
+            ax.bar(x + (i - 1) * w, means, width=w * 0.92,
                    color=SETTING_COL[s], edgecolor="white", linewidth=0.8, zorder=3,
                    label=SHORT[s])
-            ax.errorbar(x + (i - 1) * w, [m for m, _ in ms], yerr=[sd for _, sd in ms],
-                        fmt="none", ecolor=INK, elinewidth=0.8, capsize=2, zorder=4)
+            ax.errorbar(x + (i - 1) * w, means, yerr=ses, fmt="none", ecolor=INK,
+                        elinewidth=0.8, capsize=2, zorder=4)
         ax.set_xticks(x)
         ax.set_xticklabels(labels, fontsize=9, rotation=38, ha="right", rotation_mode="anchor")
-        ax.set_ylim(85, 105)
+        ax.set_ylim(np.floor(lo_all - 2), 105)
         ax.set_title(title, fontsize=9.5, pad=6)
         ax.yaxis.grid(True, zorder=0)
         ax.set_axisbelow(True)
         ax.axvline(0.5, color="#CCCCCC", lw=0.8, ls=":")
-    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.d.")
+    axes[0].set_ylabel("Final success rate (%), mean ± 1 s.e.")
     axes[1].legend(loc="upper center", bbox_to_anchor=(0.5, -0.34), ncol=3)
     return save(fig, "F11_context_and_selection")
 
 
-# ================================================== F12 — chosen cluster count (A16)
+# ================================================== F12 — chosen cluster count (D2)
 def fig_kstar():
-    # 'Total rounds' and 'N <= 3 (Rejected)' are formulas with no cached result, so
-    # they are re-evaluated from the sheet's own formula: the total is seeds × B
-    # (180 for GridWorld at 9 seeds, 100 for the robot tasks at 5 seeds, which are
-    # the constants written into the workbook's own cells), and the skipped count is
-    # the total minus the rounds that were clustered.
-    df = sheet("D2")                        # study A16 after the renumbering
+    d2 = _rmap("D2")
     rows = {}
-    for r in range(8, 18):
-        key = (df.iat[r, 0], df.iat[r, 1])
-        ks = [float(df.iat[r, c]) for c in range(3, 8)]     # k = 2..6
-        tot = 180.0 if key[0].startswith("GridWorld") else 100.0
-        rows[key] = (ks, tot - sum(ks), tot)
+    for s in PRIMARY:
+        ks = [d2[(s[0], s[1], f"k={k}")]["mean"] for k in range(2, 7)]
+        rejected = d2[(s[0], s[1], "N<=3_rejected")]["mean"]
+        tot = sum(ks) + rejected          # clustered rounds + skipped rounds
+        rows[s] = (ks, rejected, tot)
 
     # narrower canvas: the trailing round counts otherwise push the tight bounding
     # box past the text block, and the figure would be scaled down on the page
@@ -632,12 +601,13 @@ def fig_kstar():
     return save(fig, "F12_cluster_count_distribution")
 
 
-# ================================================== F13 — failures over the budget (A18)
+# ================================================== F13 — failures over the budget (D4)
 def fig_failure_count():
-    df = sheet("D4_FailureCount")           # study A18 after the renumbering
-    rounds = [int(df.iat[r, 0]) for r in range(8, 28)]
-    N = [float(df.iat[r, 1]) for r in range(8, 28)]
-    skipped = [isinstance(df.iat[r, 2], str) for r in range(8, 28)]
+    d4 = load("D4_FailureCount")
+    d4 = sorted(d4, key=lambda r: int(r["method"].split("_")[1]))
+    rounds = [int(r["method"].split("_")[1]) for r in d4]
+    N = [r["mean"] for r in d4]
+    skipped = [bool(r.get("skipped")) for r in d4]
 
     fig, ax = plt.subplots(figsize=(FIGW, 3.4))
     ax.axhspan(0, 3.5, color="#F2F2F2", zorder=1)
@@ -660,11 +630,8 @@ def fig_failure_count():
     return save(fig, "F13_failures_over_budget")
 
 
-# The paired-margin forest (former F14) is retired: the figure is deleted.
-
-
 if __name__ == "__main__":
-    print(f"source of truth: {XLSX}")
+    print("source of truth: ablation_se.json (new run, DISEIL, SE = std/sqrt(n))")
     made = [
         fig_allocation_ladder(), fig_gain_vs_success(), fig_knockout_heatmap(),
         fig_a4_a5_dotplot(), fig_kag_fallback(), fig_bridging(), fig_descriptor_dims(),

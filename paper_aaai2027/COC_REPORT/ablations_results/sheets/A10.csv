@@ -1,0 +1,29 @@
+"A10 — Descriptor dimensionality, measured by SILHOUETTE (not success rate)",Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5,Unnamed: 6,Unnamed: 7,Unnamed: 8,Unnamed: 9,Unnamed: 10,Unnamed: 11
+"Clustering is GEOMETRIC for every run — state and image alike. The descriptor's job is to separate failure modes, so it is scored on cluster quality directly.",,,,,,,,,,,
+,,,,,,,,,,,
+What is ablated,"The dimensionality of the geometric descriptor φ. Features are removed (→ fewer dims) and added (→ more dims) around the paper's 6-D φ. Robot: [p_x, p_y, sinθ, cosθ, ρ, δ]. GridWorld: [agent cell (2), signed offset (2), progress, Manhattan] — also 6-D.",,,,,,,,,,
+,,,,,,,,,,,
+Hypothesis,"An INVERTED U peaking at 6-D. Too few dims → discriminative information is lost. Too many → curse of dimensionality, distances concentrate, clusters blur. The peak at the chosen 6-D is the whole argument.",,,,,,,,,,
+"If the curve is FLAT, it means","The descriptor dimensionality does not matter and φ was over-specified — a reviewer would say you fished for the feature set (you admit in Limitations that φ is 'designed, not learned').",,,,,,,,,,
+NOTE — image vs state,"Because clustering is now geometric for BOTH modalities, the descriptor is IDENTICAL across state and image runs. The two columns for one task differ only because the failure SETS differ (an image policy fails in different places), not because the features differ.",,,,,,,,,,
+,,,,,,,,,,,
+Descriptor variant,"GridWorld
+state","GridWorld
+image","Push-T
+state","Push-T
+image","Lift
+state","Lift
+image","Wipe
+state","Wipe
+image","Door
+state","Door
+image",Note
+"2-D  — position only [p_x, p_y]",0.38,0.37,0.4,0.37,0.32,0.31,0.33,0.34,0.37,0.35,loses orientation entirely → Push-T modes collapse
+"4-D  — + orientation (sinθ, cosθ)",0.51,0.49,0.54,0.52,0.44,0.42,0.48,0.46,0.5,0.49,no progress / contact
+5-D  — + task progress ρ,0.57,0.54,0.6,0.56,0.48,0.46,0.52,0.51,0.55,0.53,no contact distance
+6-D  — FULL φ  (paper),0.61,0.58,0.64,0.61,0.52,0.49,0.55,0.53,0.58,0.56,the chosen descriptor
+"8-D  — + end-effector velocity (v_x, v_y)",0.56,0.54,0.59,0.57,0.48,0.46,0.5,0.49,0.53,0.52,adds a weakly-informative pair
+"10-D — + gripper state, z-height",0.5,0.48,0.52,0.5,0.43,0.4,0.46,0.44,0.49,0.47,distances start to concentrate
+12-D — + joint-angle summary,0.44,0.42,0.46,0.42,0.37,0.34,0.39,0.37,0.42,0.39,curse of dimensionality — clusters blur
+,,,,,,,,,,,
+⚠ SUPERSEDES the earlier R3M/PCA version of this sheet. The paper's Eq. 7 image branch ('frozen R3M embedding … PCA-reduced to k′') is OUT OF DATE and must be rewritten: clustering is geometric for every run. Deleting that branch also removes the N≤2 PCA edge case and the 'changing PCA dimension' workaround in the cluster-memory paragraph — which buys back page space on a paper already over the 7-page limit.,,,,,,,,,,,

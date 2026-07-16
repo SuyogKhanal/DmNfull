@@ -1,0 +1,93 @@
+"A13 — Memory-constant sensitivity (γ, σ, λ) — all 10 cells",Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5,Unnamed: 6,Unnamed: 7
+"Each block reports final SR (%), then SPREAD across the sweep vs PAIRED-SEED NOISE, and a verdict: is the knob LIVE or INERT on that cell?",,,,,,,
+,,,,,,,
+What is ablated,"Each constant of Eq. 9 is swept one at a time, all others held at their paper value (γ=0.6, σ=0.06, λ=1).",,,,,,
+How to read it,"'Flat' does NOT mean identical numbers — different constants change which demos get collected, so some wobble is inevitable. The test is SPREAD (max−min across the sweep) vs PAIRED-SEED NOISE. Spread < noise ⇒ the knob is INERT on that cell.",,,,,,
+"σ — why three cells are INERT, for THREE DIFFERENT REASONS","GridWorld: centroids are in grid-cell units, so even σ=0.20 gives exp(−1/(2·0.04)) ≈ 4e−6 for adjacent cells — an identical-centroid check at EVERY swept σ. Truly inert. · Door: reset range ±0.013 m, so typical centroid separation ≈0.01 m; even σ=0.02 gives exp(−0.125)≈0.88, still saturated. You would need σ≈0.005. Inert across the SWEPT range. · Lift: the kernel actually DOES come alive at σ=0.02 (reset ±0.03 m ⇒ exp(−0.78)≈0.46, real discrimination) — but DISTIL is at 100.0 ± 0.0, so nothing is VISIBLE. Flat by CEILING, not by kernel degeneracy.",,,,,,
+⚠ Lift is uninformative for EVERY ablation,"100.0 ± 0.0 means no headroom and no variance. Do not read a null result on Lift as evidence about any mechanism, on this sheet or any other.",,,,,,
+The finding hiding here,"If σ=0.02 makes the kernel live on Lift, then σ=0.06 is MIS-SCALED for the narrow-reset tasks. A per-task σ (a fraction of each task's reset range) would make the memory function everywhere. You currently frame 'the same constants unchanged on every task' as a virtue — a reviewer can reframe it as a bug.",,,,,,
+,,,,,,,
+γ  (recency discount)  — paper value 0.6,,,,,,,
+Task,Obs,0.3,0.5,0.6,0.7,0.9,Spread (max−min)
+GridWorld 5x5,state,89.1,89.8,89.9,89.8,88.8,1.1000000000000085
+GridWorld 5x5,image,88.6,89.5,89.6,89.5,88.7,1
+Push-T,state,94.6,95.8,96.1,95.7,94.5,1.5999999999999943
+Push-T,image,92.3,93.5,93.9,93.8,92.3,1.6000000000000085
+Lift,state,100.0,99.9,100.0,99.8,99.5,0.5
+Lift,image,99.0,100.0,100.0,99.8,99.6,1
+Wipe,state,94.2,95.2,95.5,95.2,94.0,1.5
+Wipe,image,93.7,94.7,95.3,94.9,93.5,1.7999999999999972
+Door,state,97.5,98.1,98.4,98.2,97.3,1.1000000000000085
+Door,image,97.4,98.6,99.2,98.8,97.3,1.9000000000000057
+γ is the ONLY live knob on GridWorld (kernel reduces to identical-centroid check shaped by γ alone — your own text) and on Door (recency-weighted global discount).,,,,,,,
+,,,,,,,
+σ  (kernel width)  — paper value 0.06,,,,,,,
+Task,Obs,0.02,0.04,0.06,0.1,0.2,Spread (max−min)
+GridWorld 5x5,state,89.9,89.9,89.9,89.9,89.8,0.10000000000000853
+GridWorld 5x5,image,89.5,89.6,89.6,89.6,89.6,0.09999999999999432
+Push-T,state,94.5,95.8,96.1,95.4,93.8,2.299999999999997
+Push-T,image,92.4,93.4,93.9,93.2,91.7,2.200000000000003
+Lift,state,99.9,100.0,100.0,100.0,99.9,0.09999999999999432
+Lift,image,100.0,100.0,100.0,100.0,99.9,0.09999999999999432
+Wipe,state,94.2,95.2,95.5,94.8,93.3,2.200000000000003
+Wipe,image,93.7,94.7,95.3,94.4,92.7,2.5999999999999943
+Door,state,98.4,98.4,98.4,98.3,98.2,0.20000000000000284
+Door,image,99.1,99.2,99.2,99.2,99.0,0.20000000000000284
+Expect INERT on GridWorld / Door (kernel degenerate) and on Lift (ceiling). LIVE only on Push-T and Wipe.,,,,,,,
+,,,,,,,
+λ  (memory penalty weight)  — paper value 1.0,,,,,,,
+Task,Obs,0.0,0.5,1.0,2.0,4.0,Spread (max−min)
+GridWorld 5x5,state,89.4,89.0,89.9,89.5,88.9,1
+GridWorld 5x5,image,89.0,88.8,89.6,89.3,88.8,0.7999999999999972
+Push-T,state,95.7,94.4,96.1,95.6,94.3,1.7999999999999972
+Push-T,image,93.1,92.4,93.9,93.4,92.0,1.9000000000000057
+Lift,state,99.9,99.9,100.0,99.9,99.7,0.29999999999999716
+Lift,image,99.9,100.0,100.0,100.0,99.8,0.20000000000000284
+Wipe,state,94.4,93.9,95.5,94.9,93.9,1.5999999999999943
+Wipe,image,94.1,93.2,95.3,94.5,93.3,2.0999999999999943
+Door,state,98.2,97.7,98.4,98.1,97.1,1.3000000000000114
+Door,image,98.0,97.4,99.2,98.4,97.0,2.200000000000003
+"CROSS-SHEET CHECK: the λ=0 column must REPRODUCE A1_Memory_Off (λ=0 IS memory-off). If they disagree, one of the two runs is wrong.",,,,,,,
+,,,,,,,
+,,,,,,,
+,,,,,,,
+I have a CSV/spreadsheet with ablation results for a my paper. Each ,,,,,,,
+"sheet contains one hyperparameter (e.g., γ, σ, λ) swept across 4-5 values, ",,,,,,,
+measured on 5 tasks × 2 observation modalities (10 paired conditions per ,,,,,,,
+hyperparameter value).,,,,,,,
+,,,,,,,
+"For EACH hyperparameter sweep, perform the following statistical analysis:",,,,,,,
+,,,,,,,
+1. **Friedman test** (non-parametric repeated-measures test) across all ,,,,,,,
+"   values of the hyperparameter, treating the 10 task×modality rows as ",,,,,,,
+   matched blocks. Report chi-square statistic and p-value.,,,,,,,
+,,,,,,,
+2. **Post-hoc pairwise Wilcoxon signed-rank tests** comparing the paper's ,,,,,,,
+"   chosen value against every other tested value (paired, two-sided).",,,,,,,
+,,,,,,,
+3. **Holm-Bonferroni correction** on the resulting p-values within each ,,,,,,,
+   hyperparameter's family of comparisons (do NOT correct across different ,,,,,,,
+   hyperparameters — treat each hyperparameter's comparisons as a separate ,,,,,,,
+   family).,,,,,,,
+,,,,,,,
+4. **Average rank** for each hyperparameter value across the 10 conditions ,,,,,,,
+"   (rank 1 = best per row, averaged across rows) as a robustness summary.",,,,,,,
+,,,,,,,
+5. Flag any hyperparameter where the chosen value has the best average rank ,,,,,,,
+   but does NOT reach significance (corrected p > 0.05) against nearby ,,,,,,,
+"   values — report this as ""directionally best but not statistically ",,,,,,,
+"   distinguishable"" rather than overstating significance.",,,,,,,
+,,,,,,,
+Output for each hyperparameter:,,,,,,,
+A markdown table: value | avg_rank | wilcoxon_p_vs_chosen | holm_corrected_p,,,,,,, 
+ The Friedman chi-square and p-value,,,,,,,
+"A one-sentence plain-English verdict (e.g., ""significantly best,"" ""best on ",,,,,,,
+"  average but not significantly better than neighbors,"" etc.)",,,,,,,
+A suggested paragraph I can paste directly into my paper's ablation section,,,,,,,
+,,,,,,,
+"Save all results as a single CSV (one row per hyperparameter-value pair, ",,,,,,,
+"with columns for hyperparameter_name, value, avg_rank, wilcoxon_p, ",,,,,,,
+"holm_p, friedman_chi2, friedman_p) plus a summary markdown report.",,,,,,,
+,,,,,,,
+"Use Python (scipy.stats.friedmanchisquare, scipy.stats.wilcoxon) and ",,,,,,,
+implement Holm-Bonferroni manually or via statsmodels.stats.multitest.,,,,,,,
