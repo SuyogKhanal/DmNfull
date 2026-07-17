@@ -9,31 +9,30 @@ and fixes the other two decisions, which failure to correct and where the
 demonstration begins, by default. We present \textbf{DISEIL}
 (\textbf{D}emonstration d\textbf{I}stillation for \textbf{S}ample-\textbf{E}fficient
 \textbf{I}mitation \textbf{L}earning), which takes the flag as given and decides
-the other two. Each round it partitions the failures into modes over a
-six-dimensional geometric descriptor of the step where the policy first becomes
-unreliable, targets the mode of highest mean peak loss among the largest, and
-prescribes the configuration of a demonstration not yet collected, verified
-against a constraint graph of what the environment permits before any expert time
-is spent. Across five tasks under two observation modalities at a budget of twenty
-demonstrations, against the query-efficient DAgger family and a uniform-random
-allocation control, DISEIL attains the best or joint-best mean held-out success
-rate in every setting, by a mean of 2.80 points over the strongest baseline in
-each.
+the other two: it partitions a round's failures into modes over a geometric
+descriptor and prescribes the configuration of a demonstration not yet collected,
+checked for feasibility before any expert time is spent. We evaluate on five
+tasks under two observation modalities, ten task-modality settings in all, at a
+budget of twenty demonstrations, against the query-efficient DAgger family and a
+uniform-random allocation control. DISEIL holds the best or joint-best mean
+held-out success rate in all ten, by a mean of 2.80 points over the strongest
+baseline in each.
 \end{abstract}
 
 \section{Introduction}
 
 Behaviour cloning fits a policy to an expert's actions on the states the expert
-visits \cite{pomerleau1988alvinn,bain1995cloning}, and its failure mode is
+visits \cite{pomerleau1988alvinn,bain1995cloning}, and it fails under
 covariate shift: the learner's own actions carry it off the demonstrated support,
 where errors compound \cite{shimodaira2000covariate,ross2011dagger}. Interactive
 imitation learning removes the compounding by aggregating corrections on the
 states the learner visits \cite{ross2011dagger,celemin2022iil}, and pays for it in
 expert effort, the cost that binds
 \cite{mandlekar2018roboturk,khazatsky2024droid}. Performance scales with the
-coverage of a policy's demonstrations, while those added within a covered setting
+coverage of a policy's demonstrations, while those added within a covered region
 saturate \cite{lin2024datascaling}, so once an allowance of $B$ demonstrations is
-fixed, the content of each is all that is left to choose.
+fixed, the content of each is all that is left to choose
+(Figure~\ref{fig:teaser}).
 
 \begin{figure}[t]
 \centering
@@ -58,7 +57,7 @@ demonstration begins. The template computes the first and takes the other two by
 default: the failure corrected is whichever rollout tripped the gate first, and
 the demonstration begins in the state that rollout was already in. Under an
 unbounded budget the two defaults cost nothing, since every mode is corrected
-eventually. Under a budget of twenty demonstrations they are the whole problem.
+eventually. Under a fixed budget they are the whole problem.
 
 Neither missing decision can be recovered from a scalar attached to one state. It
 carries no representation in which two failures are the same mistake and a third
@@ -72,7 +71,8 @@ step where the policy first becomes unreliable partitions them into geometricall
 distinct groups. Whether those groups are worth allocating over is an empirical
 question, and the ablations answer it.
 
-DISEIL takes the flag as given and computes the other two parts of the
+Demonstration distillation for sample-efficient imitation learning (DISEIL)
+takes the flag as given and computes the other two parts of the
 acquisition. Each round it anchors every failure at the first threshold crossing
 rather than at the peak, partitions the failures into modes over that descriptor,
 and targets the near-dominant mode of highest mean peak loss. It then prescribes
@@ -84,8 +84,8 @@ rather than for one episode.
 We contribute three things. We separate the acquisition rule into when, which and
 where, and show the DAgger family fixes the last two by default. We present
 DISEIL, which attains the best or joint-best mean held-out success rate in all ten
-settings at a budget of twenty demonstrations, by a mean of 2.80 points over the
-strongest baseline in each. And we locate the advantage in allocation rather than
-in per-demonstration informativeness: removing the mode structure costs a mean
-4.37 points of success while information gain does not fall, which is what a
-redundantly spread budget looks like.
+settings, by a mean of 2.80 points over the strongest baseline in each. And we
+locate the advantage in allocation rather than in per-demonstration
+informativeness: removing the mode structure costs a mean 4.37 points of success
+while information gain does not fall, the signature of a redundantly spread
+budget.

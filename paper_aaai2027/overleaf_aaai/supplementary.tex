@@ -6,6 +6,8 @@
 \usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{array}
+\usepackage{algorithm}
+\usepackage{algorithmic}
 \usepackage{natbib}
 \usepackage{caption}
 \urlstyle{rm}
@@ -121,7 +123,7 @@ problem to solve. If the initial policy is too strong, the failure set is empty 
 nearly so, the budget has nothing to allocate, and every method converges to the same
 place. The band between those two conditions is the regime in which a fixed budget can
 be spent well or badly. Performance scales with the coverage of the
-demonstrations a policy is trained on, while demonstrations added within a setting
+demonstrations a policy is trained on, while demonstrations added within a region
 already covered saturate \citep{lin2024datascaling}, so the count is the lever that
 places a task inside the band.
 
@@ -236,11 +238,62 @@ table, and its extension to the robot tasks is study A2 in Section F, where it a
 the most damaging objection available against this work, which is that any failure
 replay would do.
 
-\section{D. Extended Derivations and Rationale}
+\section{D. The Round in Pseudocode, Extended Derivations and Rationale}
 
-Each rule of the method is stated in the DISEIL section of the main paper. This section
-gives the reasoning behind the choices that the main paper states without room to
-argue.
+\paragraph{The round as pseudocode.}
+Algorithm~\ref{alg:diseil} states one run of the framework. The budget enters only as
+$B$ and the per-round demonstration count only as $D$, so the loop is written for any
+fixed allowance and the reported instance, $B = 20$ at $D = 1$, is one setting of it.
+Lines 3 to 22 are the round: lines 3 to 6 are Perceive, lines 7 to 11 Partition, lines 12
+and 13 Prioritise, and lines 14 to 22 Prescribe. Every quantity named here is defined in
+the main paper's Problem Formulation and DISEIL sections.
+
+\begin{algorithm}[t]
+\caption{DISEIL. One run under a budget $B$.}
+\label{alg:diseil}
+\begin{algorithmic}[1]
+\REQUIRE initial set $\mathcal{D}_0$; budget $B$; demonstrations per round $D$;
+retraining cadence $m$; expert $\pi^\star$; constraint graph $\mathcal{K}$; context cap
+$\kappa$; re-prescription limit $J_{\max}$
+\STATE fit $f_\theta$ on $\mathcal{D}_0$ by behaviour cloning
+\FOR{$r = 1$ \TO $B/D$}
+  \STATE roll out $f_\theta$ on a fresh pool drawn from the reset distribution
+  \STATE $\mathcal{F}_r \leftarrow$ the failed episodes, each with its per-step losses
+  \STATE for each $i \in \mathcal{F}_r$: $t^\star_i \leftarrow$ first step whose loss
+         exceeds $\eta$ for $K$ consecutive steps, else $\arg\max_t \ell^{(i)}_t$
+  \STATE for each $i \in \mathcal{F}_r$: $\phi_i \leftarrow$ descriptor at $t^\star_i$;
+         root cause $\leftarrow \mathrm{PM}$ applied to the frames read by the
+         vision-language model
+  \IF{$|\mathcal{F}_r| \ge 4$}
+    \STATE standardise $\{\phi_i\}$; select $k^\star$ by maximum mean silhouette;
+           $\{C_1,\dots,C_{k^\star}\} \leftarrow \mathcal{C}(\tilde{X}, k^\star)$
+  \ELSE
+    \STATE each failure becomes a singleton mode
+  \ENDIF
+  \STATE $C_{\mathrm{tgt}} \leftarrow \arg\max \bar{L}_C$ over modes with
+         $|C| \ge |C^\star| - 1$, discounted by the cluster memory
+  \STATE $S \leftarrow$ at most $\kappa$ cited failures of $C_{\mathrm{tgt}}$:
+         representative, worst peak loss, then farthest-point fill
+  \STATE $j \leftarrow 0$; $\text{violation} \leftarrow \emptyset$
+  \REPEAT
+    \STATE $\mathrm{cmd} \leftarrow \mathrm{PM}(C_{\mathrm{tgt}}, S, \mathcal{K},
+           \text{violation})$; $\xi \leftarrow g(\mathrm{cmd})$; $j \leftarrow j + 1$
+    \STATE $\text{violation} \leftarrow$ the conjunct of $V$ that $\xi$ fails, if any
+  \UNTIL{$V(\xi) = 1$ \OR $j = J_{\max}$}
+  \STATE \textbf{if} $V(\xi) = 0$ \textbf{then} $\xi \leftarrow$ the nearest untried
+         recorded failure
+  \STATE $d_{r,1},\dots,d_{r,D} \leftarrow \pi^\star$ acting from $\xi$
+  \STATE $\mathcal{D}_r \leftarrow \mathcal{D}_{r-1} \cup \{d_{r,1},\dots,d_{r,D}\}$
+  \STATE \textbf{if} $r \equiv 0 \pmod m$ \textbf{then} refit $\theta$ on
+         $\mathcal{D}_r$
+\ENDFOR
+\RETURN $f_\theta$
+\end{algorithmic}
+\end{algorithm}
+
+Each rule of the algorithm is stated in the DISEIL section of the main paper. The
+remainder of this section gives the reasoning behind the choices that the main paper
+states without room to argue.
 
 \paragraph{Why the first crossing and not the peak.} The flagged step is the first step
 at which the per-step loss exceeds $\eta$ for $K$ consecutive steps, and the peak is
