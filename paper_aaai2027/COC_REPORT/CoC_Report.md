@@ -770,11 +770,11 @@ The retraining cadence is a property of the task and not of the framework, and t
 
 Seed counts are not uniform, and the asymmetry is stated. GridWorld is run with nine seeds; the four robot tasks are run with five. The round accounting confirms both counts independently: clustered rounds plus skipped rounds total 180 for each GridWorld setting and 100 for each robot setting, which is seeds times $B$ in both cases.
 
-**Initial demonstrations and starting performance.** Before the first round, the policy is trained on an initial demonstration set that is excluded from the budget. That set is per task, not uniform: it holds twenty demonstrations on GridWorld and Push-T, twelve on Wipe, eight on Lift and four on Door, the counts $N_i$ reported in Table 7. The initial demonstrations were chosen so that each task's round-zero success rate, the held-out success rate before any DISEIL round, exceeds roughly 45 per cent: 47.0 on GridWorld, 46.2 on Push-T, 45.2 on Wipe, 67.2 on Lift and 56.8 on Door, which is the Init SR column of Table 7.
+**Initial demonstrations and starting performance.** Before the first round, the policy is trained on an initial demonstration set that is excluded from the budget. That set is per task, not uniform: it holds twenty demonstrations on GridWorld and Push-T, twelve on Wipe, eight on Lift and four on Door, the counts $N_i$ reported in Table 7. The initial demonstration counts were chosen to place each setting's round-zero success rate, the held-out success rate before any DISEIL round, in a band of roughly 45 to 50 per cent. The Init SR column of Table 7 records 48.9 and 47.0 per cent on GridWorld for the state and image settings, 46.2 and 43.3 on Push-T, 47.7 and 45.2 on Wipe, 67.2 and 66.4 on Lift, and 56.8 and 43.1 on Door. The count is set per task rather than per modality, so the two modalities of a task do not begin at the same success rate, and the image settings of Push-T and Door start slightly below the band, at 43.3 and 43.1 per cent.
 
 The count is not a free parameter, and the reasoning behind it is the first half of the information-gain argument of Section 5.1.5. A policy's starting success rate has to sit inside a band for the experiment to mean anything. If the initial policy is too weak, its rollouts fail everywhere, every configuration is a failure, the failure set carries no structure for the descriptor to separate, and there is no allocation problem to solve. If the initial policy is too strong, the failure set is empty or nearly so, the budget has nothing to allocate, and every method converges to the same place. The band between those two conditions is the regime in which a fixed budget of demonstrations can be spent well or badly, which is the regime the framework exists for. Demonstration count and coverage are known to govern imitation-learning performance directly [49], so the count is the lever that places a task inside the band.
 
-The principle is implemented as a behaviour-cloning data-scaling sweep. A pool of expert demonstrations is collected, behaviour cloning is trained on each nested prefix of the pool, each prefix is evaluated on the frozen held-out set, and the prefix whose round-zero success rate is closest to a target of roughly 50 per cent is selected. That sweep sets the initial counts $N_i$ used in every run that produces Table 7: twenty demonstrations for GridWorld and Push-T, twelve for Wipe, eight for Lift and four for Door, with round-zero success rates of 47.0, 46.2, 45.2, 67.2 and 56.8 per cent respectively. Every task therefore begins the budget above the roughly-45-per-cent floor, with enough competence to produce meaningful rollout failures and enough headroom for the budget to matter. Lift begins the furthest above the target, at 67.2 per cent, because the smallest prefix that trains a stable policy on that task already clears the band, which is why Lift is the task in Table 7 that begins the budget closest to a perfect success rate.
+The principle is implemented as a behaviour-cloning data-scaling sweep. A pool of expert demonstrations is collected, behaviour cloning is trained on each nested prefix of the pool, each prefix is evaluated on the frozen held-out set, and the prefix whose round-zero success rate is closest to a target of roughly 50 per cent is selected. That sweep sets the initial counts $N_i$ used in every run that produces Table 7: twenty demonstrations for GridWorld and Push-T, twelve for Wipe, eight for Lift and four for Door, The resulting round-zero success rates span 43.1 to 67.2 per cent across the ten settings, as recorded in Table 7. Every setting therefore begins the budget with enough competence to produce meaningful rollout failures and enough headroom for the budget to matter. Lift begins the furthest above the target, at 67.2 and 66.4 per cent, because the smallest prefix that trains a stable policy on that task already clears the band, which is why Lift is the task in Table 7 that begins the budget closest to a perfect success rate.
 
 **Baselines.** Six comparison methods are run, described qualitatively; their hyperparameters are not reproduced here, and the mechanics of each belong to Chapter 2.
 
@@ -810,16 +810,16 @@ Table 7 gives the final held-out success rate in all ten settings. DISEIL attain
 
 | Task | Obs | Ni | Init SR | Safe | Dropout | Ensemble | Thrifty | Stagger | Diff-DAgger | DISEIL (ours) |
 |--------|------|----|------|------|------|------|------|------|------|------|
-| GridWorld 5x5 | state | 20 | 47.0 | 85.3±0.9 | 84.9±0.8 | 86.2±0.7 | 86.8±0.7 | 85.7±0.5 | — | **92.4±0.4** |
+| GridWorld 5x5 | state | 20 | 48.9 | 85.3±0.9 | 84.9±0.8 | 86.2±0.7 | 86.8±0.7 | 85.7±0.5 | — | **92.4±0.4** |
 | GridWorld 5x5 | image | 20 | 47.0 | 88.8±0.9 | 88.4±0.7 | 88.8±0.9 | 88.7±0.6 | 89.1±0.8 | — | **91.3±0.6** |
 | Push-T | state | 20 | 46.2 | 82.0±3.0 | 84.8±2.7 | 85.9±2.6 | 83.2±3.2 | — | 94.1±2.0 | **96.1±1.6** |
-| Push-T | image | 20 | 46.2 | 78.1±3.5 | 82.1±3.1 | 83.2±3.0 | 79.3±3.6 | — | 89.0±2.1 | **92.6±2.2** |
+| Push-T | image | 20 | 43.3 | 78.1±3.5 | 82.1±3.1 | 83.2±3.0 | 79.3±3.6 | — | 89.0±2.1 | **92.6±2.2** |
 | Lift | state | 8 | 67.2 | 99.2±0.7 | 99.2±0.4 | 99.2±0.4 | 100.0±0.0 | — | 99.2±0.4 | **100.0±0.0** |
-| Lift | image | 8 | 67.2 | 99.6±0.4 | 97.2±1.6 | 98.8±0.7 | 99.6±0.4 | — | 99.6±0.4 | **100.0±0.0** |
-| Wipe | state | 12 | 45.2 | 88.0±1.1 | 88.6±1.8 | 86.8±1.9 | 89.0±1.1 | — | 90.4±2.7 | **93.1±1.3** |
+| Lift | image | 8 | 66.4 | 99.6±0.4 | 97.2±1.6 | 98.8±0.7 | 99.6±0.4 | — | 99.6±0.4 | **100.0±0.0** |
+| Wipe | state | 12 | 47.7 | 88.0±1.1 | 88.6±1.8 | 86.8±1.9 | 89.0±1.1 | — | 90.4±2.7 | **93.1±1.3** |
 | Wipe | image | 12 | 45.2 | 69.6±2.4 | 83.2±3.0 | 84.4±3.2 | 69.2±4.0 | — | 88.6±1.4 | **92.3±1.4** |
 | Door | state | 4 | 56.8 | 91.8±2.1 | 92.5±1.2 | 88.8±3.1 | 89.6±1.7 | — | 93.2±1.9 | **96.6±1.9** |
-| Door | image | 4 | 56.8 | 82.4±1.4 | 81.8±1.5 | 83.0±4.9 | 82.8±1.2 | — | 84.2±1.6 | **88.6±1.5** |
+| Door | image | 4 | 43.1 | 82.4±1.4 | 81.8±1.5 | 83.0±4.9 | 82.8±1.2 | — | 84.2±1.6 | **88.6±1.5** |
 
 ```{=latex}
 \let\footnotesize\CoCorigfoot

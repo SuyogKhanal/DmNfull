@@ -15,29 +15,32 @@ by `build/assemble.py`, built by `build_pdf.sh`. Edit the chapter files, never `
 
 ## Table 7 — final held-out success rate, mean ± SE (AUTHORITATIVE; agents must reproduce this)
 Add two leading columns per row: **Ni** (initial demonstrations) and **Init SR** (round-0 success
-rate). Ni and Init SR are per-TASK (identical for both modalities of a task). DISEIL is best per
-row; bold it. "—" = method not applicable (Diff-DAgger on GridWorld; Stagger on robots).
+rate). **Ni is per-TASK** (identical for both modalities), but **Init SR is per-MODALITY**: the count
+is chosen per task, so the two modalities of a task do not land at the same round-0 success rate.
+DISEIL is best per row; bold it. "—" = method not applicable (Diff-DAgger on GridWorld; Stagger on robots).
 
 | Task | Obs | Ni | Init SR | Safe | Dropout | Ensemble | Thrifty | Stagger | Diff-DAgger | DISEIL (ours) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| GridWorld 5x5 | state | 20 | 47.0 | 85.3±0.9 | 84.9±0.8 | 86.2±0.7 | 86.8±0.7 | 85.7±0.5 | — | **92.4±0.4** |
+| GridWorld 5x5 | state | 20 | 48.9 | 85.3±0.9 | 84.9±0.8 | 86.2±0.7 | 86.8±0.7 | 85.7±0.5 | — | **92.4±0.4** |
 | GridWorld 5x5 | image | 20 | 47.0 | 88.8±0.9 | 88.4±0.7 | 88.8±0.9 | 88.7±0.6 | 89.1±0.8 | — | **91.3±0.6** |
 | Push-T | state | 20 | 46.2 | 82.0±3.0 | 84.8±2.7 | 85.9±2.6 | 83.2±3.2 | — | 94.1±2.0 | **96.1±1.6** |
-| Push-T | image | 20 | 46.2 | 78.1±3.5 | 82.1±3.1 | 83.2±3.0 | 79.3±3.6 | — | 89.0±2.1 | **92.6±2.2** |
+| Push-T | image | 20 | 43.3 | 78.1±3.5 | 82.1±3.1 | 83.2±3.0 | 79.3±3.6 | — | 89.0±2.1 | **92.6±2.2** |
 | Lift | state | 8 | 67.2 | 99.2±0.7 | 99.2±0.4 | 99.2±0.4 | 100.0±0.0 | — | 99.2±0.4 | **100.0±0.0** |
-| Lift | image | 8 | 67.2 | 99.6±0.4 | 97.2±1.6 | 98.8±0.7 | 99.6±0.4 | — | 99.6±0.4 | **100.0±0.0** |
-| Wipe | state | 12 | 45.2 | 88.0±1.1 | 88.6±1.8 | 86.8±1.9 | 89.0±1.1 | — | 90.4±2.7 | **93.1±1.3** |
+| Lift | image | 8 | 66.4 | 99.6±0.4 | 97.2±1.6 | 98.8±0.7 | 99.6±0.4 | — | 99.6±0.4 | **100.0±0.0** |
+| Wipe | state | 12 | 47.7 | 88.0±1.1 | 88.6±1.8 | 86.8±1.9 | 89.0±1.1 | — | 90.4±2.7 | **93.1±1.3** |
 | Wipe | image | 12 | 45.2 | 69.6±2.4 | 83.2±3.0 | 84.4±3.2 | 69.2±4.0 | — | 88.6±1.4 | **92.3±1.4** |
 | Door | state | 4 | 56.8 | 91.8±2.1 | 92.5±1.2 | 88.8±3.1 | 89.6±1.7 | — | 93.2±1.9 | **96.6±1.9** |
-| Door | image | 4 | 56.8 | 82.4±1.4 | 81.8±1.5 | 83.0±4.9 | 82.8±1.2 | — | 84.2±1.6 | **88.6±1.5** |
+| Door | image | 4 | 43.1 | 82.4±1.4 | 81.8±1.5 | 83.0±4.9 | 82.8±1.2 | — | 84.2±1.6 | **88.6±1.5** |
 
 Caption: "... mean ± standard error over 5 seeds (robot tasks) and 9 seeds (GridWorld). Ni is the
 number of initial demonstrations; Init SR is the held-out success rate before any DISEIL round.
 Best per row in bold." (Lift is a ceiling; do not add a sentence saying it is excluded from
 ablations, but the table itself keeps all tasks.)
-The initial demonstrations were chosen so every task's round-0 success rate exceeds ~45%
-(see Init SR): enough competence to produce meaningful rollout failures, low enough to leave
-headroom for the budget to matter.
+The initial demonstration counts target a round-0 success rate band of roughly 45-50%: enough
+competence to produce meaningful rollout failures, low enough to leave headroom for the budget to
+matter. The achieved values span **43.1 to 67.2%** (see Init SR). Do NOT claim every setting
+"exceeds 45%" — Push-T (image) at 43.3 and Door (image) at 43.1 fall just below the band, because
+Ni is set per task and the image modality starts harder.
 
 ## Table 8 — per-demonstration information gain
 New values from `GT_InfoGain.csv`. Diff-DAgger and DISEIL columns ONLY (round-2 decision).
