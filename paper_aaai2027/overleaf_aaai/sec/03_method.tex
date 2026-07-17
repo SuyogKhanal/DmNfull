@@ -1,7 +1,7 @@
 \section{Problem Formulation}
 
-The policy is any function $f_\theta$ mapping an observation to an action that
-exposes a per-step loss at a visited state-action pair,
+The policy is any function $f_\theta$ that maps an observation to an action. It
+must also report a per-step loss at each state-action pair it visits,
 %
 \begin{equation}
 \label{eq:signal}
@@ -14,20 +14,19 @@ denoising loss \cite{chi2023diffusionpolicy}; for a discrete policy it is the
 negative log-likelihood of the action.
 
 The policy is fitted to an initial set $\mathcal{D}_0$ by behaviour cloning
-\cite{pomerleau1988alvinn,bain1995cloning}. At the start of round $r$ it is rolled
-out on a fresh pool drawn from the task's reset distribution, and those episodes
-it fails form the round's failure set,
+\cite{pomerleau1988alvinn,bain1995cloning}. Round $r$ opens by running the policy
+on a fresh pool drawn from the task's reset distribution. The episodes it fails
+form the round's failure set,
 %
 \begin{equation}
 \label{eq:failures}
 \mathcal{F}_r = \big\{\, f_i = (\tau_i,\; \ell^{(i)}_{1:T_i}) \;:\; \tau_i
-\text{ is a failed rollout of } f_\theta \,\big\},
+\text{ is a failed episode of } f_\theta \,\big\}.
 \end{equation}
 %
-with $N = |\mathcal{F}_r|$, which varies by round, and $T_i$ the length of
-trajectory $\tau_i$. The
-round closes by acquiring $D$ demonstrations from the expert $\pi^\star$ and
-aggregating them \cite{ross2011dagger},
+The count $N = |\mathcal{F}_r|$ varies by round, and $T_i$ is the length of
+episode $\tau_i$. The round closes by acquiring $D$ demonstrations from the expert
+$\pi^\star$ and adding them to the training set \cite{ross2011dagger},
 %
 \begin{equation}
 \label{eq:loop}
@@ -35,68 +34,71 @@ aggregating them \cite{ross2011dagger},
 \mathcal{D}_r &= \mathcal{D}_{r-1} \cup \{d_{r,1},\dots,d_{r,D}\},\\
 \theta &\leftarrow \arg\min_\theta\ \mathbb{E}_{(s,a)\sim\mathcal{D}_r}
 \big[\mathcal{L}_{\mathrm{BC}}(f_\theta, s, a)\big] \ \text{ for } r \equiv 0
-\!\!\pmod m,
+\!\!\pmod m.
 \end{aligned}
 \end{equation}
 %
-halting when $|\mathcal{D}_r| - |\mathcal{D}_0| = B$, so the loop runs $B/D$
-rounds. Retraining runs at a per-task cadence $m$ set identically for every arm.
-Success is read on a frozen held-out set that every arm shares and no arm sees
-during acquisition.
+The loop halts when $|\mathcal{D}_r| - |\mathcal{D}_0| = B$, so it runs $B/D$
+rounds. Retraining runs at a per-task cadence $m$ set identically for every
+method. Success is measured on a fixed set of test episodes, shared by every method and
+seen by none while demonstrations are collected.
 
-Every gated method compared here instantiates the same three-part acquisition rule
-$A = (t^\star, C_{\mathrm{tgt}}, \xi)$, where $t^\star$ is the step at which the
-expert takes over (when), $C_{\mathrm{tgt}}$ the failure mode the round is spent
-on (which), and $\xi$ the state from which the corrective demonstration begins
-(where). The query gates compute $t^\star$ and inherit the other two from the
-rollout that tripped the threshold; the uniform-random control fixes all three by
-sampling. DISEIL adopts the same $t^\star$ and computes the remaining two,
-changing nothing else in the loop, so the comparison is controlled.
+Every method here spends a round by the same three-part rule,
+$A = (t^\star, C_{\mathrm{tgt}}, \xi)$. The step $t^\star$ is where the expert
+takes over: the \emph{when}. The mode $C_{\mathrm{tgt}}$ is the failure the round
+is spent on: the \emph{which}. The state $\xi$ is where the corrective
+demonstration begins: the \emph{where}. A query gate computes $t^\star$ alone,
+reading $C_{\mathrm{tgt}}$ and $\xi$ off whichever failed episode tripped its
+threshold. The uniform-random control sets all three by sampling. DISEIL keeps
+that same $t^\star$ and computes $C_{\mathrm{tgt}}$ and $\xi$ itself. Nothing else
+in the loop changes, so the comparison is controlled.
 
 \section{DISEIL}
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/architecture.pdf}
-\caption{DISEIL. The loss flag (Eq.~\ref{eq:flag}) returns the step $t^\star$ at
-which the policy first becomes unreliable, which is the whole of what a query gate
-computes and the point at which DISEIL continues. The perception branch meets the
-geometric branch only at the prescription, so the partition consumes no model
-output. ``Reasoning LLM'' and ``Prescription LLM'' are the two roles of the
-prescription model, a large language model; ``KAG Grounding'' is the
-knowledge-augmented-generation constraint graph $\mathcal{K}$. The solvability
-screen, drawn as the rollout and revise branch, is specified in the supplementary.}
+\caption{DISEIL. Equation~\ref{eq:flag} returns the step $t^\star$ at which the
+policy first becomes uncertain. A query gate computes that step and stops. DISEIL
+continues from it. The perception branch meets the geometric branch only at the
+prescription, so no model output enters the partition. ``Reasoning LLM'' and
+``Prescription LLM'' are the two roles of the prescription model, a large language
+model. ``KAG Grounding'' is the knowledge-augmented-generation constraint graph
+$\mathcal{K}$. The supplementary specifies the solvability screen, drawn here as
+the rollout and revise branch, where the policy is run once from the prescribed
+start.}
 \label{fig:architecture}
 \end{figure*}
 
-DISEIL runs four stages once per round (Figure~\ref{fig:architecture}): perceive
-the round's failures, partition them into failure modes, prioritise one mode, and
-prescribe the $D$ demonstrations the expert is asked to supply. Two models fill
+DISEIL runs four stages once per round (Figure~\ref{fig:architecture}). It
+perceives the round's failures and partitions them into failure modes. It then
+prioritises one mode and prescribes the $D$ demonstrations the expert is asked to
+supply. Two models fill
 three roles. The \emph{vision-language model} \cite{bai2025qwen3vl} reads rendered
 frames. The \emph{prescription model} ($\mathrm{PM}$) \cite{yang2025qwen3} is a
 text-only reasoning model that labels each failure's root cause and prescribes the
-round's request; neither enters the partition.
+round's request. Neither model enters the partition.
 
-\paragraph{Perceive.} A round opens by describing each failure twice from the same
-step of the same episode: geometrically, for the partition, and in language, for
-the prescription. The two never mix. Each failure is anchored at the first step
-whose loss crosses an out-of-distribution threshold $\eta$ and stays across it for
-$K$ consecutive steps,
+\paragraph{Perceive.} A round opens by describing each failure twice, from the
+same step of the same episode. The geometric description feeds the partition. The
+language one feeds the prescription. The two never mix.
+Each failure is anchored at one step: the first at which the loss crosses a
+threshold $\eta$ and stays above it for $K$ consecutive steps,
 %
 \begin{equation}
 \label{eq:flag}
 t^\star_i = \min\big\{\, t : \ell^{(i)}_u > \eta \ \ \forall u \in [\,t,\,
-t+K-1\,] \,\big\},
+t+K-1\,] \,\big\}.
 \end{equation}
 %
-falling back to $\arg\max_t \ell^{(i)}_t$ if no crossing occurs. The threshold is
-a quantile of the training-loss distribution, recalibrated at every retrain; the
-construction is Diff-DAgger's, used unchanged \cite{lee2025diffdagger}. The peak
-arrives late, so an expert taking over there inherits a corrupted state with
-little episode left.
+If the loss never crosses $\eta$, the anchor falls back to $\arg\max_t
+\ell^{(i)}_t$. The threshold is a quantile of the training-loss distribution,
+recalibrated at every retrain. Equation~\ref{eq:flag} is Diff-DAgger's rule, used
+unchanged \cite{lee2025diffdagger}. The highest-loss step arrives late, so an
+expert taking over there inherits a corrupted state with little episode left.
 
-Each failure is then reduced to a six-dimensional vector computed from the
-privileged simulator state at $t^\star_i$, on the manipulation tasks
+Each failure is then reduced to a six-dimensional vector, read from the
+simulator's internal state at step $t^\star_i$. On the manipulation tasks it is
 %
 \begin{equation}
 \label{eq:desc}
@@ -104,58 +106,64 @@ privileged simulator state at $t^\star_i$, on the manipulation tasks
 \phi_i &= \big[\, p_{x,i},\; p_{y,i},\; \sin\psi_i,\; \cos\psi_i,\; \rho_i,\;
 \delta_i \,\big],\\
 \rho_i &= t^\star_i / T_i, \qquad
-\delta_i = \big\| p^{\mathrm{ee}}_i - p^{\mathrm{obj}}_i \big\|_2,
+\delta_i = \big\| p^{\mathrm{ee}}_i - p^{\mathrm{obj}}_i \big\|_2.
 \end{aligned}
 \end{equation}
 %
-where $(p_{x,i}, p_{y,i})$ is the planar position of the task-relevant object and
-$\psi_i$ its yaw, entered through its sine and cosine so the wrap at $\pm\pi$ does
-not create a false distance, $\rho_i$ the fraction of the episode completed before
-the flag, and $\delta_i$ the end-effector-to-object distance. The same six slots
-are refilled per task. The descriptor is small because the failure sets are small:
-over a few dozen points, weakly informative dimensions flatten the pairwise
-distances the merge order depends on, which the supplementary measures.
+Here $(p_{x,i}, p_{y,i})$ is the planar position of the task-relevant object and
+$\psi_i$ is its yaw. The yaw enters through its sine and cosine, so two yaws
+either side of $\pm\pi$ are not falsely far apart. The fraction of the episode
+completed before step $t^\star_i$ is $\rho_i$, and $\delta_i$ is the
+end-effector-to-object distance. Each task refills the same six slots. The
+descriptor is small because the failure sets are small: over a few dozen points,
+weakly informative dimensions flatten the pairwise distances that decide which
+clusters merge. The supplementary measures the effect.
 
-In parallel, three rendered frames, at the episode's start, at $t^\star_i$ and at
-its end, go to the vision-language model, which returns a short spatial account.
-The prescription model converts it into a root cause and a trajectory phase drawn
-from a closed taxonomy stored in $\mathcal{K}$ rather than invented. The division
-of labour follows the evidence: such models name a cause competently when given
-structured evidence \cite{duan2025aha,liu2023reflect} and reason unreliably about
-metric geometry from pixels alone \cite{chen2024spatialvlm,fu2024blink}.
+In parallel, three rendered frames go to the vision-language model: one at the
+episode's start, one at step $t^\star_i$, one at its end. The model returns a short
+spatial account. The prescription model turns that account into a root cause and a
+trajectory phase. Both come from a fixed vocabulary held in the constraint graph
+$\mathcal{K}$ of the Prescribe stage below, not invented. The division of labour
+follows the evidence: these models name a cause competently when handed structured
+evidence \cite{duan2025aha,liu2023reflect}, but reason poorly about metric geometry
+from pixels alone \cite{chen2024spatialvlm,fu2024blink}.
 
-\paragraph{Partition.} The round's failures are partitioned by a generic
-clustering step $\mathcal{C}$ over the standardised descriptors,
+\paragraph{Partition.} A generic clustering step $\mathcal{C}$ groups the round's
+failures, running over the standardised descriptors,
 %
 \begin{equation}
 \label{eq:kstar}
 \begin{aligned}
 \tilde{X}_i &= \frac{\phi_i - \mu_\phi}{\sigma_\phi}, \qquad
 \{C_1,\dots,C_{k^\star}\} = \mathcal{C}\big(\tilde{X},\, k^\star\big),\\
-k^\star &= \arg\max_{k \in [2,\,k_{\max}]} \operatorname{sil}(k),
+k^\star &= \arg\max_{k \in [2,\,k_{\max}]} \operatorname{sil}(k).
 \end{aligned}
 \end{equation}
 %
-where $\mu_\phi$ and $\sigma_\phi$ are the per-dimension mean and standard deviation
-of the round's own descriptors $\{\phi_i\}_{i=1}^{N}$, and
-$k_{\max} = \max(2, \min(6, N-1))$. The step is generic by design: agglomerative
-clustering is the instantiation used here \cite{ward1963hierarchical}, k-means
-would serve \cite{lloyd1982kmeans}, and $k^\star$ is chosen by the silhouette
-criterion, used unmodified \cite{rousseeuw1987silhouette,pedregosa2011sklearn}, so
-DISEIL claims a partition step and not its implementation. Each mode carries its
-raw-pose centroid, its mean peak loss $\bar{L}_C$, the mean over its members of
-$\mathrm{peak}_i = \max_t \ell^{(i)}_t$, and a representative $\mathrm{rep}(C)$,
-the member nearest the cluster mean in standardised space; the dominant mode
-$C^\star$ has the most members, ties broken by mean peak loss. The peak scores a
-failure while the first crossing locates it. Below four remaining failures each
-failure becomes a singleton and Equation~\ref{eq:target} reduces to selecting the
-highest-peak-loss failure. A mode is named by the majority root cause among its
-members, since a method that reports a failure in mode 2 has said nothing.
+Here $\mu_\phi$ and $\sigma_\phi$ are the per-dimension mean and standard deviation
+of the round's own descriptors $\{\phi_i\}_{i=1}^{N}$, and the cluster count is
+capped at $k_{\max} = \max(2, \min(6, N-1))$. The clustering step is generic by
+design.
+Agglomerative clustering is the choice made here \cite{ward1963hierarchical} and
+k-means would serve \cite{lloyd1982kmeans}. The silhouette criterion picks
+$k^\star$, used unmodified \cite{rousseeuw1987silhouette,pedregosa2011sklearn}.
+DISEIL claims a partition step, not one implementation of it.
 
-\paragraph{Prioritise.} This stage makes the first of the two decisions DISEIL
-adds, the which; Prescribe below makes the where. The
-round is spent on the mode of highest mean peak loss among those within one
-member of the largest,
+Each mode carries its centroid in raw pose coordinates; its mean peak loss
+$\bar{L}_C$, averaged over its members' $\mathrm{peak}_i = \max_t \ell^{(i)}_t$;
+and a representative $\mathrm{rep}(C)$, the member nearest the cluster mean in
+standardised space. The dominant mode $C^\star$ holds the most members, ties
+broken by mean peak loss. The peak scores a failure while the first crossing
+locates it. Below four remaining failures each failure becomes its own
+single-member mode, and Equation~\ref{eq:target} reduces to selecting the failure
+of highest peak loss. A
+mode is named by the majority root cause among its members, since reporting a
+failure in mode 2 says nothing.
+
+\paragraph{Prioritise.} Prioritise picks the target mode $C_{\mathrm{tgt}}$. The
+Prescribe stage below picks the starting state $\xi$. Consider every mode whose
+size is within one member of the largest.
+The round goes to whichever of them has the highest mean peak loss,
 %
 \begin{equation}
 \label{eq:target}
@@ -163,39 +171,39 @@ C_{\mathrm{tgt}} \;=\; \arg\max_{C \,:\, |C| \,\ge\, |C^\star| - 1} \
 \bar{L}_C .
 \end{equation}
 %
-The size constraint keeps the target inside the bulk of the round's failures, so
-a mode that barely exists cannot capture the round's budget on the strength of
-one badly failed episode. Because one demonstration rarely removes a mode
-outright, a rule of this shape can return the same mode round after round. DISEIL
-therefore has a cluster memory, a configurable task-specific component outside the
-core rule, which discounts modes already corrected and is on in every run here.
-
-The prescription model is shown at most $\kappa$ cited failures from the target
+The size constraint keeps the target inside the bulk of the round's failures, so a
+mode that barely exists cannot capture the budget on one badly failed episode.
+Because one demonstration rarely removes a mode outright, a rule of this shape can
+return the same mode round after round. DISEIL therefore has a cluster memory,
+which discounts modes already corrected. The memory is a configurable
+task-specific component outside the core rule, on in every run here. The
+prescription model is then shown at most $\kappa$ cited failures from the target
 mode: the representative first, then the worst-loss failure, then farthest-point
 selection \cite{eldar1997fps} to span the mode.
 
-\paragraph{Prescribe.} The prescription model receives the target mode's anchor
-geometry, the cited failures with their root-cause labels, and the task's
-constraints, and returns the round's request with a confidence score and a
+\paragraph{Prescribe.} The prescription model receives three inputs: the target
+mode's anchor geometry, the cited failures with their root-cause labels, and the
+task's constraints. It returns the round's request, with a confidence score and a
 rationale. Each requested demonstration takes one of two forms. A \emph{targeted
 correction} names one cited failure; that exact episode is re-instantiated and the
-expert takes over at the flagged step. A \emph{bridging placement} names two or
+expert takes over at the anchored step. A \emph{bridging placement} names two or
 three cited failures and asks for a new configuration between them, from which the
-expert demonstrates a complete episode. Bridging lets a prescription be easier than any failure it addresses: where a mode
-lies far outside what the policy can solve, a targeted correction is a large
-distributional jump and a bridged one is a step the policy can absorb. The
-graded-placement argument is reverse curriculum generation's
-\cite{florensa2017reversecurriculum}, applied to a demonstration request rather
-than a training reset.
+expert demonstrates a complete episode. Bridging lets a prescription be easier than
+any failure it addresses. Suppose a mode lies far outside what the policy can
+solve. A targeted correction there asks for a large jump; a bridged one asks for a
+step the policy can absorb. The graded-placement argument
+is reverse curriculum generation's \cite{florensa2017reversecurriculum}, applied to
+a demonstration request rather than a training reset.
 
 A model asked for a configuration of the world will sometimes name one the world
-cannot produce. The graph makes such a request checkable, holding workspace
-bounds, spawn ranges, reachability, controller limits, the success predicate and
-the failure-mode vocabulary as structured knowledge, in the manner of a robot
-knowledge base \cite{tenorth2013knowrob} rather than a retrieval index over text
-\cite{lewis2020rag,edge2024graphrag}. Verification is a loop: the model proposes,
-a map $g$ turns the proposal into a reset specification, the specification is
-checked, and a violation is returned as feedback so the model can propose again,
+cannot produce. The constraint graph $\mathcal{K}$ makes such a request checkable.
+It holds workspace bounds, spawn ranges, reachability, controller limits, the
+success predicate and the failure-mode vocabulary as structured knowledge. It is a
+robot knowledge base \cite{tenorth2013knowrob}, not a retrieval index over text
+\cite{lewis2020rag,edge2024graphrag}. Verification is a loop. The model proposes a
+configuration. A map $g$ turns it into a reset specification $\xi$. A test $V$
+checks $\xi$. If $\xi$ fails, the violation returns as feedback and the model
+proposes again,
 %
 \begin{equation}
 \label{eq:verify}
@@ -206,22 +214,21 @@ checked, and a violation is returned as feedback so the model can propose again,
 V(\xi) &= \mathbf{1}\big[\xi \in \mathcal{W}_{\mathcal{K}}\big] \wedge
 \mathbf{1}\big[\mathrm{reachable}_{\mathcal{K}}(\xi)\big]\\[1pt]
 &\quad \wedge\ \mathbf{1}\big[\mathrm{valid\text{-}path}_{\mathcal{K}}(\xi)
-\big],
+\big].
 \end{aligned}
 \end{equation}
 %
-where $\mathcal{W}_{\mathcal{K}}$ is the workspace bounds, the conjuncts of $V$
-are the constraints $\mathcal{K}$ stores for that task, and
-$\text{violation}(\xi^{(0)}) = \emptyset$ on the first attempt; on the grid task
-the last conjunct is a path-validity predicate decided by A\textsuperscript{$\star$}
-and breadth-first search \cite{hart1968astar,cormen2022algorithms}, which are
-never the expert. A failed attempt consumes no budget, since the budget counts
-demonstrations collected and not prescriptions proposed, and after $J_{\max}$
+The workspace bounds are $\mathcal{W}_{\mathcal{K}}$, and the conjuncts of $V$ are
+the constraints $\mathcal{K}$ holds for that task. There is no feedback on the
+first attempt, so $\text{violation}(\xi^{(0)}) = \emptyset$. On the grid task the
+last conjunct instead checks that a path exists, using A\textsuperscript{$\star$}
+and breadth-first search \cite{hart1968astar,cormen2022algorithms}, neither of
+which ever acts as the expert. A failed attempt consumes no budget: the budget
+counts demonstrations collected, not prescriptions proposed. After $J_{\max}$
 attempts the round falls back to the nearest untried recorded failure. A second
-screen, which rejects a prescription the policy already solves, is specified in
-the supplementary and is not exercised in any run below.
+screen rejects a prescription the policy already solves. The supplementary
+specifies it, and no run below exercises it.
 
 Every stage bears on what the policy is trained on and none on how it is fitted,
-so the evaluation varies the acquisition rule and holds the rest of the loop
-fixed. The supplementary states the round as pseudocode.
-
+so the evaluation varies the acquisition rule and holds the rest of the loop fixed.
+The supplementary states the round as pseudocode.

@@ -1,0 +1,212 @@
+{
+ "sec/01_abstract_intro.tex": [
+  {
+   "words": 52,
+   "commas": 2,
+   "text": "We present ( emonstration d stillation for ample- fficient mitation earning), which takes the flag as given and decides the other two: it partitions a round's failures into modes over a geometric descriptor and prescribes the configuration of a demonstration not yet collected, checked for feasibility before any expert time is spent."
+  },
+  {
+   "words": 42,
+   "commas": 1,
+   "text": "The failures of a round are not independent events but a small set with structure, and that structure is recoverable from geometry: a descriptor of the configuration at the step where the policy first becomes unreliable partitions them into geometrically distinct groups."
+  },
+  {
+   "words": 41,
+   "commas": 1,
+   "text": "An expert demonstration is the one input to imitation learning whose cost does not fall when compute is bought or a simulator is downloaded, so under a fixed allowance the only lever left on policy performance is what each demonstration contains."
+  },
+  {
+   "words": 41,
+   "commas": 3,
+   "text": "[t] The query-efficient members of the DAgger family gate the expert behind a per-state predicate on action discrepancy [c], predictive uncertainty from dropout [c] or an ensemble [c], novelty and risk [c], or a diffusion policy's own per-step denoising loss [c]."
+  },
+  {
+   "words": 40,
+   "commas": 3,
+   "text": "Performance scales with the coverage of a policy's demonstrations, while those added within a covered region saturate [c], so once an allowance of $X$ demonstrations is fixed, the content of each is all that is left to choose (Figure~ )."
+  },
+  {
+   "words": 30,
+   "commas": 3,
+   "text": "We evaluate on five tasks under two observation modalities, ten task-modality settings in all, at a budget of twenty demonstrations, against the query-efficient DAgger family and a uniform-random allocation control."
+  }
+ ],
+ "sec/02_related.tex": [
+  {
+   "words": 65,
+   "commas": 5,
+   "text": "The five compared here differ only in the score: a classifier predicting deviation from the expert [c], the concentration of dropout samples about the expert's action [c], the variance of a policy ensemble combined with an action discrepancy [c], a novelty term and a task-risk estimate [c], and the per-step denoising loss of a diffusion policy [c], which Diff-DAgger reads as an uncertainty signal "
+  },
+  {
+   "words": 42,
+   "commas": 2,
+   "text": "Active learning ranks candidates by an acquisition function [c], through uncertainty [c] or coverage, which core-set solves by a greedy $X$-centre rule [c] and which BADGE reaches by k-means++ over gradient embeddings [c]; sub-trajectory retrieval ranks segments of a demonstration corpus [c]."
+  },
+  {
+   "words": 41,
+   "commas": 2,
+   "text": "Dataset aggregation corrects the covariate shift of behaviour cloning [c] by labelling the learner's own visited states and refitting on the aggregate, trading a bound quadratic in the horizon for a linear one [c], a skeleton every method compared here shares."
+  },
+  {
+   "words": 36,
+   "commas": 3,
+   "text": "The remaining machinery is standard and is not claimed: the clustering, the cluster count, the diversity rule and the grid path checker are named with their sources in the Method, at the point each is used."
+  }
+ ],
+ "sec/03_method.tex": [
+  {
+   "words": 103,
+   "commas": 13,
+   "text": "Verification is a loop: the model proposes, a map $X$ turns the proposal into a reset specification, the specification is checked, and a violation is returned as feedback so the model can propose again, ^{(j)} &= (C_{ },\\ S,\\ ,\\ ( ^{(j-1)}) ),\\\\[1pt] ^{(j)} &= g ( ^{(j)} ),\\\\[1pt] V( ) &= \\\\[1pt] & \\ , where $X$ is the workspace bounds, the conjuncts of $X$ are the constraints $X$ stores for that "
+  },
+  {
+   "words": 85,
+   "commas": 7,
+   "text": "Each failure is then reduced to a six-dimensional vector computed from the privileged simulator state at $X$, on the manipulation tasks _i &= ,\\\\ _i &= t^ _i / T_i, _i = \\| p^{ }_i - p^{ }_i \\|_2, where $X$ is the planar position of the task-relevant object and $X$ its yaw, entered through its sine and cosine so the wrap at $X$ does not create a false distance, $X$ the fraction of the episode comp"
+  },
+  {
+   "words": 56,
+   "commas": 8,
+   "text": "At the start of round $X$ it is rolled out on a fresh pool drawn from the task's reset distribution, and those episodes it fails form the round's failure set, _r = \\{\\, f_i = ( _i,\\; ^{(i)}_{1:T_i}) \\;:\\; _i f_ \\, \\}, with $X$, which varies by round, and $X$ the length of trajectory $X$."
+  },
+  {
+   "words": 53,
+   "commas": 11,
+   "text": "The round's failures are partitioned by a generic clustering step $X$ over the standardised descriptors, _i &= { _ }, \\{C_1, ,C_{k^ }\\} = ( ,\\, k^ ),\\\\ k^ &= _{k [2,\\,k_{ }]} (k), where $X$ and $X$ are the per-dimension mean and standard deviation of the round's own descriptors $X$, and $X$."
+  },
+  {
+   "words": 47,
+   "commas": 5,
+   "text": "The solvability screen, drawn as the rollout and revise branch, is specified in the supplementary.} DISEIL runs four stages once per round (Figure~ ): perceive the round's failures, partition them into failure modes, prioritise one mode, and prescribe the $X$ demonstrations the expert is asked to supply."
+  },
+  {
+   "words": 46,
+   "commas": 8,
+   "text": "Each failure is anchored at the first step whose loss crosses an out-of-distribution threshold $X$ and stays across it for $X$ consecutive steps, t^ _i = \\{\\, t : ^{(i)}_u > \\ \\ u [\\,t,\\, t+K-1\\,] \\, \\}, falling back to $X$ if no crossing occurs."
+  },
+  {
+   "words": 45,
+   "commas": 3,
+   "text": "Every gated method compared here instantiates the same three-part acquisition rule $X$, where $X$ is the step at which the expert takes over (when), $X$ the failure mode the round is spent on (which), and $X$ the state from which the corrective demonstration begins (where)."
+  },
+  {
+   "words": 45,
+   "commas": 5,
+   "text": "Each mode carries its raw-pose centroid, its mean peak loss $X$, the mean over its members of $X$, and a representative $X$, the member nearest the cluster mean in standardised space; the dominant mode $X$ has the most members, ties broken by mean peak loss."
+  },
+  {
+   "words": 43,
+   "commas": 4,
+   "text": "The policy is any function $X$ mapping an observation to an action that exposes a per-step loss at a visited state-action pair, ^{(i)}_t \\;=\\; (f_ ,\\; s^{(i)}_t,\\; a^{(i)}_t ), where $X$ indexes an episode and $X$ is the action the policy itself executed."
+  },
+  {
+   "words": 42,
+   "commas": 6,
+   "text": "The graph makes such a request checkable, holding workspace bounds, spawn ranges, reachability, controller limits, the success predicate and the failure-mode vocabulary as structured knowledge, in the manner of a robot knowledge base [c] rather than a retrieval index over text [c]."
+  },
+  {
+   "words": 41,
+   "commas": 1,
+   "text": "Bridging lets a prescription be easier than any failure it addresses: where a mode lies far outside what the policy can solve, a targeted correction is a large distributional jump and a bridged one is a step the policy can absorb."
+  },
+  {
+   "words": 39,
+   "commas": 4,
+   "text": "The step is generic by design: agglomerative clustering is the instantiation used here [c], k-means would serve [c], and $X$ is chosen by the silhouette criterion, used unmodified [c], so DISEIL claims a partition step and not its implementation."
+  },
+  {
+   "words": 35,
+   "commas": 5,
+   "text": "The round is spent on the mode of highest mean peak loss among those within one member of the largest, C_{ } \\;=\\; _{C \\,:\\, |C| \\, \\, |C^ | - 1} \\ _C ."
+  },
+  {
+   "words": 32,
+   "commas": 3,
+   "text": "The prescription model receives the target mode's anchor geometry, the cited failures with their root-cause labels, and the task's constraints, and returns the round's request with a confidence score and a rationale."
+  },
+  {
+   "words": 29,
+   "commas": 7,
+   "text": "The round closes by acquiring $X$ demonstrations from the expert $X$ and aggregating them [c], _r &= _{r-1} \\{d_{r,1}, ,d_{r,D}\\},\\\\ & _ \\ _{(s,a) _r} \\ r 0 \\!\\!"
+  },
+  {
+   "words": 26,
+   "commas": 5,
+   "text": "In parallel, three rendered frames, at the episode's start, at $X$ and at its end, go to the vision-language model, which returns a short spatial account."
+  }
+ ],
+ "sec/04_experiments.tex": [
+  {
+   "words": 320,
+   "commas": 2,
+   "text": "[t] {llcc ccccccc} Task & Obs & $X$ & Init SR & Safe & Dropout & Ensemble & Thrifty & Stagger & Diff-DAgger & DISEIL (ours) \\\\ GridWorld & state & 20 & 48.9 & 85.3$X$0.9 & 84.9$X$0.8 & 86.2$X$0.7 & 86.8$X$0.7 & 85.7$X$0.5 & -- & \\\\ GridWorld & image & 20 & 47.0 & 88.8$X$0.9 & 88.4$X$0.7 & 88.8$X$0.9 & 88.7$X$0.6 & 89.1$X$0.8 & -- & \\\\ Push-T & state & 20 & 46.2 & 82.0$X$3.0 & 84.8$X$2.7 & 85.9$X$2"
+  },
+  {
+   "words": 42,
+   "commas": 3,
+   "text": "The policy class is fixed by the modality and shared by every arm: an MLP on GridWorld (state), a CNN on GridWorld (image), and a diffusion policy [c] on the four robot tasks, with an R3M encoder [c] on the image branch."
+  },
+  {
+   "words": 42,
+   "commas": 3,
+   "text": "A high pre-retrain loss admits two readings, novel data or an incoherent demonstration, and the second is excluded by construction: an infeasible configuration never reaches the expert (Eq.~ ), and the demonstration comes from the expert whose trajectories are the fitting target."
+  },
+  {
+   "words": 41,
+   "commas": 5,
+   "text": "The baseline to be beaten moves between rows: Diff-DAgger on Push-T, Wipe and Door under both modalities, ThriftyDAgger on GridWorld (state), Stagger on GridWorld (image), a tie with ThriftyDAgger on Lift (state), and three baselines level at 99.6 on Lift (image)."
+  },
+  {
+   "words": 40,
+   "commas": 1,
+   "text": "What carries the result is the recurrence of the margin across the rows rather than the size of any one of them: the seed standard errors overlap in several rows, and no row would support the claim on its own."
+  },
+  {
+   "words": 38,
+   "commas": 3,
+   "text": "On GridWorld (image) the random control finishes level with every gate, at 89.1 against 88.4 to 88.8, so the gate signal buys nothing there while DISEIL still gains 2.2 points, which is consistent with the ablation that follows."
+  }
+ ],
+ "sec/05_ablation_limits.tex": [
+  {
+   "words": 55,
+   "commas": 6,
+   "text": "Deleting the mode structure but keeping the loss signal, so each round greedily corrects the highest-loss failure, is the most damaging knockout, costing $X$ points, a mean of $X$, and a mean of $X$ per cent of the margin retained, beneath its own best baseline on Push-T (92.0 against 94.1) and Door (81.8 against 84.2)."
+  },
+  {
+   "words": 51,
+   "commas": 4,
+   "text": "Removing the constraint graph costs $X$ points and drives the fallback rate to 27 to 35 per cent of rounds, and bridging placement costs $X$; the prescription model, the vision-language model and the cluster memory cost $X$, $X$ and $X$, gaps comparable to the seed standard error of the full run."
+  },
+  {
+   "words": 44,
+   "commas": 3,
+   "text": "Uniform-random allocation over the recorded failures (A2) reaches $X$ against DISEIL's $X$, below the strongest gated baseline on both robot settings, and promoting the deterministic fallback to the whole method costs $X$ points, so neither replaying failures nor the heuristic accounts for the result."
+  },
+  {
+   "words": 41,
+   "commas": 2,
+   "text": "Replacing the prescription model with a heuristic leaves the Push-T margin at $X$ points, inside that standard error, so a model-free deployment retains the result on two of the three settings only; dropping the vision-language model as well was not measured."
+  },
+  {
+   "words": 40,
+   "commas": 2,
+   "text": "It is also read from privileged simulator state, so the image results show the allocation transferring to an image policy, not the partition built from pixels; outside simulation it would need a pose estimator whose error would enter the partition."
+  },
+  {
+   "words": 39,
+   "commas": 3,
+   "text": "Across budgets the margin is $X$ at $X$, $X$ at $X$ and $X$ at $X$, narrowing because the baselines catch up from a lower start, though DISEIL at $X$ does not reach what the strongest baseline attains at $X$."
+  },
+  {
+   "words": 33,
+   "commas": 4,
+   "text": "The reasoning stack costs 63 to 1{,}232 seconds per round more than a query gate, at up to 82{,}116 tokens, though it runs only at selection time and never in the control loop."
+  },
+  {
+   "words": 30,
+   "commas": 3,
+   "text": "That fallback knockout keeps the partition and reverts only the placement, the nearest isolation of available here, but it also removes the prescription model, so the two are not separated."
+  }
+ ]
+}

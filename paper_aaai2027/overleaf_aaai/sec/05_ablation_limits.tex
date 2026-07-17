@@ -1,75 +1,76 @@
 \section{Ablations}
 
-The knockouts settle it. The budget is better spread. Ablations run in three settings
-spanning a CNN policy, a state diffusion policy and an image diffusion policy, in
-the order GridWorld (image), Push-T (state), Door (image). Lift is excluded for the
-reason given above: at the ceiling a null result is unreadable. We report the three
-values and their signs. The supplementary gives the full programme with margin
-retained per setting.
+The knockouts show that the budget is better spread across failure modes. Each
+knockout removes one component and retrains, so the drop in success is what that
+component was worth. Each result is three values, in the order GridWorld (image),
+Push-T (state), Door (image). They cover a CNN policy, a state diffusion policy and
+an image diffusion policy. Lift is excluded: it sits at the 100 per cent ceiling,
+where removing a component can show no drop. The supplementary gives the full
+programme with margin retained per setting.
 
 \paragraph{Removing the partition costs success without costing information.}
-Deleting the mode structure but keeping the loss signal, so each round greedily
-corrects the highest-loss failure, is the most damaging knockout, costing
-$-2.2 / -4.1 / -6.8$ points, a mean of $4.37$, and a mean of $-53.2$ per cent of the
-margin retained, beneath its own best baseline on Push-T (92.0 against 94.1) and Door
-(81.8 against 84.2). Per-demonstration information gain does not fall with it
-($+0.02 / +0.16 / -0.13$, mean $+0.02$). Greedy worst-loss selection acquires
-demonstrations that are individually informative and jointly redundant, so the
-partition buys coverage of the failure distribution and not a better
-demonstration. The knockout removes the whole allocation stack, since the
-descriptor and the memory have nothing to operate on once modes are gone.
+The most damaging knockout deletes the mode structure but keeps the loss signal, so
+each round corrects the single highest-loss failure. Success falls by
+$-2.2 / -4.1 / -6.8$ points, a mean of $4.37$, and the margin retained averages
+$-53.2$ per cent. It also drops beneath its own best baseline on Push-T (92.0
+against 94.1) and Door (81.8 against 84.2). Per-demonstration information gain does
+not fall alongside success ($+0.02 / +0.16 / -0.13$, mean $+0.02$). Picking the
+worst-loss failure every round buys demonstrations that are informative alone and
+redundant together. The partition buys coverage of the failure distribution, not a
+better demonstration. This knockout removes the whole allocation stack: once the
+modes are gone, the descriptor and the memory have nothing to operate on.
 
 \paragraph{The advantage lies in the allocation.}
 Uniform-random allocation over the recorded failures (A2) reaches $89.1 / 82.3 / 80.0$
-against DISEIL's $91.3 / 96.1 / 88.6$, below the strongest gated baseline on both robot
-settings, and promoting the deterministic fallback to the whole method costs $3.27$
-points, so neither replaying failures nor the heuristic accounts for the result. That
-fallback knockout keeps the partition and reverts only the placement, the nearest
-isolation of \emph{where} available here, but it also removes the prescription
-model, so the two are not separated. Removing the constraint graph costs $2.37$ points and
-drives the fallback rate to 27 to 35 per cent of rounds, and bridging placement costs
-$1.27$; the prescription model, the vision-language model and the cluster memory cost
-$1.33$, $1.33$ and $0.73$, gaps comparable to the seed standard error of the full
-run. Replacing the prescription model with a heuristic leaves the Push-T margin at
-$0.1$ points, inside that standard error, so a model-free deployment retains the
-result on two of the three settings only; dropping the vision-language model as well
-was not measured. Across budgets the margin is $+9.07$ at $B{=}10$, $+2.87$ at
-$B{=}20$ and $+2.83$ at $B{=}40$, narrowing because the baselines catch up from a
-lower start, though DISEIL at $B{=}10$ does not reach what the strongest baseline
-attains at $B{=}20$.
+against DISEIL's $91.3 / 96.1 / 88.6$. On both robot settings it lands below the
+strongest query-gate baseline. Promoting the deterministic fallback rule to the whole
+method costs $3.27$ points. So neither replaying failures nor that rule accounts for
+the result. The fallback knockout keeps the partition and reverts only the placement,
+the nearest isolation of \emph{where} available here. It also removes the prescription
+model, so placement and prescription are not separated. Removing the constraint graph
+costs $2.37$ points and drives the fallback rate to 27 to 35 per cent of rounds.
+Removing bridging placement costs $1.27$. Removing the prescription model, the
+vision-language model or the cluster memory costs $1.33$, $1.33$ and $0.73$. All
+three are comparable to the seed standard error of the full run. Replacing the
+prescription model with a heuristic leaves the Push-T margin at $0.1$ points, inside
+that standard error. A deployment without that model retains the result on two of the
+three settings only. Dropping the vision-language model as well was not measured. The
+margin over the baselines is $+9.07$ at $B{=}10$, $+2.87$ at $B{=}20$ and $+2.83$ at
+$B{=}40$. It narrows because the baselines start lower and catch up. DISEIL at
+$B{=}10$ still does not reach what the strongest baseline attains at $B{=}20$.
 
 \section{Limitations and Conclusion}
 
 DISEIL reasons about one round and holds no representation of the training set. Its
-only memory records where corrections were placed, not what the data cover, so it
+only memory records where corrections were placed, not what the data cover. So it
 cannot tell a failure the set never taught from one it already teaches six times and
 is merely under-fitted. The descriptor is designed by hand and recovers cause only
-where configuration determines cause, with root-cause purity per cluster at 0.84 to
-0.91 scored against the prescription model's own labels, so it records agreement
-inside one system. It is also read from privileged simulator state, so the image
-results show the allocation transferring to an image policy, not the partition built
-from pixels; outside simulation it would need a pose estimator whose error would
-enter the partition. The reasoning stack costs 63 to 1{,}232 seconds per round more
-than a query gate, at up to 82{,}116 tokens, though it runs only at selection time
-and never in the control loop. No knockout varies \emph{where} with \emph{which}
-held fixed, so the split of the margin between the two is not measured here. Every
-expert here is a simulator oracle, which is what lets a budget be counted in
-demonstrations at all. Outside simulation the budget is a person's time and
-demonstrators are not uniformly correct \cite{belkhale2023dataquality,
-brown2019trex}, where the information-gain argument fails, since a high pre-retrain
-loss identifies novel data only if invalid demonstrations are excluded by
-construction.
+where configuration determines cause. Root-cause purity per cluster is 0.84 to 0.91,
+scored against the prescription model's own labels, so it records agreement inside
+one system. The descriptor is also read from privileged simulator state. So
+the image results show the allocation transferring to an image policy, not a
+partition built from pixels. Outside simulation the descriptor would need a pose
+estimator, whose error would enter the partition. The reasoning stack costs 63 to
+1{,}232 seconds per round more than a query gate, at up to 82{,}116 tokens. The
+stack runs only when the next demonstration is chosen, never while the robot acts.
+No knockout varies \emph{where} with \emph{which} held fixed, so the split of the
+margin between the two is not measured here. Every expert here is a simulator
+oracle, which is what lets a budget be counted in demonstrations. Outside simulation
+the budget is a person's time, and demonstrators are not uniformly correct
+\cite{belkhale2023dataquality, brown2019trex}. The information-gain argument then
+fails: a high pre-retrain loss identifies new data only if invalid demonstrations
+are ruled out first.
 
-The which and the where are free only while the budget is not. DISEIL takes both
-by partitioning a round's failures into modes over a geometric descriptor and
-prescribing a feasibility-checked configuration, and it holds the best or
-joint-best mean success rate in every setting reported here. Removing the
-allocation stack leaves per-demonstration information gain untouched while success
-falls by a mean of 4.37 points across the three settings ablated: the
-demonstrations stayed informative and stopped covering the failure distribution.
-The components of the where each cost between 0.7 and 2.4 points, inside the seed
-standard error of the full run, so this study does not measure what the
-prescription is worth on its own. Choice of gate moves the result by as much as 19
-points, on Wipe (image), yet no gate exceeds DISEIL in any of the ten settings.
-What a round buys turns on which failure it corrects, not only on which scalar
-opens the gate.
+A gate chooses only when to call the expert. Which failure to correct, and where to
+place the correction, stay free only while the budget is large. DISEIL makes both.
+It partitions a round's failures into modes over a geometric descriptor and
+prescribes a configuration checked for feasibility. It holds the highest mean
+success rate in every setting reported here. Removing the allocation stack leaves
+per-demonstration information gain untouched while success falls by a mean of 4.37
+points across the three settings ablated: the demonstrations stayed informative and
+stopped covering the failure distribution. The parts that place the correction each
+cost between 0.7 and 2.4 points, inside the seed standard error of the full run. So
+this study does not measure what the prescription is worth on its own. Choice of
+gate moves the result by as much as 19 points, on Wipe (image), yet no gate exceeds
+DISEIL in any of the ten settings. What a round buys turns on which failure it
+corrects, not only on which scalar opens the gate.

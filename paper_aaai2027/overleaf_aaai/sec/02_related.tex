@@ -2,57 +2,58 @@
 
 \paragraph{Interactive imitation learning.}
 Dataset aggregation corrects the covariate shift of behaviour cloning
-\cite{shimodaira2000covariate} by labelling the learner's own visited states and
-refitting on the aggregate, trading a bound quadratic in the horizon for a linear
-one \cite{ross2010reductions,ross2011dagger}, a skeleton every method compared
-here shares. Intervention-weighted methods reweight the aggregate once collected
-\cite{mandlekar2020iwr,liu2023sirius}; they change how the round's data is fitted,
-not which data it buys.
+\cite{shimodaira2000covariate}. The expert labels the states the learner visits,
+and the policy is refit on all data so far. The error bound then grows linearly
+with episode length, not quadratically \cite{ross2010reductions,ross2011dagger}.
+Every method compared here uses it. Intervention-weighted methods reweight
+the data once collected \cite{mandlekar2020iwr,liu2023sirius}. They change how a
+round's data is fitted, not which data it buys.
 
-\paragraph{The query gates.}
-Aggregation asks the expert to label every visited state, so query-efficient
-variants insert a gate: score each visited state, threshold it, and hand over at
-the first crossing. The five compared here differ only in the score: a classifier
-predicting deviation from the expert \cite{zhang2017safedagger}, the concentration
-of dropout samples about the expert's action \cite{menda2017dropoutdagger}, the
-variance of a policy ensemble combined with an action discrepancy
-\cite{menda2019ensembledagger}, a novelty term and a task-risk estimate
-\cite{hoque2021thriftydagger}, and the per-step denoising loss of a diffusion
-policy \cite{chi2023diffusionpolicy}, which Diff-DAgger reads as an uncertainty
-signal \cite{lee2025diffdagger}. DISEIL uses that same quantity to localise a failure
-and to measure information gain. Human-gated variants leave the decision to the
-operator \cite{kelly2019hgdagger}, and others vary the switch-back rule rather
-than the score \cite{hoque2021lazydagger}. Each gate answers when to hand over,
-and neither the which nor the where follows from any of them.
+\paragraph{Deciding when to call the expert.}
+Labelling every visited state is expensive, so query-efficient variants add a
+query gate: a test that scores each visited state and hands control to the expert
+at the first score above a threshold. The five gated methods here differ only in
+that score.
+SafeDAgger predicts deviation from the expert with a classifier
+\cite{zhang2017safedagger}. DropoutDAgger measures how tightly dropout samples
+concentrate about the expert's action \cite{menda2017dropoutdagger}.
+EnsembleDAgger combines policy-ensemble variance with an action discrepancy
+\cite{menda2019ensembledagger}. ThriftyDAgger adds a novelty term to a task-risk
+estimate \cite{hoque2021thriftydagger}. Diff-DAgger reads a diffusion policy's
+per-step denoising loss \cite{chi2023diffusionpolicy} as an uncertainty signal
+\cite{lee2025diffdagger}. DISEIL uses that same loss to locate a failure and to
+measure information gain. Human-gated variants leave the decision to the operator
+\cite{kelly2019hgdagger}. Others change only the rule for handing control back
+\cite{hoque2021lazydagger}. Every gate answers when to call the expert. None says
+which failed episode to correct, or where the demonstration should begin.
 
 \paragraph{Demonstration selection.}
-Active learning ranks candidates by an acquisition function
-\cite{settles2009active}, through uncertainty \cite{houlsby2011bald} or coverage,
-which core-set solves by a greedy $k$-centre rule \cite{sener2018coreset} and
-which BADGE reaches by k-means++ over gradient embeddings \cite{ash2020badge};
-sub-trajectory retrieval ranks segments of a demonstration corpus
-\cite{memmel2025strap}. These methods rank a pool that already exists. A round's
-failure set is such a pool, and the A3 knockout of the Ablations ranks it by
-uncertainty alone, which is that family's rule with the coverage term removed. A
-coverage rule over the failure set is the nearest competitor to the partition and
-is not run here. What none of them can do is specify a configuration the pool does
-not contain, which is what the prescription supplies. Dataset distillation
-compresses a held training set into a small synthetic one
-\cite{cazenavette2022mtt}; it runs after collection, whereas demonstration
-distillation runs before it.
+Active learning ranks a pool of candidates by an acquisition function
+\cite{settles2009active}, usually uncertainty \cite{houlsby2011bald} or coverage.
+Core-set gets coverage from a greedy $k$-centre rule \cite{sener2018coreset},
+BADGE from k-means++ over gradient embeddings \cite{ash2020badge}. Sub-trajectory
+retrieval ranks segments of a demonstration corpus \cite{memmel2025strap}. Every
+method above ranks an existing pool. A round's failed episodes are such a pool.
+One knockout in the Ablations (A3) ranks them by uncertainty alone: the
+active-learning rule with its coverage term removed. A coverage rule over the
+same failures is our grouping's nearest competitor, not run here. No
+ranking method can name a starting configuration the pool does not contain.
+DISEIL names one. Dataset distillation compresses an already collected training
+set into a small synthetic one \cite{cazenavette2022mtt}. It runs after
+collection; demonstration distillation runs before it.
 
 \paragraph{Language models and standard components.}
 Language models have been used in robotics as planners, code generators and
-reward designers \cite{ahn2022saycan,liang2023codeaspolicies,ma2024eureka}, and a
-model given frames and an execution record as structured evidence can name a
-failure's cause well enough to drive recovery \cite{liu2023reflect,duan2025aha}.
-The same models are unreliable at metric and spatial reasoning from pixels
+reward designers \cite{ahn2022saycan,liang2023codeaspolicies,ma2024eureka}. Given
+video frames and a record of what the robot did, a model can name a failure's
+cause well enough to drive recovery \cite{liu2023reflect,duan2025aha}. The same
+models are unreliable at judging distance and spatial relations from pixels
 \cite{chen2024spatialvlm,fu2024blink}. DISEIL therefore hands the model the
 geometry and a constraint graph of what the environment permits, and asks only
-for a cause and a request; no model here emits an action. Proposing to an
-external solver is established \cite{liu2023llmp}, as is returning a checker's
-verdict as feedback for re-proposal \cite{chen2024autotamp}; what differs is the
-object verified, a demonstration not yet collected rather than a plan to be
-executed. The remaining machinery is standard and is not claimed: the clustering,
-the cluster count, the diversity rule and the grid path checker are named with
-their sources in the Method, at the point each is used.
+for a cause and a request. No model here emits an action. Letting a model propose
+to an external solver is established \cite{liu2023llmp}, as is feeding a
+checker's verdict back for a second proposal \cite{chen2024autotamp}. Here the
+checked object is a demonstration not yet collected, not a plan about to be
+executed. The rest of the machinery is standard and is not claimed: the
+clustering, the cluster count, the diversity rule and the grid path checker. The
+Method cites a source for each, where it is used.

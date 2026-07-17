@@ -1,91 +1,92 @@
 \begin{abstract}
-An expert demonstration is the one input to imitation learning whose cost does
-not fall when compute is bought or a simulator is downloaded, so under a fixed
-allowance the only lever left on policy performance is what each demonstration
-contains. Robot-gated query-efficient interactive imitation learning reduces to
-one template: score a visited state, compare against a threshold, hand control to
-the expert at the first crossing. That template decides when to call the expert
-and fixes the other two decisions, which failure to correct and where the
-demonstration begins, by default. We present \textbf{DISEIL}
-(\textbf{D}emonstration d\textbf{I}stillation for \textbf{S}ample-\textbf{E}fficient
-\textbf{I}mitation \textbf{L}earning), which takes the flag as given and decides
-the other two: it partitions a round's failures into modes over a geometric
-descriptor and prescribes the configuration of a demonstration not yet collected,
-checked for feasibility before any expert time is spent. We evaluate on five
-tasks under two observation modalities, ten task-modality settings in all, at a
-budget of twenty demonstrations, against the query-efficient DAgger family and a
-uniform-random allocation control. DISEIL holds the best or joint-best mean
-held-out success rate in all ten, by a mean of 2.80 points over the strongest
-baseline in each.
+In interactive imitation learning, a learner practises a task and an expert takes
+over to demonstrate the right actions. Every takeover costs expert time, which
+compute cannot reduce. Under a fixed budget, what each demonstration contains
+decides the result. Existing methods decide only when to take over. They call the
+expert at the first step of an episode where the policy becomes uncertain. An
+episode that runs from start to end without achieving the task is a failed
+episode. Two decisions are then left to chance: which failed episode to correct,
+and where the demonstration begins.
+We present \textbf{DISEIL} (\textbf{D}emonstration d\textbf{I}stillation
+for \textbf{S}ample-\textbf{E}fficient \textbf{I}mitation \textbf{L}earning), which
+decides both. After each round of practice, DISEIL groups the failed episodes into
+modes of failure. For each mode it prescribes where a new demonstration should
+begin, and checks the start is reachable before any expert time is spent. We
+evaluate on five tasks, with image and state observations, ten settings in all,
+at a budget of 20 demonstrations, against the best baselines. DISEIL reaches the
+highest mean success rate in all ten, on average about 3 percentage points above
+the strongest baseline.
 \end{abstract}
 
 \section{Introduction}
 
 Behaviour cloning fits a policy to an expert's actions on the states the expert
-visits \cite{pomerleau1988alvinn,bain1995cloning}, and it fails under
-covariate shift: the learner's own actions carry it off the demonstrated support,
-where errors compound \cite{shimodaira2000covariate,ross2011dagger}. Interactive
-imitation learning removes the compounding by aggregating corrections on the
-states the learner visits \cite{ross2011dagger,celemin2022iil}, and pays for it in
-expert effort, the cost that binds
-\cite{mandlekar2018roboturk,khazatsky2024droid}. Performance scales with the
-coverage of a policy's demonstrations, while those added within a covered region
-saturate \cite{lin2024datascaling}, so once an allowance of $B$ demonstrations is
-fixed, the content of each is all that is left to choose
-(Figure~\ref{fig:teaser}).
+visited \cite{pomerleau1988alvinn,bain1995cloning}. The learner's own small errors
+then carry it into states it never saw, where errors compound. That drift is
+called covariate shift
+\cite{shimodaira2000covariate,ross2011dagger}. Interactive imitation learning
+stops the drift: the learner acts, and the expert corrects it on the states the
+learner actually reaches \cite{ross2011dagger,celemin2022iil}. The price is expert
+effort, the cost that binds \cite{mandlekar2018roboturk,khazatsky2024droid}.
+Policy performance scales with how much of the task the demonstrations cover, and
+extra demonstrations inside a covered region add little
+\cite{lin2024datascaling}. So once an allowance of $B$ demonstrations is fixed,
+what each one contains is all that is left to choose (Figure~\ref{fig:teaser}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.62\columnwidth]{figures/teaser.png}
 \caption{A round of interactive imitation learning ends with a set of failures
-and one demonstration to spend on it. The gate decides only when to ask. DISEIL
-decides which failure the call is spent on and what configuration the expert is
-asked to start from, so the demonstration stands for a mode rather than for the
-episode that happened to trip the gate first.}
+and one demonstration to spend on it. Existing methods decide only when to ask.
+DISEIL also decides which failure the call is spent on, and which configuration
+the expert starts from.}
 \label{fig:teaser}
 \end{figure}
 
-The query-efficient members of the DAgger family gate the expert behind a
-per-state predicate on action discrepancy \cite{zhang2017safedagger},
-predictive uncertainty from dropout \cite{menda2017dropoutdagger} or an ensemble
-\cite{menda2019ensembledagger}, novelty and risk \cite{hoque2021thriftydagger},
-or a diffusion policy's own per-step denoising loss
-\cite{lee2025diffdagger,chi2023diffusionpolicy}. They differ in the scalar and
-share the template. An acquisition has three parts, when to call the expert, which
-of the round's failures to spend the call on, and where the corrective
-demonstration begins. The template computes the first and takes the other two by
-default: the failure corrected is whichever rollout tripped the gate first, and
-the demonstration begins in the state that rollout was already in. Under an
-unbounded budget the two defaults cost nothing, since every mode is corrected
-eventually. Under a fixed budget they are the whole problem.
+The DAgger family calls the expert only when a test on the current state fires.
+Methods differ only in what that test measures. Some measure the gap between the
+learner's action and the expert's \cite{zhang2017safedagger}. Others measure the
+spread of predictions under dropout \cite{menda2017dropoutdagger} or across an
+ensemble \cite{menda2019ensembledagger}. Others use novelty and risk
+\cite{hoque2021thriftydagger}, or a diffusion policy's own per-step denoising loss
+\cite{lee2025diffdagger,chi2023diffusionpolicy}. Each reduces the state to one
+number and uses it the same way. Asking for a demonstration takes three decisions.
+When to call the expert. Which of the round's failed attempts to spend the call
+on. Where the corrective demonstration begins. Every method above decides when. Which
+attempt and where to begin are then settled by default. The attempt corrected is
+whichever one fired the test first. The demonstration begins in the state that
+attempt was already in. Under an unbounded budget those two defaults cost nothing,
+because every mode is corrected eventually. Under a fixed budget they are the
+whole problem.
 
-Neither missing decision can be recovered from a scalar attached to one state. It
-carries no representation in which two failures are the same mistake and a third
-is a different one, so a gate corrects the recurring mode as often as the
-recurrence throws it up while a rare mode waits. It also inherits the state that
-tripped it, frequently one the policy has already ruined, so the expert
-demonstrates recovery from a corruption instead of avoidance of it. The failures
-of a round are not independent events but a small set with structure, and that
-structure is recoverable from geometry: a descriptor of the configuration at the
-step where the policy first becomes unreliable partitions them into geometrically
-distinct groups. Whether those groups are worth allocating over is an empirical
-question, and the ablations answer it.
+One number attached to one state cannot say whether two failures are the same
+mistake or two different ones. So a mode that recurs often is corrected often,
+while a rare mode waits. The demonstration also starts at the state that fired
+the test, frequently one the policy has already ruined. The expert then shows how
+to recover from the damage, not how to avoid it. The failures within a round form
+a small set with structure, and geometry recovers it. We describe the
+configuration of the robot and the objects at the step where the policy first
+becomes uncertain. Failures grouped by that description separate into
+geometrically distinct modes. Whether those modes are worth allocating a budget
+over is an empirical question, and our ablations answer it.
 
-Demonstration distillation for sample-efficient imitation learning (DISEIL)
-takes the flag as given and computes the other two parts of the
-acquisition. Each round it anchors every failure at the first threshold crossing
-rather than at the peak, partitions the failures into modes over that descriptor,
-and targets the near-dominant mode of highest mean peak loss. It then prescribes
-the configuration of a demonstration not yet collected, verified against a
-constraint graph of what the task permits. The round's failure set is distilled to
-one demonstration, chosen so that what the expert supplies stands for the mode
-rather than for one episode.
+Demonstration distillation for sample-efficient imitation learning (DISEIL) keeps
+the existing test for when to call the expert. It then decides which failure to
+correct and where the demonstration begins. Each round, DISEIL anchors every
+failed attempt at the step where its loss first crosses the threshold, not at the
+step of highest loss. It groups the failures by the configuration at that anchor
+step. Among the modes close to the largest in size, it targets the one with the
+highest mean peak loss. For that mode it prescribes a starting configuration not
+yet demonstrated. The prescribed start is checked against a constraint graph of
+what the task permits, before any expert time is spent. A round of failures is
+distilled into one demonstration that stands for a mode, not for a single episode.
 
-We contribute three things. We separate the acquisition rule into when, which and
-where, and show the DAgger family fixes the last two by default. We present
-DISEIL, which attains the best or joint-best mean held-out success rate in all ten
-settings, by a mean of 2.80 points over the strongest baseline in each. And we
-locate the advantage in allocation rather than in per-demonstration
-informativeness: removing the mode structure costs a mean 4.37 points of success
-while information gain does not fall, the signature of a redundantly spread
-budget.
+We contribute three things. First, we separate the rule for asking into three
+decisions: when, which and where. The DAgger family answers only when. Second, we
+present DISEIL. It reaches the highest mean success rate on unseen test episodes
+in all ten settings, on average 2.80 percentage points above the strongest
+baseline in each.
+Third, we locate the advantage in how the budget is allocated, not in how
+informative each demonstration is on its own. Removing the mode structure costs a
+mean 4.37 points of success while information gain does not fall, the signature of
+a redundantly spread budget.
