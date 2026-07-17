@@ -44,7 +44,7 @@ The method of validation is the matched comparison, and it is the same at every 
 
 Four commitments follow from that design and are honoured throughout the report.
 
-Evidence is reported at the level at which it was measured. A setting is one task under one observation modality, and the two modalities of a task share the expert, the reward structure and the reset distribution, so the settings of a task are correlated by construction. Aggregate claims are therefore made on the collapsed task means, which is the conservative reading, and the setting-level result is given beside it and not instead of it.
+Evidence is reported at the level at which it was measured. A setting is one task under one observation modality, and the two modalities of a task share the expert, the reward structure and the reset distribution, so the settings of a task are correlated by construction and the ten are not ten independent experiments. Every result is therefore reported per setting, and the pattern across settings is read with that correlation in view.
 
 A component is claimed only where an ablation supports it. The Aim-1 ablation programme was designed so that it could retire components of the framework, and Section 5.1.8 records what it changed: one component re-specified, and the claims made for three others reduced. The same discipline applies forward. Section 4.2.4 names, before the experiment is run, the single ablation that decides whether language does causal work in the Aim-2 selector, and pre-commits to the interpretation of a negative result.
 

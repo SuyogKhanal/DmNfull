@@ -191,16 +191,16 @@ Table 7 gives the final held-out success rate in all ten settings. DISEIL attain
 
 | Task | Obs | Ni | Init SR | Safe | Dropout | Ensemble | Thrifty | Stagger | Diff-DAgger | DISEIL (ours) |
 |--------|------|----|------|------|------|------|------|------|------|------|
-| GridWorld 5x5 | state | 20 | 48.9 | 85.3±0.9 | 84.9±0.8 | 86.2±0.7 | 86.8±0.7 | 85.7±0.5 | — | **92.4±0.4** |
-| GridWorld 5x5 | image | 20 | 47.0 | 88.8±0.9 | 88.4±0.7 | 88.8±0.9 | 88.7±0.6 | 89.1±0.8 | — | **91.3±0.6** |
-| Push-T | state | 20 | 46.2 | 82.0±3.0 | 84.8±2.7 | 85.9±2.6 | 83.2±3.2 | — | 94.1±2.0 | **96.1±1.6** |
-| Push-T | image | 20 | 43.3 | 78.1±3.5 | 82.1±3.1 | 83.2±3.0 | 79.3±3.6 | — | 89.0±2.1 | **92.6±2.2** |
-| Lift | state | 8 | 67.2 | 99.2±0.7 | 99.2±0.4 | 99.2±0.4 | 100.0±0.0 | — | 99.2±0.4 | **100.0±0.0** |
-| Lift | image | 8 | 66.4 | 99.6±0.4 | 97.2±1.6 | 98.8±0.7 | 99.6±0.4 | — | 99.6±0.4 | **100.0±0.0** |
-| Wipe | state | 12 | 47.7 | 88.0±1.1 | 88.6±1.8 | 86.8±1.9 | 89.0±1.1 | — | 90.4±2.7 | **93.1±1.3** |
-| Wipe | image | 12 | 45.2 | 69.6±2.4 | 83.2±3.0 | 84.4±3.2 | 69.2±4.0 | — | 88.6±1.4 | **92.3±1.4** |
-| Door | state | 4 | 56.8 | 91.8±2.1 | 92.5±1.2 | 88.8±3.1 | 89.6±1.7 | — | 93.2±1.9 | **96.6±1.9** |
-| Door | image | 4 | 43.1 | 82.4±1.4 | 81.8±1.5 | 83.0±4.9 | 82.8±1.2 | — | 84.2±1.6 | **88.6±1.5** |
+| GridWorld 5x5 | state | 20 | 48.9 | 85.3±0.9 | 84.9±0.8 | 86.2±0.7 | 86.8±0.7 | 85.7±0.5 | – | **92.4±0.4** |
+| GridWorld 5x5 | image | 20 | 47.0 | 88.8±0.9 | 88.4±0.7 | 88.8±0.9 | 88.7±0.6 | 89.1±0.8 | – | **91.3±0.6** |
+| Push-T | state | 20 | 46.2 | 82.0±3.0 | 84.8±2.7 | 85.9±2.6 | 83.2±3.2 | – | 94.1±2.0 | **96.1±1.6** |
+| Push-T | image | 20 | 43.3 | 78.1±3.5 | 82.1±3.1 | 83.2±3.0 | 79.3±3.6 | – | 89.0±2.1 | **92.6±2.2** |
+| Lift | state | 8 | 67.2 | 99.2±0.7 | 99.2±0.4 | 99.2±0.4 | 100.0±0.0 | – | 99.2±0.4 | **100.0±0.0** |
+| Lift | image | 8 | 66.4 | 99.6±0.4 | 97.2±1.6 | 98.8±0.7 | 99.6±0.4 | – | 99.6±0.4 | **100.0±0.0** |
+| Wipe | state | 12 | 47.7 | 88.0±1.1 | 88.6±1.8 | 86.8±1.9 | 89.0±1.1 | – | 90.4±2.7 | **93.1±1.3** |
+| Wipe | image | 12 | 45.2 | 69.6±2.4 | 83.2±3.0 | 84.4±3.2 | 69.2±4.0 | – | 88.6±1.4 | **92.3±1.4** |
+| Door | state | 4 | 56.8 | 91.8±2.1 | 92.5±1.2 | 88.8±3.1 | 89.6±1.7 | – | 93.2±1.9 | **96.6±1.9** |
+| Door | image | 4 | 43.1 | 82.4±1.4 | 81.8±1.5 | 83.0±4.9 | 82.8±1.2 | – | 84.2±1.6 | **88.6±1.5** |
 
 ```{=latex}
 \let\footnotesize\CoCorigfoot
@@ -208,11 +208,9 @@ Table 7 gives the final held-out success rate in all ten settings. DISEIL attain
 
 The margin over the strongest baseline in each setting averages 2.80 points, with a standard deviation of 1.73 and a range from 0.0 to +5.6. Which baseline is strongest varies: Diff-DAgger on Push-T, Wipe and Door under both modalities; ThriftyDAgger on GridWorld (state); the Stagger control on GridWorld (image); and a tie on the two Lift settings, at 100.0 with ThriftyDAgger on the state setting and at 99.6 on the image setting. The comparison is therefore against a moving target, and DISEIL is ahead of whichever method happens to be best in each setting.
 
-Ten wins from ten is a pattern, and the pattern, and not any individual comparison, is what the aggregate test converts into a number. Treating the ten settings as paired observations, a sign test and a Wilcoxon signed-rank test both reject a coin-flip ranking at two-sided $p = 0.002$, which is the smallest $p$-value attainable with ten pairs and is therefore the floor of what this design can produce.
+Ten wins from ten is a pattern, and the pattern, and not any individual comparison, is what the table carries. It should not be read as ten independent confirmations. The ten settings are five tasks under two observation modalities, and the two modalities of a task share the expert, the reward structure and the reset distribution, so they are correlated by construction. A result that holds on a task under state observations is for that reason alone more likely to hold on the same task under image observations, and the number of genuinely distinct comparisons behind the sweep is nearer five than ten.
 
-That figure should not be led with, and the reason is a defect in the design. The ten settings are not ten independent experiments. They are five tasks under two observation modalities, and the two modalities of a task share the expert, the reward structure and the reset distribution, so they are correlated by construction and the effective sample size is nearer five than ten. Collapsing to the five task means, the paired differences are +3.90 (GridWorld), +2.80 (Push-T), +0.20 (Lift), +3.20 (Wipe) and +3.90 (Door). The sweep holds at five from five. A one-sided sign test gives $p = 0.031$, which is its floor at $n = 5$, and a paired $t$-test over the same five means rejects at $t(4) = 4.10$, $p = 0.015$ two-sided. The two-sided nonparametric test does not reject at $n = 5$ ($p = 0.063$), and it cannot, because 0.063 is the smallest value it can return with five pairs.
-
-The claim of record is the collapsed one. DISEIL attains the best mean success rate in all ten settings, and the aggregate advantage is significant under the conservative task-level analysis. What carries that claim is the sign of the margin and not the size of any one of them. Table 7 shows the seed standard errors of the two arms overlapping in several rows, so those rows would not support the claim on their own, and the rows are not independent of one another either. The systematic direction across the rows is the whole of the evidence, and the pooled tests above are what convert it into a number.
+The claim of record is the plain one. DISEIL attains the best mean success rate in all ten settings. What carries that claim is the sign of the margin and not the size of any one of them. Table 7 shows the seed standard errors of the two arms overlapping in several rows, so those rows would not support the claim on their own, and the rows are not independent of one another either. The systematic direction across the rows is the whole of the evidence.
 
 ![](../figures/selected_tasks_SE.pdf)
 
@@ -232,8 +230,8 @@ Table 8 gives the mean gain per setting against Diff-DAgger, which is the refere
 
 | Task | Obs | Diff | DISEIL |
 |---|---|---|---|
-| GridWorld 5x5 | state | — | **3.55±0.84** |
-| GridWorld 5x5 | image | — | **3.21±0.78** |
+| GridWorld 5x5 | state | – | **3.55±0.84** |
+| GridWorld 5x5 | image | – | **3.21±0.78** |
 | Push-T | state | 1.57±0.49 | **2.81±0.93** |
 | Push-T | image | 1.80±0.49 | **2.82±0.77** |
 | Lift | state | 1.61±0.50 | **2.64±0.74** |
@@ -279,7 +277,7 @@ The comparison establishes that DISEIL wins. It does not establish *what* wins, 
 
 The programme comprises eighteen studies, A1 to A18. A1 to A13 remove or vary one component at a time. A14 to A18 are diagnostics: they measure a property of the running system rather than knock a component out of it.
 
-The studies are run and reported on three settings, chosen to span the three policy classes and both observation modalities: GridWorld (image), where the policy is a convolutional network; Push-T (state), where it is a state diffusion policy; and Door (image), where it is an image diffusion policy. Every per-setting number below is one of those three, and every aggregate is the mean over those three and is labelled as such. The unit of analysis is the setting, and three paired settings are below the resolution of a Wilcoxon, sign or Friedman test, so no aggregate $p$-value is reported in this section. What is reported instead is the three per-setting values and the sign they share, which is what three matched blocks can support.
+The studies are run and reported on three settings, chosen to span the three policy classes and both observation modalities: GridWorld (image), where the policy is a convolutional network; Push-T (state), where it is a state diffusion policy; and Door (image), where it is an image diffusion policy. Every per-setting number below is one of those three, and every aggregate is the mean over those three and is labelled as such. The unit of analysis is the setting, and with three settings what is reported is the three per-setting values and the sign they share, which is what three matched blocks can support.
 
 Two derived quantities recur. $\Delta$SR is the change in the policy's success rate on the round-level rollout evaluation. *Margin retained* is the fraction of DISEIL's advantage over the strongest baseline that survives an ablation, $(\text{ablated} - \text{best baseline}) / (\text{full} - \text{best baseline})$, expressed as a percentage. Margin retained is reported alongside the raw damage because a component whose removal costs two points where the margin is three points is a different object from a component whose removal costs two points where the margin is ten. A value near 100 per cent means the component is decorative. A value near zero means it carries the result. A negative value means the ablated system has fallen beneath the baseline it was built to beat.
 
@@ -476,7 +474,7 @@ Each limitation below was measured by a study reported above, and the two that m
 
 Aim 1 asked whether a language model can raise the information content of each demonstration bought under a fixed budget, for the decision that sits inside a single round of interactive imitation learning. The answer is on record and it is qualified by its own ablations.
 
-**What the evidence established.** The DAgger family and its descendants decide when to hand control to the expert [79]. DISEIL decides which failure mode receives the round's demonstration and where that demonstration begins. Across ten settings, DISEIL attains the best mean success rate in every one, with a mean margin of 2.80 points over the strongest baseline in each setting. The claim of record is the conservative one, because the two modalities of a task are not independent experiments: collapsed to five task means, the sweep holds at five wins from five and a paired $t$-test gives $t(4) = 4.10$, $p = 0.015$. The ablations say where the advantage lives, and they say it more sharply than the comparison table does. Removing the partition over failure modes costs 4.37 points on the three ablation settings, turns the margin negative at −53.2 per cent retained, and drops the system below its own best baseline on Push-T (state) and Door (image), while per-demonstration information gain does not fall. Greedy worst-loss selection collects demonstrations that are individually informative and jointly redundant, and allocation is the term that supplies what information gain, measured per demonstration, cannot. Two controls bracket the result: uniform-random replay of a recorded failure lands below the strongest gated baseline on the two robot settings and level with it on GridWorld (image), and the deterministic nearest-untried rule promoted to a whole method beats the strongest baseline on only one of the three settings and turns the margin negative on another. The advantage is largest where the budget is smallest, averaging +9.07 points at $B = 10$ against +2.83 at $B = 40$, which is the behaviour a sample-efficiency method should show.
+**What the evidence established.** The DAgger family and its descendants decide when to hand control to the expert [79]. DISEIL decides which failure mode receives the round's demonstration and where that demonstration begins. Across ten settings, DISEIL attains the best mean success rate in every one, with a mean margin of 2.80 points over the strongest baseline in each setting. Those ten are not ten independent experiments, since the two modalities of a task share the expert, the reward structure and the reset distribution. The ablations say where the advantage lives, and they say it more sharply than the comparison table does. Removing the partition over failure modes costs 4.37 points on the three ablation settings, turns the margin negative at −53.2 per cent retained, and drops the system below its own best baseline on Push-T (state) and Door (image), while per-demonstration information gain does not fall. Greedy worst-loss selection collects demonstrations that are individually informative and jointly redundant, and allocation is the term that supplies what information gain, measured per demonstration, cannot. Two controls bracket the result: uniform-random replay of a recorded failure lands below the strongest gated baseline on the two robot settings and level with it on GridWorld (image), and the deterministic nearest-untried rule promoted to a whole method beats the strongest baseline on only one of the three settings and turns the margin negative on another. The advantage is largest where the budget is smallest, averaging +9.07 points at $B = 10$ against +2.83 at $B = 40$, which is the behaviour a sample-efficiency method should show.
 
 **What the evidence did not support.** Two of the framework's own design claims did not survive its own ablations, and they are carried as findings and not as caveats. Each language-model component is worth about one and a third points, and every individual gap is comparable to the seed standard error of the corresponding full run. The reason is structural: the partition is geometric and consumes no output from any foundation model, so by the time the language model is called, the decision that matters has already been taken. And the cluster memory, which an earlier draft of the method advanced as the second of its two contributions, is the least damaging of the seven knockouts, at 0.73 points on average, with a price that varies by a factor of three across the three ablation settings. It is carried as a configurable, task-dependent component of the loop, its value is reported per task rather than as a headline, and the memory Aim 2 needs is a different object: one indexed on the dataset the policy was trained on, and not on the descriptor space the failures live in.
 
